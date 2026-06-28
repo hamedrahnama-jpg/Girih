@@ -32,6 +32,7 @@ const SNAP_DISTANCE = 0.45;
 const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
+const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
 
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
@@ -45,72 +46,7 @@ const PUBLIC_MODEL_PIECES = [
   publicModelPiece('toranj', 'Toranj', 'Toranj.glb', '#6f8d44'),
 ];
 
-const DEFAULT_PIECES = [
-  ...PUBLIC_MODEL_PIECES,
-  {
-    id: 'decagon',
-    name: 'Decagon',
-    color: '#1c7c74',
-    height: 0.22,
-    points: regularPolygon(10, 1.08),
-  },
-  {
-    id: 'pentagon',
-    name: 'Pentagon',
-    color: '#d58a36',
-    height: 0.2,
-    points: regularPolygon(5, 0.95),
-  },
-  {
-    id: 'bowtie',
-    name: 'Bow Tie',
-    color: '#7b5ebd',
-    height: 0.18,
-    points: [
-      [-1.1, -0.55],
-      [-0.15, 0],
-      [-1.1, 0.55],
-      [1.1, 0.55],
-      [0.15, 0],
-      [1.1, -0.55],
-    ],
-  },
-  {
-    id: 'rhombus',
-    name: 'Rhombus',
-    color: '#b9455a',
-    height: 0.18,
-    points: [
-      [0, -0.82],
-      [1.18, 0],
-      [0, 0.82],
-      [-1.18, 0],
-    ],
-  },
-  {
-    id: 'dart',
-    name: 'Dart',
-    color: '#4076b8',
-    height: 0.18,
-    points: [
-      [0, -1.15],
-      [0.48, -0.16],
-      [1.12, 0.12],
-      [0.2, 0.42],
-      [0, 1.05],
-      [-0.2, 0.42],
-      [-1.12, 0.12],
-      [-0.48, -0.16],
-    ],
-  },
-];
-
-function regularPolygon(sides, radius) {
-  return Array.from({ length: sides }, (_, index) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / sides;
-    return [Math.cos(angle) * radius, Math.sin(angle) * radius];
-  });
-}
+const DEFAULT_PIECES = [...PUBLIC_MODEL_PIECES];
 
 function publicModelPiece(id, name, filename, color) {
   return {
@@ -1702,8 +1638,9 @@ function usePersistentPieces() {
 }
 
 function mergeDefaultPieces(stored) {
-  const storedIds = new Set(stored.map((piece) => piece.id));
-  return [...DEFAULT_PIECES.filter((piece) => !storedIds.has(piece.id)), ...stored];
+  const keptStored = stored.filter((piece) => !REMOVED_DEFAULT_PIECE_IDS.has(piece.id));
+  const storedIds = new Set(keptStored.map((piece) => piece.id));
+  return [...DEFAULT_PIECES.filter((piece) => !storedIds.has(piece.id)), ...keptStored];
 }
 
 function usePersistentModels() {
