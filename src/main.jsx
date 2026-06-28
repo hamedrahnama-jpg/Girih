@@ -33,7 +33,20 @@ const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 
+const PUBLIC_MODEL_PIECES = [
+  publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
+  publicModelPiece('chenari', 'Chenari', 'Chenari.glb', '#8a6bb8'),
+  publicModelPiece('maku', 'Maku', 'Maku.glb', '#1f6f68'),
+  publicModelPiece('setareh', 'Setareh', 'Setareh.glb', '#2e8278'),
+  publicModelPiece('shamseh', 'Shamseh', 'Shamseh.glb', '#d58a36'),
+  publicModelPiece('shesh-band', 'Shesh Band', 'Shesh Band.glb', '#1c7c74'),
+  publicModelPiece('tah-borideh', 'Tah Borideh', 'Tah Borideh.glb', '#b9455a'),
+  publicModelPiece('taragheh', 'Taragheh', 'Taragheh.glb', '#4076b8'),
+  publicModelPiece('toranj', 'Toranj', 'Toranj.glb', '#6f8d44'),
+];
+
 const DEFAULT_PIECES = [
+  ...PUBLIC_MODEL_PIECES,
   {
     id: 'decagon',
     name: 'Decagon',
@@ -97,6 +110,29 @@ function regularPolygon(sides, radius) {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / sides;
     return [Math.cos(angle) * radius, Math.sin(angle) * radius];
   });
+}
+
+function publicModelPiece(id, name, filename, color) {
+  return {
+    id,
+    name,
+    color,
+    height: 0.18,
+    type: 'glb',
+    glbUrl: `/models/${encodeURIComponent(filename)}`,
+    points: [
+      [-0.55, -0.55],
+      [0.55, -0.55],
+      [0.55, 0.55],
+      [-0.55, 0.55],
+    ],
+    snapEdges: [],
+    verticalEdges: [],
+    displayEdges: [],
+    sourceHeightPx: '',
+    sourceFootprintScale: '',
+    analysisVersion: 0,
+  };
 }
 
 function App() {
@@ -292,9 +328,10 @@ function App() {
       snapEdges: draft.snapEdges?.length ? draft.snapEdges : undefined,
       verticalEdges: draft.verticalEdges?.length ? draft.verticalEdges : undefined,
       displayEdges: draft.displayEdges?.length ? draft.displayEdges : undefined,
-      type: draft.glbDataUrl ? 'glb' : draft.objText ? 'obj' : 'shape',
+      type: draft.glbDataUrl || draft.glbUrl ? 'glb' : draft.objText ? 'obj' : 'shape',
       objText: draft.objText || undefined,
       glbDataUrl: draft.glbDataUrl || undefined,
+      glbUrl: draft.glbUrl || undefined,
     };
     setPieces((items) => {
       const without = items.filter((item) => item.id !== editingId && item.id !== piece.id);
@@ -324,6 +361,7 @@ function App() {
       displayEdges: piece.displayEdges || [],
       objText: piece.objText || '',
       glbDataUrl: piece.glbDataUrl || '',
+      glbUrl: piece.glbUrl || '',
     });
   }
 
@@ -345,6 +383,7 @@ function App() {
       displayEdges: imported.displayEdges,
       objText: imported.objText || '',
       glbDataUrl: imported.glbDataUrl || '',
+      glbUrl: '',
     });
     event.target.value = '';
   }
@@ -670,6 +709,8 @@ function App() {
             <span>
               {draft.glbDataUrl
                 ? 'GLB loaded. Import or update to add it to the library.'
+                : draft.glbUrl
+                  ? 'Public GLB linked from the deployed models folder.'
                 : draft.objText
                   ? 'OBJ loaded. Import or update to add it to the library.'
                   : 'Choose an .obj or .glb file to create a 3D piece.'}
@@ -693,7 +734,7 @@ function App() {
               onChange={(event) => setDraft({ ...draft, height: event.target.value })}
             />
           </label>
-          {(draft.objText || draft.glbDataUrl || draft.sourceHeightPx) && (
+          {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
             <label>
               Imported height
               <input
@@ -1013,7 +1054,7 @@ function GirihStage({ placed, selectedId, material, style, onSelect, onMove, onS
 }
 
 function createPieceObject(piece) {
-  if (piece.type === 'glb' && piece.glbDataUrl) return createGlbPieceObject(piece);
+  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) return createGlbPieceObject(piece);
   if (piece.type === 'obj' && piece.objText) return createObjPieceObject(piece);
   return createShapePieceObject(piece);
 }
@@ -1097,7 +1138,7 @@ function createObjPieceObject(piece) {
 function createGlbPieceObject(piece) {
   const root = new THREE.Group();
   const loader = new GLTFLoader();
-  dataUrlToArrayBuffer(piece.glbDataUrl)
+  pieceModelToArrayBuffer(piece)
     .then((buffer) => {
       loader.parse(
         buffer,
@@ -1649,7 +1690,7 @@ function usePersistentPieces() {
   const [pieces, setPieces] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      return Array.isArray(stored) && stored.length ? stored : DEFAULT_PIECES;
+      return Array.isArray(stored) && stored.length ? mergeDefaultPieces(stored) : DEFAULT_PIECES;
     } catch {
       return DEFAULT_PIECES;
     }
@@ -1658,6 +1699,11 @@ function usePersistentPieces() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pieces));
   }, [pieces]);
   return [pieces, setPieces];
+}
+
+function mergeDefaultPieces(stored) {
+  const storedIds = new Set(stored.map((piece) => piece.id));
+  return [...DEFAULT_PIECES.filter((piece) => !storedIds.has(piece.id)), ...stored];
 }
 
 function usePersistentModels() {
@@ -1689,6 +1735,7 @@ function emptyDraft() {
     analysisVersion: '',
     objText: '',
     glbDataUrl: '',
+    glbUrl: '',
   };
 }
 
@@ -1725,8 +1772,8 @@ async function readObjModel(file) {
 
 async function reanalyzeImportedPiece(piece) {
   if (piece.type === 'obj' && piece.objText) return analyzeObjText(piece.objText);
-  if (piece.type === 'glb' && piece.glbDataUrl) {
-    const buffer = await dataUrlToArrayBuffer(piece.glbDataUrl);
+  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) {
+    const buffer = await pieceModelToArrayBuffer(piece);
     return parseGlbFootprint(buffer);
   }
   return null;
@@ -2171,6 +2218,16 @@ async function dataUrlToArrayBuffer(dataUrl) {
   return response.arrayBuffer();
 }
 
+async function pieceModelToArrayBuffer(piece) {
+  if (piece.glbDataUrl) return dataUrlToArrayBuffer(piece.glbDataUrl);
+  if (piece.glbUrl) {
+    const response = await fetch(piece.glbUrl);
+    if (!response.ok) throw new Error(`Failed to load ${piece.glbUrl}`);
+    return response.arrayBuffer();
+  }
+  throw new Error(`Missing GLB source for ${piece.name || piece.id}`);
+}
+
 function dedupePoints(points) {
   const seen = new Set();
   return points.filter(([x, y]) => {
@@ -2229,7 +2286,7 @@ function serializeSceneModel(name, placed, style, material) {
     exportedAt: new Date().toISOString(),
     style,
     material,
-    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, snappedTo }) => ({
+    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
@@ -2243,6 +2300,7 @@ function serializeSceneModel(name, placed, style, material) {
       analysisVersion,
       objText,
       glbDataUrl,
+      glbUrl,
       snappedTo,
       transform: { x, y, rotation, height },
       material: { type: material, color },
@@ -2276,6 +2334,7 @@ function rehydrateScenePieces(model) {
         analysisVersion: piece.analysisVersion,
         objText: piece.objText,
         glbDataUrl: piece.glbDataUrl,
+        glbUrl: piece.glbUrl,
         x: Number(transform.x) || 0,
         y: Number(transform.y) || 0,
         rotation: Number(transform.rotation) || 0,
@@ -2581,9 +2640,9 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
 }
 
 async function createExportPieceObject(piece) {
-  if (piece.type === 'glb' && piece.glbDataUrl) {
+  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) {
     const loader = new GLTFLoader();
-    const buffer = await dataUrlToArrayBuffer(piece.glbDataUrl);
+    const buffer = await pieceModelToArrayBuffer(piece);
     const gltf = await new Promise((resolve, reject) => loader.parse(buffer, '', resolve, reject));
     const object = gltf.scene;
     normalizeImportedObject(object, piece);
