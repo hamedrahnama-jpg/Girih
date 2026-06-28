@@ -86,6 +86,7 @@ button:disabled {
 .stage-toolbar,
 .selection-chip,
 .stage-tools,
+.stage-view-controls,
 .history-controls,
 .action-row,
 .admin-row {
@@ -298,6 +299,30 @@ textarea {
   pointer-events: auto;
 }
 
+.stage-view-controls {
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.stage-view-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 1px solid rgba(216, 204, 186, 0.95);
+  border-radius: 8px;
+  background: rgba(255, 250, 241, 0.9);
+  color: #2d2924;
+  padding: 8px 10px;
+  backdrop-filter: blur(10px);
+}
+
+.stage-view-controls button.active {
+  background: #2f514c;
+  border-color: #2f514c;
+  color: #ffffff;
+}
+
 .history-controls button {
   display: grid;
   place-items: center;
@@ -310,8 +335,13 @@ textarea {
   backdrop-filter: blur(10px);
 }
 
+.stage-view-controls button:hover,
 .history-controls button:hover:not(:disabled) {
   background: #f3eadc;
+}
+
+.stage-view-controls button.active:hover {
+  background: #274640;
 }
 
 .object-menu {

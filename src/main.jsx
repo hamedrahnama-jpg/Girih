@@ -91,6 +91,7 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [modelName, setModelName] = useState('');
+  const [stageCamera, setStageCamera] = useState('top');
   const [exportView, setExportView] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
   const [printPreview, setPrintPreview] = useState(null);
@@ -559,6 +560,24 @@ function App() {
             </span>
           </div>
           <div className="stage-tools">
+            <div className="stage-view-controls" aria-label="Stage camera view">
+              <button
+                type="button"
+                className={stageCamera === 'top' ? 'active' : ''}
+                onClick={() => setStageCamera('top')}
+                title="Flat top stage view"
+              >
+                <Grid3X3 size={16} /> Top
+              </button>
+              <button
+                type="button"
+                className={stageCamera === 'isometric' ? 'active' : ''}
+                onClick={() => setStageCamera('isometric')}
+                title="Isometric stage view"
+              >
+                <Layers3 size={16} /> Iso
+              </button>
+            </div>
             <div className="history-controls">
               <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
                 <Undo2 size={16} />
@@ -580,6 +599,7 @@ function App() {
           selectedId={selectedId}
           material={material}
           style={style}
+          cameraMode={stageCamera}
           onSelect={setSelectedId}
           onMove={updatePlaced}
           onSettle={settlePiece}
@@ -803,14 +823,14 @@ function applyLibraryPieceToInstance(piece, instance) {
   };
 }
 
-function GirihStage({ placed, selectedId, material, style, onSelect, onMove, onSettle, onRotate, onContextMenu }) {
+function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu }) {
   const mountRef = useRef(null);
-  const stateRef = useRef({ placed, selectedId, material, style, onSelect, onMove, onSettle, onRotate, onContextMenu });
+  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu });
   const rendererRef = useRef(null);
 
   useEffect(() => {
-    stateRef.current = { placed, selectedId, material, style, onSelect, onMove, onSettle, onRotate, onContextMenu };
-  }, [placed, selectedId, material, style, onSelect, onMove, onSettle, onRotate, onContextMenu]);
+    stateRef.current = { placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu };
+  }, [placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -818,8 +838,6 @@ function GirihStage({ placed, selectedId, material, style, onSelect, onMove, onS
     scene.background = new THREE.Color('#f4efe6');
 
     const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
-    camera.position.set(0, 6.4, 7.2);
-    camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -835,7 +853,33 @@ function GirihStage({ placed, selectedId, material, style, onSelect, onMove, onS
     controls.maxDistance = 18;
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.target.set(0, 0, 0);
-    controls.update();
+    const cameraView = { mode: null };
+
+    function applyStageCameraView(mode, force = false) {
+      if (!force && cameraView.mode === mode) return;
+      cameraView.mode = mode;
+      controls.target.set(0, 0, 0);
+      if (mode === 'isometric') {
+        camera.up.set(0, 1, 0);
+        camera.position.set(-6.2, 6.4, 7.2);
+        controls.enableRotate = true;
+        controls.enablePan = true;
+        controls.minDistance = 3;
+        controls.maxDistance = 18;
+        controls.maxPolarAngle = Math.PI * 0.47;
+      } else {
+        camera.up.set(0, 0, -1);
+        camera.position.set(0, 12, 0.001);
+        controls.enableRotate = false;
+        controls.enablePan = true;
+        controls.minDistance = 4;
+        controls.maxDistance = 24;
+      }
+      camera.lookAt(controls.target);
+      controls.update();
+    }
+
+    applyStageCameraView(stateRef.current.cameraMode || 'top', true);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -969,6 +1013,7 @@ function GirihStage({ placed, selectedId, material, style, onSelect, onMove, onS
     let frame;
     function animate() {
       syncMeshes();
+      applyStageCameraView(stateRef.current.cameraMode || 'top');
       controls.update();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
