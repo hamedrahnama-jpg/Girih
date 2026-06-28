@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import './styles.css';
 
 const STORAGE_KEY = 'girih.pieces.v1';
+const ADMIN_SETTINGS_STORAGE_KEY = 'girih.pieceAdminSettings.v1';
 const MODELS_STORAGE_KEY = 'girih.models.v1';
 const ANALYSIS_VERSION = 6;
 const SNAP_DISTANCE = 0.45;
@@ -118,21 +119,21 @@ function App() {
       reanalyzeImportedPiece(piece).then((analysis) => {
         if (!analysis) return;
         setPieces((items) =>
-          items.map((item) =>
-            item.id === piece.id
-              ? {
-                  ...item,
-                  points: analysis.points,
-                  snapEdges: analysis.snapEdges,
-                  verticalEdges: analysis.verticalEdges,
-                  displayEdges: usesTargetedRealBoundary(item) ? analysis.displayEdges : item.displayEdges,
-                  height: item.height || analysis.sourceHeightPx || analysis.height,
-                  sourceHeightPx: analysis.sourceHeightPx,
-                  sourceFootprintScale: analysis.sourceFootprintScale,
-                  analysisVersion: analysis.analysisVersion,
-                }
-              : item,
-          ),
+          items.map((item) => {
+            if (item.id !== piece.id) return item;
+            const analyzed = {
+              ...item,
+              points: analysis.points,
+              snapEdges: analysis.snapEdges,
+              verticalEdges: analysis.verticalEdges,
+              displayEdges: usesTargetedRealBoundary(item) ? analysis.displayEdges : item.displayEdges,
+              height: item.height || analysis.sourceHeightPx || analysis.height,
+              sourceHeightPx: analysis.sourceHeightPx,
+              sourceFootprintScale: analysis.sourceFootprintScale,
+              analysisVersion: analysis.analysisVersion,
+            };
+            return applyAdminPieceSetting(analyzed);
+          }),
         );
       });
     });
@@ -269,6 +270,7 @@ function App() {
       glbDataUrl: draft.glbDataUrl || undefined,
       glbUrl: draft.glbUrl || undefined,
     };
+    saveAdminPieceSetting(piece);
     setPieces((items) => {
       const without = items.filter((item) => item.id !== editingId && item.id !== piece.id);
       return [...without, piece];
@@ -1626,9 +1628,10 @@ function usePersistentPieces() {
   const [pieces, setPieces] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      return Array.isArray(stored) && stored.length ? mergeDefaultPieces(stored) : DEFAULT_PIECES;
+      const library = Array.isArray(stored) && stored.length ? mergeDefaultPieces(stored) : DEFAULT_PIECES;
+      return applyAdminPieceSettings(library);
     } catch {
-      return DEFAULT_PIECES;
+      return applyAdminPieceSettings(DEFAULT_PIECES);
     }
   });
   useEffect(() => {
@@ -1641,6 +1644,58 @@ function mergeDefaultPieces(stored) {
   const keptStored = stored.filter((piece) => !REMOVED_DEFAULT_PIECE_IDS.has(piece.id));
   const storedIds = new Set(keptStored.map((piece) => piece.id));
   return [...DEFAULT_PIECES.filter((piece) => !storedIds.has(piece.id)), ...keptStored];
+}
+
+function readAdminPieceSettings() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_STORAGE_KEY));
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAdminPieceSetting(piece) {
+  const settings = readAdminPieceSettings();
+  const nextSetting = {
+    color: piece.color,
+    height: piece.height,
+    sourceHeightPx: piece.sourceHeightPx,
+    sourceFootprintScale: piece.sourceFootprintScale,
+  };
+  localStorage.setItem(
+    ADMIN_SETTINGS_STORAGE_KEY,
+    JSON.stringify({
+      ...settings,
+      [piece.id]: nextSetting,
+    }),
+  );
+}
+
+function applyAdminPieceSettings(pieces) {
+  const settings = readAdminPieceSettings();
+  return pieces.map((piece) => applyAdminPieceSetting(piece, settings[piece.id]));
+}
+
+function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.id]) {
+  if (!setting) return piece;
+  return {
+    ...piece,
+    color: setting.color || piece.color,
+    height: Number.isFinite(Number(setting.height)) ? Number(setting.height) : piece.height,
+    sourceHeightPx:
+      setting.sourceHeightPx === undefined || setting.sourceHeightPx === ''
+        ? piece.sourceHeightPx
+        : Number.isFinite(Number(setting.sourceHeightPx))
+          ? Number(setting.sourceHeightPx)
+          : piece.sourceHeightPx,
+    sourceFootprintScale:
+      setting.sourceFootprintScale === undefined || setting.sourceFootprintScale === ''
+        ? piece.sourceFootprintScale
+        : Number.isFinite(Number(setting.sourceFootprintScale))
+          ? Number(setting.sourceFootprintScale)
+          : piece.sourceFootprintScale,
+  };
 }
 
 function usePersistentModels() {
