@@ -3217,7 +3217,7 @@ async function renderSceneCanvas(placed, options = {}) {
     context.shadowOffsetY = 10;
     if (material === 'glass') {
       context.globalCompositeOperation = 'multiply';
-      context.globalAlpha = 0.86;
+      context.globalAlpha = 0.62;
     } else {
       context.globalCompositeOperation = 'source-over';
       context.globalAlpha = 1;
@@ -3326,14 +3326,24 @@ function shadeColor(color, factor) {
 function glassTintColor(color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
   const bg = hexToRgb(backgroundColor) || hexToRgb(DEFAULT_RENDER_SETTINGS.backgroundColor);
+  const vivid = saturateRgb(piece, 1.42);
   const multiplied = multiplyRgb(piece, bg);
   const bgIntensity = colorLuminance(bg);
   const rgb = {
-    r: clampColor(piece.r * 0.74 + multiplied.r * 0.26 + bgIntensity * 18),
-    g: clampColor(piece.g * 0.74 + multiplied.g * 0.26 + bgIntensity * 18),
-    b: clampColor(piece.b * 0.74 + multiplied.b * 0.26 + bgIntensity * 18),
+    r: clampColor(vivid.r * 0.86 + multiplied.r * 0.14 + bgIntensity * 10),
+    g: clampColor(vivid.g * 0.86 + multiplied.g * 0.14 + bgIntensity * 10),
+    b: clampColor(vivid.b * 0.86 + multiplied.b * 0.14 + bgIntensity * 10),
   };
   return rgbToHex(rgb);
+}
+
+function saturateRgb(rgb, amount) {
+  const luminance = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
+  return {
+    r: clampColor(luminance + (rgb.r - luminance) * amount),
+    g: clampColor(luminance + (rgb.g - luminance) * amount),
+    b: clampColor(luminance + (rgb.b - luminance) * amount),
+  };
 }
 
 function multiplyRgb(foreground, background) {
@@ -3558,7 +3568,7 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
       thickness: 0.9,
       ior: 1.45,
       transparent: true,
-      opacity: 0.74,
+      opacity: 0.48,
       depthWrite: false,
       blending: THREE.MultiplyBlending,
       clearcoat: 1,
@@ -3566,7 +3576,7 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
       specularIntensity: 1,
       specularColor: '#ffffff',
       attenuationColor: glassColor,
-      attenuationDistance: 1.4,
+      attenuationDistance: 1.05,
       envMapIntensity: 1.05,
       side: THREE.DoubleSide,
     });
