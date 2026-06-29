@@ -3380,14 +3380,12 @@ function shadeColor(color, factor) {
 
 function glassTintColor(color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
-  const bg = hexToRgb(backgroundColor) || hexToRgb(DEFAULT_RENDER_SETTINGS.backgroundColor);
-  const vivid = saturateRgb(piece, 1.42);
+  const vivid = saturateRgb(piece, 1.65);
   const multiplied = multiplyRgb(piece, ambientGlassColor(backgroundColor));
-  const bgIntensity = colorLuminance(bg);
   const rgb = {
-    r: clampColor(vivid.r * 0.86 + multiplied.r * 0.14 + bgIntensity * 10),
-    g: clampColor(vivid.g * 0.86 + multiplied.g * 0.14 + bgIntensity * 10),
-    b: clampColor(vivid.b * 0.86 + multiplied.b * 0.14 + bgIntensity * 10),
+    r: clampColor(vivid.r * 0.94 + multiplied.r * 0.06),
+    g: clampColor(vivid.g * 0.94 + multiplied.g * 0.06),
+    b: clampColor(vivid.b * 0.94 + multiplied.b * 0.06),
   };
   return rgbToHex(rgb);
 }
@@ -3416,10 +3414,6 @@ function ambientGlassColor(backgroundColor) {
     g: clampColor(bg.g * 0.68 + 255 * 0.18 + 220 * 0.14),
     b: clampColor(bg.b * 0.68 + 255 * 0.14 + 255 * 0.18),
   };
-}
-
-function colorLuminance({ r, g, b }) {
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
 function hexToRgb(value) {
@@ -3562,6 +3556,11 @@ function createGlassEnvironmentMap(backgroundColor) {
   const warm = { r: 255, g: 248, b: 226 };
   const cool = { r: 185, g: 241, b: 255 };
   const dark = { r: 48, g: 68, b: 78 };
+  const glint = {
+    r: clampColor(ambient.r * 0.55 + 255 * 0.45),
+    g: clampColor(ambient.g * 0.55 + 255 * 0.45),
+    b: clampColor(ambient.b * 0.55 + 255 * 0.45),
+  };
   const faces = [
     [warm, ambient],
     [ambient, cool],
@@ -3577,12 +3576,12 @@ function createGlassEnvironmentMap(backgroundColor) {
     const context = canvas.getContext('2d');
     const gradient = context.createLinearGradient(index % 2 ? 64 : 0, 0, index % 2 ? 0 : 64, 64);
     gradient.addColorStop(0, rgbaFromRgb(start, 1));
-    gradient.addColorStop(0.48, 'rgba(255,255,255,0.86)');
+    gradient.addColorStop(0.48, rgbaFromRgb(glint, 0.78));
     gradient.addColorStop(1, rgbaFromRgb(end, 1));
     context.fillStyle = gradient;
     context.fillRect(0, 0, 64, 64);
     context.globalAlpha = 0.34;
-    context.fillStyle = 'white';
+    context.fillStyle = rgbaFromRgb(glint, 0.9);
     context.fillRect(index % 3 === 0 ? 6 : 34, index % 2 === 0 ? 8 : 38, 20, 10);
     return canvas;
   });
@@ -3599,19 +3598,40 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
     return [(projected.x * 0.5 + 0.5) * size[0], (-projected.y * 0.5 + 0.5) * size[1]];
   };
   placed.forEach((piece) => {
-    const footprint = worldFootprintPoints(piece);
-    if (footprint.length < 3) return;
+    const topSegments = worldRenderSegments(piece);
+    if (!topSegments.length) return;
     const height = Math.max(0.02, Number(piece.height) || 0.18) * (styleName === 'pattern' ? 0.35 : 1);
-    const top = footprint.map(([x, y]) => project(x, height, y));
-    strokeCanvasPath(context, top, {
-      color: renderSettings.edgeColor,
-      lineWidth: renderSettings.edgeThickness,
-      mode: renderSettings.edgeMode,
-      gapColor: renderSettings.backgroundColor,
-      closed: true,
+    topSegments.forEach(([start, end]) => {
+      strokeCanvasPath(context, [project(start.x, height, start.y), project(end.x, height, end.y)], {
+        color: renderSettings.edgeColor,
+        lineWidth: renderSettings.edgeThickness,
+        mode: renderSettings.edgeMode,
+        gapColor: renderSettings.backgroundColor,
+        closed: false,
+      });
     });
-    footprint.forEach(([x, y]) => {
-      strokeCanvasPath(context, [project(x, 0, y), project(x, height, y)], {
+    topSegments.forEach(([start, end]) => {
+      strokeCanvasPath(context, [project(start.x, 0, start.y), project(end.x, 0, end.y)], {
+        color: renderSettings.edgeColor,
+        lineWidth: renderSettings.edgeThickness,
+        mode: renderSettings.edgeMode,
+        gapColor: renderSettings.backgroundColor,
+        closed: false,
+      });
+    });
+    const footprint = worldFootprintPoints(piece);
+    if (footprint.length >= 3) {
+      const top = footprint.map(([x, y]) => project(x, height, y));
+      strokeCanvasPath(context, top, {
+        color: renderSettings.edgeColor,
+        lineWidth: renderSettings.edgeThickness,
+        mode: renderSettings.edgeMode,
+        gapColor: renderSettings.backgroundColor,
+        closed: true,
+      });
+    }
+    uniqueSegmentPoints(topSegments).forEach((point) => {
+      strokeCanvasPath(context, [project(point.x, 0, point.y), project(point.x, height, point.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
         mode: renderSettings.edgeMode,
@@ -3620,6 +3640,33 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
       });
     });
   });
+}
+
+function worldRenderSegments(piece) {
+  const localSegments = getExportFootprintSegments(piece);
+  const rotation = Number(piece.rotation) || 0;
+  return localSegments.map(([localStart, localEnd]) => {
+    const [startX, startY] = rotatePoint(localStart[0], localStart[1], rotation);
+    const [endX, endY] = rotatePoint(localEnd[0], localEnd[1], rotation);
+    return [
+      new THREE.Vector2(startX + (piece.x || 0), startY + (piece.y || 0)),
+      new THREE.Vector2(endX + (piece.x || 0), endY + (piece.y || 0)),
+    ];
+  });
+}
+
+function getExportFootprintSegments(piece) {
+  if (piece.displayEdges?.length) return scaleImportedSegments(piece, piece.displayEdges).filter(([start, end]) => start && end);
+  return getRealFootprintSegments(piece);
+}
+
+function uniqueSegmentPoints(segments) {
+  const points = new Map();
+  segments.flat().forEach((point) => {
+    const key = `${point.x.toFixed(4)},${point.y.toFixed(4)}`;
+    if (!points.has(key)) points.set(key, point);
+  });
+  return [...points.values()];
 }
 
 async function createExportPieceObject(piece) {
@@ -3674,9 +3721,9 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
       thickness: 0.72,
       ior: 1.45,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.56,
       depthWrite: false,
-      blending: THREE.MultiplyBlending,
+      blending: THREE.NormalBlending,
       clearcoat: 1,
       clearcoatRoughness: 0.01,
       specularIntensity: 1,
@@ -3684,7 +3731,7 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
       reflectivity: 1,
       attenuationColor: glassColor,
       attenuationDistance: 1.25,
-      envMapIntensity: 2.4,
+      envMapIntensity: 1.65,
       side: THREE.DoubleSide,
     });
   }
