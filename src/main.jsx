@@ -36,7 +36,7 @@ const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
-const EXPORT_MATERIALS = new Set(['glass', 'marble', 'tile', 'wood', 'plastic']);
+const EXPORT_MATERIALS = new Set(['conceptual', 'glass', 'marble', 'tile', 'wood', 'plastic']);
 
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
@@ -91,7 +91,7 @@ function App() {
     canRedo,
   } = useStageHistory([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [material, setMaterial] = useState('plastic');
+  const [material, setMaterial] = useState('conceptual');
   const [style, setStyle] = useState('presentation');
   const [draft, setDraft] = useState(emptyDraft());
   const [editingId, setEditingId] = useState(null);
@@ -530,6 +530,7 @@ function App() {
           <label>
             Material
             <select value={material} onChange={(event) => setMaterial(event.target.value)}>
+              <option value="conceptual">Conceptual</option>
               <option value="glass">Glass</option>
               <option value="marble">Marble</option>
               <option value="tile">Tile</option>
@@ -647,6 +648,7 @@ function App() {
           <label>
             Material
             <select value={material} onChange={(event) => setMaterial(event.target.value)}>
+              <option value="conceptual">Conceptual</option>
               <option value="glass">Glass</option>
               <option value="marble">Marble</option>
               <option value="tile">Tile</option>
@@ -3184,7 +3186,7 @@ function shadeColor(color, factor) {
 function normalizeMaterialName(material) {
   if (EXPORT_MATERIALS.has(material)) return material;
   if (material === 'ceramic' || material === 'stone' || material === 'brass') return 'plastic';
-  return 'plastic';
+  return 'conceptual';
 }
 
 function materialStrokeColor(material, color) {
@@ -3192,6 +3194,7 @@ function materialStrokeColor(material, color) {
   if (material === 'marble') return '#b8aa98';
   if (material === 'tile') return '#f5eee3';
   if (material === 'wood') return '#5a351f';
+  if (material === 'conceptual') return shadeColor(color, 0.62);
   return '#123f3a';
 }
 
@@ -3290,25 +3293,26 @@ function createExportFootprintObject(piece) {
   });
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, height, 0);
-  const mesh = new THREE.Mesh(geometry, createExportMaterial(piece, 'plastic'));
+  const mesh = new THREE.Mesh(geometry, createExportMaterial(piece, 'conceptual'));
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   return mesh;
 }
 
 function applyExportPieceMaterial(object, piece, materialName) {
-  const material = createExportMaterial(piece, materialName);
+  const normalizedMaterialName = normalizeMaterialName(materialName);
+  const material = createExportMaterial(piece, normalizedMaterialName);
   object.traverse((child) => {
     if (!child.isMesh) return;
-    child.castShadow = materialName !== 'glass';
-    child.receiveShadow = materialName !== 'glass';
+    child.castShadow = normalizedMaterialName !== 'glass';
+    child.receiveShadow = normalizedMaterialName !== 'glass';
     child.material?.dispose?.();
     child.material = material.clone();
   });
   material.dispose();
 }
 
-function createExportMaterial(piece, materialName = 'plastic') {
+function createExportMaterial(piece, materialName = 'conceptual') {
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'glass') {
@@ -3328,13 +3332,13 @@ function createExportMaterial(piece, materialName = 'plastic') {
     });
   }
 
-  const texture = material === 'plastic' ? null : createMaterialTexture(color, material);
+  const texture = material === 'plastic' || material === 'conceptual' ? null : createMaterialTexture(color, material);
   return new THREE.MeshStandardMaterial({
     color: material === 'marble' || material === 'tile' || material === 'wood' ? '#ffffff' : color,
     map: texture,
-    metalness: 0,
-    roughness: material === 'plastic' ? 0.36 : material === 'tile' ? 0.18 : material === 'wood' ? 0.58 : 0.24,
-    envMapIntensity: material === 'tile' ? 0.75 : 0.35,
+    metalness: material === 'conceptual' ? 0.08 : 0,
+    roughness: material === 'conceptual' ? 0.42 : material === 'plastic' ? 0.36 : material === 'tile' ? 0.18 : material === 'wood' ? 0.58 : 0.24,
+    envMapIntensity: material === 'conceptual' ? 0.25 : material === 'tile' ? 0.75 : 0.35,
   });
 }
 
