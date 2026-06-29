@@ -3058,32 +3058,29 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
 }
 
 async function createExportPieceObject(piece) {
-  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) {
-    const loader = new GLTFLoader();
-    const buffer = await pieceModelToArrayBuffer(piece);
-    const gltf = await new Promise((resolve, reject) => loader.parse(buffer, '', resolve, reject));
-    const object = gltf.scene;
-    normalizeImportedObject(object, piece);
-    prepareExportMeshes(object, piece);
-    return object;
-  }
-  if (piece.type === 'obj' && piece.objText) {
-    const loader = new OBJLoader();
-    const object = loader.parse(piece.objText);
-    normalizeImportedObject(object, piece);
-    prepareExportMeshes(object, piece);
-    return object;
-  }
-  return createShapePieceObject(piece);
+  return createExportFootprintObject(piece);
 }
 
-function prepareExportMeshes(object, piece) {
-  object.traverse((child) => {
-    if (!child.isMesh) return;
-    child.castShadow = false;
-    child.receiveShadow = false;
-    child.material = createExportMaterial(piece, 'plastic');
+function createExportFootprintObject(piece) {
+  const points = getLocalCollisionPoints(piece);
+  const shapePoints = points.length >= 3 ? points : piece.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number));
+  const shape = new THREE.Shape();
+  shapePoints.forEach(([x, y], index) => {
+    if (index === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
   });
+  shape.closePath();
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: false,
+  });
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, height, 0);
+  const mesh = new THREE.Mesh(geometry, createExportMaterial(piece, 'plastic'));
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
 }
 
 function applyExportPieceMaterial(object, piece, materialName) {
