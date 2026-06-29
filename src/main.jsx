@@ -100,6 +100,7 @@ function App() {
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
+  const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
   const importSceneInputRef = useRef(null);
 
   const selected = placed.find((item) => item.id === selectedId);
@@ -196,7 +197,7 @@ function App() {
         rotation: 0,
         snappedTo: null,
       };
-      return [...items, placeNewPieceNearCollection(instance, items)];
+      return [...items, placeNewPieceNearCollection(instance, items, stageVisibleBounds)];
     });
     setMobilePiecesOpen(false);
   }
@@ -760,6 +761,7 @@ function App() {
           onSettle={settlePiece}
           onRotate={rotatePlaced}
           onContextMenu={setContextMenu}
+          onViewBoundsChange={setStageVisibleBounds}
         />
         {contextMenu && (
           <div
@@ -981,14 +983,14 @@ function applyLibraryPieceToInstance(piece, instance) {
   };
 }
 
-function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu }) {
+function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange }) {
   const mountRef = useRef(null);
-  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu });
+  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange });
   const rendererRef = useRef(null);
 
   useEffect(() => {
-    stateRef.current = { placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu };
-  }, [placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu]);
+    stateRef.current = { placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange };
+  }, [placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1046,6 +1048,7 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
     const meshes = new Map();
     const group = new THREE.Group();
     const selectionOutline = createSelectionOutline();
+    const lastViewBounds = { current: null };
     scene.add(group);
     scene.add(selectionOutline);
 
@@ -1095,6 +1098,46 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
       const point = new THREE.Vector3();
       raycaster.ray.intersectPlane(plane, point);
       return point;
+    }
+
+    function viewportGroundBounds() {
+      const points = [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+        [0, 0],
+      ]
+        .map(([x, y]) => {
+          raycaster.setFromCamera({ x, y }, camera);
+          const point = new THREE.Vector3();
+          return raycaster.ray.intersectPlane(plane, point) ? point : null;
+        })
+        .filter(Boolean);
+      if (points.length < 3) return null;
+      const xs = points.map((point) => point.x);
+      const ys = points.map((point) => point.z);
+      return {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys),
+      };
+    }
+
+    function reportViewBounds() {
+      const bounds = viewportGroundBounds();
+      if (!bounds) return;
+      const previous = lastViewBounds.current;
+      const changed =
+        !previous ||
+        Math.abs(previous.minX - bounds.minX) > 0.03 ||
+        Math.abs(previous.maxX - bounds.maxX) > 0.03 ||
+        Math.abs(previous.minY - bounds.minY) > 0.03 ||
+        Math.abs(previous.maxY - bounds.maxY) > 0.03;
+      if (!changed) return;
+      lastViewBounds.current = bounds;
+      stateRef.current.onViewBoundsChange?.(bounds);
     }
 
     function pointerDown(event) {
@@ -1173,6 +1216,7 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
       syncMeshes();
       applyStageCameraView(stateRef.current.cameraMode || 'top');
       controls.update();
+      reportViewBounds();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     }
@@ -2564,8 +2608,11 @@ function placeImportedScene(incoming, current) {
   return incoming.map((piece) => ({ ...piece, x: piece.x + offsetX, y: piece.y + offsetY }));
 }
 
-function placeNewPieceNearCollection(piece, current) {
-  if (!current.length) return { ...piece, x: 0, y: 0 };
+function placeNewPieceNearCollection(piece, current, visibleBounds = null) {
+  if (!current.length) {
+    const [x, y] = visibleBounds ? visiblePlacementCenter(piece, visibleBounds) : [0, 0];
+    return { ...piece, x, y };
+  }
   const collectionBounds = sceneBounds(current);
   const pieceBounds = sceneBounds([{ ...piece, x: 0, y: 0 }]);
   const pieceWidth = Math.max(pieceBounds.maxX - pieceBounds.minX, 0.1);
@@ -2585,6 +2632,7 @@ function placeNewPieceNearCollection(piece, current) {
   ];
 
   const candidates = [];
+  const visibleCandidates = visibleBounds ? visiblePlacementCandidates(piece, pieceBounds, visibleBounds, collectionBounds) : [];
   for (let ring = 0; ring < 8; ring += 1) {
     const extraX = ring * (pieceWidth + gap);
     const extraY = ring * (pieceHeight + gap);
@@ -2599,8 +2647,97 @@ function placeNewPieceNearCollection(piece, current) {
   }
 
   const fallback = baseCandidates[0];
-  const best = candidates.find(([x, y]) => !collidesWithAny({ ...piece, x, y }, current)) || fallback;
-  return { ...piece, x: best[0], y: best[1] };
+  const allCandidates = [...visibleCandidates, ...candidates];
+  const scored = allCandidates
+    .map(([x, y]) => ({ x, y, score: placementScore(piece, x, y, current, collectionBounds, visibleBounds) }))
+    .filter((candidate) => Number.isFinite(candidate.score))
+    .sort((a, b) => a.score - b.score);
+  const best = scored[0] || { x: fallback[0], y: fallback[1] };
+  if (visibleBounds && collidesWithAny({ ...piece, x: best.x, y: best.y }, current)) {
+    const [x, y] = visiblePlacementCenter(piece, visibleBounds);
+    return { ...piece, x, y };
+  }
+  return { ...piece, x: best.x, y: best.y };
+}
+
+function visiblePlacementCenter(piece, visibleBounds) {
+  const pieceBounds = sceneBounds([{ ...piece, x: 0, y: 0 }]);
+  const minX = visibleBounds.minX - pieceBounds.minX;
+  const maxX = visibleBounds.maxX - pieceBounds.maxX;
+  const minY = visibleBounds.minY - pieceBounds.minY;
+  const maxY = visibleBounds.maxY - pieceBounds.maxY;
+  const centerX = (visibleBounds.minX + visibleBounds.maxX) / 2 - (pieceBounds.minX + pieceBounds.maxX) / 2;
+  const centerY = (visibleBounds.minY + visibleBounds.maxY) / 2 - (pieceBounds.minY + pieceBounds.maxY) / 2;
+  return [clamp(centerX, minX, maxX), clamp(centerY, minY, maxY)];
+}
+
+function visiblePlacementCandidates(piece, pieceBounds, visibleBounds, collectionBounds) {
+  const pieceWidth = Math.max(pieceBounds.maxX - pieceBounds.minX, 0.1);
+  const pieceHeight = Math.max(pieceBounds.maxY - pieceBounds.minY, 0.1);
+  const minX = visibleBounds.minX - pieceBounds.minX + 0.08;
+  const maxX = visibleBounds.maxX - pieceBounds.maxX - 0.08;
+  const minY = visibleBounds.minY - pieceBounds.minY + 0.08;
+  const maxY = visibleBounds.maxY - pieceBounds.maxY - 0.08;
+  if (minX > maxX || minY > maxY) return [visiblePlacementCenter(piece, visibleBounds)];
+
+  const center = visiblePlacementCenter(piece, visibleBounds);
+  const collectionCenterX = (collectionBounds.minX + collectionBounds.maxX) / 2;
+  const collectionCenterY = (collectionBounds.minY + collectionBounds.maxY) / 2;
+  const stepX = Math.max(pieceWidth + 0.22, 0.35);
+  const stepY = Math.max(pieceHeight + 0.22, 0.35);
+  const candidates = [[clamp(collectionCenterX, minX, maxX), clamp(collectionCenterY, minY, maxY)], center];
+  const cols = Math.max(2, Math.ceil((maxX - minX) / stepX));
+  const rows = Math.max(2, Math.ceil((maxY - minY) / stepY));
+
+  for (let row = 0; row <= rows; row += 1) {
+    for (let col = 0; col <= cols; col += 1) {
+      candidates.push([
+        minX + ((maxX - minX) * col) / cols,
+        minY + ((maxY - minY) * row) / rows,
+      ]);
+    }
+  }
+
+  return dedupeCandidatePoints(candidates);
+}
+
+function placementScore(piece, x, y, current, collectionBounds, visibleBounds) {
+  const candidate = { ...piece, x, y };
+  if (collidesWithAny(candidate, current)) return Infinity;
+  const bounds = sceneBounds([candidate]);
+  const visiblePenalty = visibleBounds ? visibleBoundsPenalty(bounds, visibleBounds) : 0;
+  if (visiblePenalty > 0.001) return Infinity;
+  const collectionCenterX = (collectionBounds.minX + collectionBounds.maxX) / 2;
+  const collectionCenterY = (collectionBounds.minY + collectionBounds.maxY) / 2;
+  const visibleCenterX = visibleBounds ? (visibleBounds.minX + visibleBounds.maxX) / 2 : collectionCenterX;
+  const visibleCenterY = visibleBounds ? (visibleBounds.minY + visibleBounds.maxY) / 2 : collectionCenterY;
+  const collectionDistance = Math.hypot(x - collectionCenterX, y - collectionCenterY);
+  const visibleDistance = Math.hypot(x - visibleCenterX, y - visibleCenterY);
+  return collectionDistance + visibleDistance * 0.35;
+}
+
+function visibleBoundsPenalty(bounds, visibleBounds) {
+  return (
+    Math.max(0, visibleBounds.minX - bounds.minX) +
+    Math.max(0, bounds.maxX - visibleBounds.maxX) +
+    Math.max(0, visibleBounds.minY - bounds.minY) +
+    Math.max(0, bounds.maxY - visibleBounds.maxY)
+  );
+}
+
+function dedupeCandidatePoints(points) {
+  const seen = new Set();
+  return points.filter(([x, y]) => {
+    const key = `${x.toFixed(3)},${y.toFixed(3)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function clamp(value, min, max) {
+  if (min > max) return (min + max) / 2;
+  return Math.min(Math.max(value, min), max);
 }
 
 function sceneBounds(pieces) {
