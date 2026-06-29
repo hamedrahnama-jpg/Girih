@@ -3378,14 +3378,13 @@ function shadeColor(color, factor) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-function glassTintColor(color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
+function glassTintColor(color) {
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
-  const vivid = saturateRgb(piece, 1.65);
-  const multiplied = multiplyRgb(piece, ambientGlassColor(backgroundColor));
+  const vivid = saturateRgb(piece, 1.85);
   const rgb = {
-    r: clampColor(vivid.r * 0.94 + multiplied.r * 0.06),
-    g: clampColor(vivid.g * 0.94 + multiplied.g * 0.06),
-    b: clampColor(vivid.b * 0.94 + multiplied.b * 0.06),
+    r: clampColor(vivid.r * 1.08 + 6),
+    g: clampColor(vivid.g * 1.08 + 6),
+    b: clampColor(vivid.b * 1.08 + 6),
   };
   return rgbToHex(rgb);
 }
@@ -3396,14 +3395,6 @@ function saturateRgb(rgb, amount) {
     r: clampColor(luminance + (rgb.r - luminance) * amount),
     g: clampColor(luminance + (rgb.g - luminance) * amount),
     b: clampColor(luminance + (rgb.b - luminance) * amount),
-  };
-}
-
-function multiplyRgb(foreground, background) {
-  return {
-    r: (foreground.r * background.r) / 255,
-    g: (foreground.g * background.g) / 255,
-    b: (foreground.b * background.b) / 255,
   };
 }
 
@@ -3475,7 +3466,7 @@ function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_
   if (material === 'marble' || material === 'tile' || material === 'wood') {
     return context.createPattern(createMaterialPatternCanvas(color, material, 256), 'repeat') || color;
   }
-  if (material === 'glass') return glassTintColor(color, backgroundColor);
+  if (material === 'glass') return glassTintColor(color);
   return color;
 }
 
@@ -3493,19 +3484,20 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   scene.background = new THREE.Color(renderSettings.backgroundColor);
   const environment = exportMaterial === 'glass' ? createGlassEnvironmentMap(renderSettings.backgroundColor) : null;
   if (environment) scene.environment = environment;
+  const glassRearColor = exportMaterial === 'glass' ? rgbToHex(ambientGlassColor(renderSettings.backgroundColor)) : '#ffffff';
   const group = new THREE.Group();
   scene.add(group);
 
   const ambient = new THREE.HemisphereLight(
-    exportMaterial === 'glass' ? '#fff9ea' : '#ffffff',
-    exportMaterial === 'glass' ? '#7f8f88' : '#4f4a42',
-    exportMaterial === 'glass' ? 2.3 : 2,
+    '#ffffff',
+    exportMaterial === 'glass' ? '#343434' : '#4f4a42',
+    exportMaterial === 'glass' ? 1.9 : 2,
   );
   scene.add(ambient);
   const key = new THREE.DirectionalLight('#ffffff', 2.1);
   key.position.set(-5, 8, 4);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? '#d7fff7' : '#ffffff', exportMaterial === 'glass' ? 0.85 : 0.45);
+  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? glassRearColor : '#ffffff', exportMaterial === 'glass' ? 0.95 : 0.45);
   fill.position.set(5, 4, -6);
   scene.add(fill);
 
@@ -3561,18 +3553,19 @@ function createGlassEnvironmentMap(backgroundColor) {
   const warm = { r: 255, g: 248, b: 226 };
   const cool = { r: 185, g: 241, b: 255 };
   const dark = { r: 48, g: 68, b: 78 };
+  const neutral = { r: 244, g: 248, b: 250 };
   const glint = {
     r: clampColor(ambient.r * 0.55 + 255 * 0.45),
     g: clampColor(ambient.g * 0.55 + 255 * 0.45),
     b: clampColor(ambient.b * 0.55 + 255 * 0.45),
   };
   const faces = [
-    [warm, ambient],
-    [ambient, cool],
-    [warm, cool],
+    [ambient, glint],
+    [warm, neutral],
+    [neutral, glint],
     [cool, dark],
-    [warm, dark],
-    [ambient, warm],
+    [warm, neutral],
+    [ambient, dark],
   ];
   const canvases = faces.map(([start, end], index) => {
     const canvas = document.createElement('canvas');
@@ -3717,7 +3710,7 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'glass') {
-    const glassColor = glassTintColor(color, normalizeRenderSettings(renderSettings).backgroundColor);
+    const glassColor = glassTintColor(color);
     return new THREE.MeshPhysicalMaterial({
       color: glassColor,
       metalness: 0,
