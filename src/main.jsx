@@ -447,7 +447,7 @@ function App() {
   }
 
   function importSavedModel(model) {
-    const incoming = placeImportedScene(centerScenePieces(rehydrateScenePieces(model)), placed);
+    const incoming = centerScenePieces(rehydrateScenePieces(model));
     commitPlaced((items) => [...items, ...incoming]);
     setSelectedId(null);
   }
@@ -461,7 +461,7 @@ function App() {
     if (!file) return;
     try {
       const payload = JSON.parse(await file.text());
-      const incoming = placeImportedScene(centerScenePieces(rehydrateScenePieces(payload)), placed);
+      const incoming = centerScenePieces(rehydrateScenePieces(payload));
       if (incoming.length) commitPlaced((items) => [...items, ...incoming]);
     } catch (error) {
       console.error('Failed to import Girih model', error);
