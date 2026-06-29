@@ -1338,7 +1338,7 @@ function GirihStage({
         mesh.rotation.y = -item.rotation;
         mesh.scale.y = styleName === 'pattern' ? 0.35 : 1;
         applyPieceMaterial(mesh, item, materialName, item.id === selected);
-        updateStageEdgeOverlay(mesh, item, styleName, stageRenderSettings);
+        updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings);
       });
       updateSelectionOutline(selectionOutline, current.find((item) => item.id === selected));
     }
@@ -1504,11 +1504,13 @@ function applyStageBackground(scene, renderer, backgroundColor) {
   renderer.setClearColor(color, 1);
 }
 
-function updateStageEdgeOverlay(object, piece, styleName, renderSettings) {
+function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings) {
+  const isGlass = normalizeMaterialName(materialName) === 'glass';
   const thickness = Math.max(0, Number(renderSettings.edgeThickness) || 0);
   const signature = [
     pieceGeometrySignature(piece),
     styleName,
+    isGlass ? 'glass' : 'solid',
     renderSettings.edgeColor,
     thickness,
     renderSettings.edgeMode,
@@ -1521,13 +1523,13 @@ function updateStageEdgeOverlay(object, piece, styleName, renderSettings) {
   }
   object.userData.stageEdgeSignature = signature;
   if (thickness <= 0) return;
-  const overlay = createStageEdgeOverlay(piece, renderSettings);
+  const overlay = createStageEdgeOverlay(piece, renderSettings, isGlass);
   if (!overlay) return;
   object.userData.stageEdgeOverlay = overlay;
   object.add(overlay);
 }
 
-function createStageEdgeOverlay(piece, renderSettings) {
+function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
   if (!segments.length) return null;
   const group = new THREE.Group();
@@ -1537,7 +1539,7 @@ function createStageEdgeOverlay(piece, renderSettings) {
   const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
   const material = new THREE.MeshBasicMaterial({
     color: renderSettings.edgeColor,
-    depthTest: false,
+    depthTest: !isGlass,
     depthWrite: false,
     toneMapped: false,
   });
@@ -1721,16 +1723,20 @@ function normalizeImportedObject(object, piece) {
 }
 
 function applyPieceMaterial(object, piece, materialName, selected) {
+  const isGlass = normalizeMaterialName(materialName) === 'glass';
   object.traverse((child) => {
     if (child.userData?.isStageEdge) return;
     if (!child.isMesh || !child.material) return;
     child.material.color.set(piece.color);
-    child.material.metalness = 0.08;
-    child.material.roughness = 0.42;
-    child.material.transparent = false;
-    child.material.opacity = 1;
+    child.material.metalness = isGlass ? 0 : 0.08;
+    child.material.roughness = isGlass ? 0.04 : 0.42;
+    child.material.transparent = isGlass;
+    child.material.opacity = isGlass ? 0.42 : 1;
+    child.material.depthWrite = !isGlass;
+    child.material.side = isGlass ? THREE.DoubleSide : THREE.FrontSide;
     child.material.emissive?.set(selected ? '#362000' : '#000000');
     child.material.emissiveIntensity = selected ? 0.12 : 0;
+    child.material.needsUpdate = true;
   });
 }
 
