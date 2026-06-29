@@ -2914,7 +2914,7 @@ async function renderSceneCanvas(placed, options = {}) {
     context.shadowOffsetX = 8;
     context.shadowOffsetY = 10;
     context.globalAlpha = material === 'glass' ? 0.58 : 1;
-    context.fillStyle = material === 'marble' ? '#f8f4ed' : piece.color || '#1c7c74';
+    context.fillStyle = canvasMaterialFill(context, material, piece.color || '#1c7c74');
     context.fill();
     context.globalAlpha = 1;
     context.shadowColor = 'transparent';
@@ -2980,6 +2980,14 @@ function materialStrokeColor(material, color) {
   if (material === 'tile') return '#f5eee3';
   if (material === 'wood') return '#5a351f';
   return '#123f3a';
+}
+
+function canvasMaterialFill(context, material, color) {
+  if (material === 'marble' || material === 'tile' || material === 'wood') {
+    return context.createPattern(createMaterialPatternCanvas(color, material, 256), 'repeat') || color;
+  }
+  if (material === 'glass') return color;
+  return color;
 }
 
 async function renderIsometricSceneCanvas(placed, options = {}) {
@@ -3112,7 +3120,7 @@ function createExportMaterial(piece, materialName = 'plastic') {
 
   const texture = material === 'plastic' ? null : createMaterialTexture(color, material);
   return new THREE.MeshStandardMaterial({
-    color: material === 'marble' ? '#f8f4ed' : color,
+    color: material === 'marble' || material === 'tile' || material === 'wood' ? '#ffffff' : color,
     map: texture,
     metalness: 0,
     roughness: material === 'plastic' ? 0.36 : material === 'tile' ? 0.18 : material === 'wood' ? 0.58 : 0.24,
@@ -3121,67 +3129,104 @@ function createExportMaterial(piece, materialName = 'plastic') {
 }
 
 function createMaterialTexture(color, materialName) {
+  const canvas = createMaterialPatternCanvas(color, materialName, 512);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(materialName === 'tile' ? 3.2 : materialName === 'wood' ? 1.4 : 1.8, materialName === 'tile' ? 3.2 : materialName === 'wood' ? 2.6 : 1.8);
+  texture.anisotropy = 8;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createMaterialPatternCanvas(color, materialName, size) {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
+  canvas.width = size;
+  canvas.height = size;
   const context = canvas.getContext('2d');
-  context.fillStyle = materialName === 'marble' ? '#f8f4ed' : color;
+  context.fillStyle = materialName === 'marble' ? '#f8f4ed' : materialName === 'wood' ? woodBaseColor(color) : color;
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   if (materialName === 'marble') {
-    for (let index = 0; index < 24; index += 1) {
+    const veinCount = Math.round(size / 11);
+    for (let index = 0; index < veinCount; index += 1) {
       context.strokeStyle = `rgba(${index % 2 ? '96, 110, 112' : '205, 190, 170'}, ${0.16 + (index % 4) * 0.035})`;
       context.lineWidth = 1 + (index % 3);
       context.beginPath();
-      const startY = index * 13 - 30;
-      context.moveTo(-20, startY);
-      for (let x = -20; x <= 280; x += 28) {
-        context.lineTo(x, startY + Math.sin((x + index * 21) * 0.035) * 22 + x * 0.18);
+      const startY = index * (size / veinCount) - size * 0.12;
+      context.moveTo(-size * 0.08, startY);
+      for (let x = -size * 0.08; x <= size * 1.1; x += size / 10) {
+        context.lineTo(x, startY + Math.sin((x + index * 21) * 0.035) * (size * 0.085) + x * 0.18);
       }
       context.stroke();
     }
   }
 
   if (materialName === 'tile') {
-    const gradient = context.createLinearGradient(0, 0, 256, 256);
-    gradient.addColorStop(0, 'rgba(255,255,255,0.42)');
+    const gradient = context.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.5)');
     gradient.addColorStop(0.5, 'rgba(255,255,255,0.08)');
     gradient.addColorStop(1, 'rgba(0,0,0,0.12)');
     context.fillStyle = gradient;
-    context.fillRect(0, 0, 256, 256);
-    context.strokeStyle = 'rgba(255,255,255,0.55)';
-    context.lineWidth = 4;
-    for (let value = 0; value <= 256; value += 64) {
+    context.fillRect(0, 0, size, size);
+    const tileSize = size / 4;
+    context.strokeStyle = 'rgba(32, 28, 24, 0.42)';
+    context.lineWidth = Math.max(3, size / 64);
+    for (let value = 0; value <= size; value += tileSize) {
       context.beginPath();
       context.moveTo(value, 0);
-      context.lineTo(value, 256);
+      context.lineTo(value, size);
       context.moveTo(0, value);
-      context.lineTo(256, value);
+      context.lineTo(size, value);
       context.stroke();
+    }
+    context.strokeStyle = 'rgba(255,255,255,0.6)';
+    context.lineWidth = Math.max(1, size / 180);
+    for (let value = tileSize; value < size; value += tileSize) {
+      context.strokeRect(value + 3, 3, tileSize - 6, tileSize - 6);
     }
   }
 
   if (materialName === 'wood') {
-    context.fillStyle = shadeColor(color, 0.82);
-    context.fillRect(0, 0, 256, 256);
-    for (let y = 0; y < 256; y += 8) {
-      context.strokeStyle = y % 24 === 0 ? 'rgba(64, 36, 18, 0.28)' : 'rgba(255, 232, 176, 0.16)';
-      context.lineWidth = y % 24 === 0 ? 3 : 1;
+    const baseGradient = context.createLinearGradient(0, 0, size, 0);
+    baseGradient.addColorStop(0, shadeColor(woodBaseColor(color), 0.72));
+    baseGradient.addColorStop(0.5, woodBaseColor(color));
+    baseGradient.addColorStop(1, shadeColor(woodBaseColor(color), 1.12));
+    context.fillStyle = baseGradient;
+    context.fillRect(0, 0, size, size);
+    for (let y = 0; y < size; y += size / 38) {
+      context.strokeStyle = y % (size / 8) < 2 ? 'rgba(62, 31, 13, 0.48)' : 'rgba(255, 218, 150, 0.22)';
+      context.lineWidth = y % (size / 8) < 2 ? 3 : 1;
       context.beginPath();
       context.moveTo(0, y);
-      for (let x = 0; x <= 256; x += 18) {
-        context.lineTo(x, y + Math.sin((x + y) * 0.05) * 5);
+      for (let x = 0; x <= size; x += size / 18) {
+        context.lineTo(x, y + Math.sin((x + y) * 0.045) * (size / 42) + Math.sin(x * 0.018) * (size / 70));
       }
+      context.stroke();
+    }
+    for (let index = 0; index < 5; index += 1) {
+      const x = size * (0.18 + index * 0.17);
+      const y = size * (0.2 + ((index * 37) % 55) / 100);
+      context.strokeStyle = 'rgba(74, 35, 13, 0.32)';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.ellipse(x, y, size * 0.055, size * 0.022, index * 0.4, 0, Math.PI * 2);
       context.stroke();
     }
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1.8, 1.8);
-  texture.needsUpdate = true;
-  return texture;
+  return canvas;
+}
+
+function woodBaseColor(color) {
+  const hex = color.replace('#', '');
+  const full = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
+  const number = Number.parseInt(full, 16);
+  if (!Number.isFinite(number)) return '#9a6336';
+  const r = (number >> 16) & 255;
+  const g = (number >> 8) & 255;
+  const b = number & 255;
+  return `rgb(${Math.round(r * 0.28 + 145 * 0.72)}, ${Math.round(g * 0.2 + 91 * 0.8)}, ${Math.round(b * 0.16 + 42 * 0.84)})`;
 }
 
 function downloadCanvasPng(filename, canvas) {
