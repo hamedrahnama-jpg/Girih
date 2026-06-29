@@ -1053,6 +1053,27 @@ function applyLibraryPieceToInstance(piece, instance) {
   };
 }
 
+function pieceGeometrySignature(piece) {
+  return JSON.stringify({
+    type: piece.type || 'shape',
+    height: Number(piece.height) || 0.18,
+    stageWidth: Number(piece.stageWidth) || null,
+    stageLength: Number(piece.stageLength) || null,
+    keepAspectRatio: piece.keepAspectRatio !== false,
+    sourceHeightPx: Number(piece.sourceHeightPx) || null,
+    sourceWidthPx: Number(piece.sourceWidthPx) || null,
+    sourceLengthPx: Number(piece.sourceLengthPx) || null,
+    sourceFootprintScale: Number(piece.sourceFootprintScale) || null,
+    points: piece.points || [],
+    snapEdges: piece.snapEdges || [],
+    verticalEdges: piece.verticalEdges || [],
+    displayEdges: piece.displayEdges || [],
+    objText: piece.objText || '',
+    glbDataUrl: piece.glbDataUrl || '',
+    glbUrl: piece.glbUrl || '',
+  });
+}
+
 function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange }) {
   const mountRef = useRef(null);
   const stateRef = useRef({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange });
@@ -1143,9 +1164,17 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
       }
       current.forEach((item) => {
         let mesh = meshes.get(item.id);
+        const renderSignature = pieceGeometrySignature(item);
+        if (mesh && mesh.userData.renderSignature !== renderSignature) {
+          group.remove(mesh);
+          disposeObject(mesh);
+          meshes.delete(item.id);
+          mesh = null;
+        }
         if (!mesh) {
           mesh = createPieceObject(item);
           mesh.userData.id = item.id;
+          mesh.userData.renderSignature = renderSignature;
           meshes.set(item.id, mesh);
           group.add(mesh);
         }
