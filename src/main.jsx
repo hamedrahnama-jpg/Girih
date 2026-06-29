@@ -3481,6 +3481,7 @@ function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_
 
 async function renderIsometricSceneCanvas(placed, options = {}) {
   const renderSettings = normalizeRenderSettings(options.renderSettings);
+  const exportMaterial = normalizeMaterialName(options.material);
   const orientation = options.orientation || 'landscape';
   const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -3490,17 +3491,21 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(renderSettings.backgroundColor);
-  const environment = createGlassEnvironmentMap(renderSettings.backgroundColor);
-  scene.environment = environment;
+  const environment = exportMaterial === 'glass' ? createGlassEnvironmentMap(renderSettings.backgroundColor) : null;
+  if (environment) scene.environment = environment;
   const group = new THREE.Group();
   scene.add(group);
 
-  const ambient = new THREE.HemisphereLight('#fff9ea', '#7f8f88', 2.3);
+  const ambient = new THREE.HemisphereLight(
+    exportMaterial === 'glass' ? '#fff9ea' : '#ffffff',
+    exportMaterial === 'glass' ? '#7f8f88' : '#4f4a42',
+    exportMaterial === 'glass' ? 2.3 : 2,
+  );
   scene.add(ambient);
   const key = new THREE.DirectionalLight('#ffffff', 2.1);
   key.position.set(-5, 8, 4);
   scene.add(key);
-  const fill = new THREE.DirectionalLight('#d7fff7', 0.85);
+  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? '#d7fff7' : '#ffffff', exportMaterial === 'glass' ? 0.85 : 0.45);
   fill.position.set(5, 4, -6);
   scene.add(fill);
 
