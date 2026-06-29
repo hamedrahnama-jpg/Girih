@@ -13,6 +13,7 @@ import {
   Grid3X3,
   Image,
   Layers3,
+  Menu,
   Plus,
   Printer,
   Redo2,
@@ -21,6 +22,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  X,
 } from 'lucide-react';
 import * as THREE from 'three';
 import './styles.css';
@@ -95,6 +97,9 @@ function App() {
   const [exportView, setExportView] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
   const [printPreview, setPrintPreview] = useState(null);
+  const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
   const importSceneInputRef = useRef(null);
 
   const selected = placed.find((item) => item.id === selectedId);
@@ -193,6 +198,7 @@ function App() {
       };
       return [...items, placeNewPieceNearCollection(instance, items)];
     });
+    setMobilePiecesOpen(false);
   }
 
   function updatePlaced(id, transform) {
@@ -419,7 +425,29 @@ function App() {
 
   return (
     <div className="app-shell">
-      <aside className="library-panel">
+      <div className="mobile-topbar">
+        <button type="button" onClick={() => setMobilePiecesOpen(true)}>
+          <Layers3 size={18} /> Shapes
+        </button>
+        <button type="button" onClick={() => setMobileMenuOpen(true)}>
+          <Menu size={18} /> Menu
+        </button>
+      </div>
+
+      {(mobilePiecesOpen || mobileMenuOpen || mobileAdminOpen) && (
+        <button
+          type="button"
+          className="mobile-scrim"
+          aria-label="Close mobile panel"
+          onClick={() => {
+            setMobilePiecesOpen(false);
+            setMobileMenuOpen(false);
+            setMobileAdminOpen(false);
+          }}
+        />
+      )}
+
+      <aside className={`library-panel ${mobilePiecesOpen ? 'open' : ''}`}>
         <div className="brand-block">
           <Grid3X3 size={28} />
           <div>
@@ -428,10 +456,13 @@ function App() {
           </div>
         </div>
 
-        <section className="panel-section">
+        <section className="panel-section piece-library-section">
           <div className="section-title">
             <Layers3 size={18} />
             <span>Piece Library</span>
+            <button type="button" className="mobile-close-button" aria-label="Close shapes panel" onClick={() => setMobilePiecesOpen(false)}>
+              <X size={16} />
+            </button>
           </div>
           <div className="piece-list">
             {pieces.map((piece) => (
@@ -443,6 +474,122 @@ function App() {
             ))}
           </div>
         </section>
+
+        <section className="panel-section controls-grid desktop-library-controls">
+          <label>
+            Style
+            <select value={style} onChange={(event) => setStyle(event.target.value)}>
+              <option value="presentation">Presentation render</option>
+              <option value="manufacturing">Manufacturing layout</option>
+              <option value="pattern">Flat pattern</option>
+            </select>
+          </label>
+          <label>
+            Material
+            <select value={material} onChange={(event) => setMaterial(event.target.value)}>
+              <option value="ceramic">Ceramic glaze</option>
+              <option value="wood">Carved wood</option>
+              <option value="brass">Brushed brass</option>
+              <option value="stone">Matte stone</option>
+            </select>
+          </label>
+        </section>
+
+        <section className="panel-section model-panel desktop-library-controls">
+          <div className="section-title">
+            <Save size={18} />
+            <span>Models</span>
+          </div>
+          <label>
+            Model name
+            <input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="My Girih model" />
+          </label>
+          <div className="action-row">
+            <button onClick={saveCurrentModel} disabled={!placed.length}>
+              <Save size={16} /> Save
+            </button>
+            <button onClick={() => importSceneInputRef.current?.click()}>
+              <Upload size={16} /> Import
+            </button>
+          </div>
+          <input ref={importSceneInputRef} className="hidden-file" type="file" accept="application/json,.json" onChange={importSceneModelFile} />
+          <div className="model-list">
+            {savedModels.map((model) => (
+              <div className="model-row" key={model.id}>
+                <span>
+                  <strong>{model.name}</strong>
+                  <small>{model.pieces?.length || 0} pieces</small>
+                </span>
+                <button title="Load and clear stage" onClick={() => loadSavedModel(model)}>
+                  Load
+                </button>
+                <button title="Add to current stage" onClick={() => importSavedModel(model)}>
+                  Add
+                </button>
+                <button aria-label={`Delete ${model.name}`} onClick={() => deleteSavedModel(model.id)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel-section controls-grid desktop-library-controls">
+          <div className="section-title">
+            <Printer size={18} />
+            <span>Export View</span>
+          </div>
+          <label>
+            Camera scenario
+            <select value={exportView} onChange={(event) => setExportView(event.target.value)}>
+              <option value="top">Flat top view</option>
+              <option value="isometric">Isometric view</option>
+            </select>
+          </label>
+          <label>
+            Page orientation
+            <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+            </select>
+          </label>
+          <div className="action-row">
+            <button onClick={openPrintPreview} disabled={!placed.length}>
+              <Eye size={16} /> Preview
+            </button>
+            <button onClick={printCurrentModel} disabled={!placed.length}>
+              <Printer size={16} /> Print
+            </button>
+          </div>
+        </section>
+
+        <section className="panel-section action-row desktop-library-controls">
+          <button onClick={() => exportScene('json')} disabled={!placed.length}>
+            <Download size={16} /> JSON
+          </button>
+          <button onClick={() => exportScene('obj')} disabled={!placed.length}>
+            <FileArchive size={16} /> OBJ
+          </button>
+          <button onClick={() => exportScene('png')} disabled={!placed.length}>
+            <Image size={16} /> PNG
+          </button>
+          <button onClick={() => exportScene('pdf')} disabled={!placed.length}>
+            <FileText size={16} /> PDF
+          </button>
+          <button onClick={resetScene} disabled={!placed.length}>
+            <RotateCcw size={16} /> Reset
+          </button>
+        </section>
+      </aside>
+
+      <aside className={`mobile-menu-panel ${mobileMenuOpen ? 'open' : ''}`}>
+        <div className="section-title">
+          <Menu size={18} />
+          <span>Menu</span>
+          <button type="button" className="mobile-close-button" aria-label="Close menu" onClick={() => setMobileMenuOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
 
         <section className="panel-section controls-grid">
           <label>
@@ -481,7 +628,6 @@ function App() {
               <Upload size={16} /> Import
             </button>
           </div>
-          <input ref={importSceneInputRef} className="hidden-file" type="file" accept="application/json,.json" onChange={importSceneModelFile} />
           <div className="model-list">
             {savedModels.map((model) => (
               <div className="model-row" key={model.id}>
@@ -547,6 +693,15 @@ function App() {
           </button>
           <button onClick={resetScene} disabled={!placed.length}>
             <RotateCcw size={16} /> Reset
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              setMobileAdminOpen(true);
+            }}
+          >
+            <Upload size={16} /> Admin panel
           </button>
         </section>
       </aside>
@@ -651,10 +806,13 @@ function App() {
         )}
       </main>
 
-      <aside className="admin-panel">
+      <aside className={`admin-panel ${mobileAdminOpen ? 'open' : ''}`}>
         <div className="section-title">
           <Upload size={18} />
           <span>Admin Panel</span>
+          <button type="button" className="mobile-close-button" aria-label="Close admin panel" onClick={() => setMobileAdminOpen(false)}>
+            <X size={16} />
+          </button>
         </div>
         <form onSubmit={savePiece} className="admin-form">
           <label>

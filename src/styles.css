@@ -43,6 +43,13 @@ button:disabled {
   overflow: hidden;
 }
 
+.mobile-topbar,
+.mobile-menu-panel,
+.mobile-close-button,
+.mobile-scrim {
+  display: none;
+}
+
 .library-panel,
 .admin-panel {
   background: #fffaf1;
@@ -98,6 +105,10 @@ button:disabled {
   gap: 8px;
   font-weight: 700;
   margin-bottom: 10px;
+}
+
+.section-title span {
+  flex: 1;
 }
 
 .piece-list,
@@ -485,32 +496,194 @@ textarea {
 
 @media (max-width: 760px) {
   body {
-    overflow: auto;
+    overflow: hidden;
   }
 
   .app-shell {
+    display: block;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .mobile-topbar {
+    position: fixed;
+    z-index: 20;
+    top: 10px;
+    left: 10px;
+    right: 10px;
     display: flex;
-    flex-direction: column;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+    justify-content: space-between;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .mobile-topbar button,
+  .mobile-close-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    border: 1px solid rgba(216, 204, 186, 0.95);
+    border-radius: 8px;
+    background: rgba(255, 250, 241, 0.94);
+    color: #2d2924;
+    padding: 8px 11px;
+    box-shadow: 0 8px 24px rgba(36, 30, 24, 0.12);
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+  }
+
+  .mobile-close-button {
+    min-height: 32px;
+    width: 32px;
+    padding: 0;
+    margin-left: auto;
+    box-shadow: none;
+  }
+
+  .mobile-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: block;
+    background: rgba(36, 30, 24, 0.2);
   }
 
   .library-panel,
+  .mobile-menu-panel,
   .admin-panel {
-    height: auto;
-    max-height: none;
-    overflow: visible;
+    position: fixed;
+    top: 0;
+    z-index: 40;
+    display: block;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
     border: 0;
-    border-bottom: 1px solid #d8ccba;
+    background: #fffaf1;
+    box-shadow: 0 18px 55px rgba(36, 30, 24, 0.25);
+    transition: transform 180ms ease;
+    scrollbar-gutter: stable;
+  }
+
+  .library-panel {
+    left: 0;
+    width: min(78vw, 268px);
+    padding: 58px 12px 14px;
+    border-right: 1px solid #d8ccba;
+    transform: translateX(-105%);
+  }
+
+  .library-panel.open {
+    transform: translateX(0);
+  }
+
+  .mobile-menu-panel,
+  .admin-panel {
+    right: 0;
+    width: min(90vw, 340px);
+    padding: 58px 16px 18px;
+    border-left: 1px solid #d8ccba;
+    transform: translateX(105%);
+  }
+
+  .mobile-menu-panel.open,
+  .admin-panel.open {
+    transform: translateX(0);
+  }
+
+  .brand-block,
+  .desktop-library-controls {
+    display: none;
+  }
+
+  .piece-library-section {
+    margin-top: 0;
+  }
+
+  .piece-list {
+    gap: 6px;
+  }
+
+  .piece-card {
+    grid-template-columns: 34px minmax(0, 1fr) 14px;
+    gap: 7px;
+    min-height: 44px;
+    padding: 5px 7px;
+    font-size: 13px;
+  }
+
+  .piece-card span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .piece-icon {
+    width: 30px;
+    height: 30px;
   }
 
   .stage-wrap {
-    height: 70vh;
+    height: 100dvh;
   }
 
   .stage-canvas {
-    height: 70vh;
-    min-height: 460px;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .stage-toolbar {
+    top: 58px;
+    left: 10px;
+    right: 10px;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .stage-toolbar > div:first-child {
+    max-width: 150px;
+    padding: 8px 9px;
+  }
+
+  .stage-toolbar strong {
+    font-size: 13px;
+  }
+
+  .stage-toolbar span {
+    font-size: 11px;
+  }
+
+  .stage-tools {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .stage-view-controls button {
+    min-height: 34px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .history-controls button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .selection-chip {
+    max-width: 160px;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+
+  .mobile-menu-panel .model-list {
+    max-height: 150px;
+  }
+
+  .object-menu {
+    max-width: calc(100vw - 24px);
   }
 }
