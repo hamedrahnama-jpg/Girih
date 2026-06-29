@@ -174,6 +174,34 @@ label {
   width: auto;
 }
 
+.dimension-readout {
+  display: grid;
+  grid-template-columns: 1fr repeat(3, auto);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #ded2c1;
+  border-radius: 7px;
+  background: #fffaf1;
+  color: #65594d;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.dimension-readout span {
+  font-weight: 800;
+}
+
+.dimension-readout strong {
+  color: #2d2924;
+  font-size: 11px;
+}
+
+.dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 input,
 select,
 textarea {
@@ -472,7 +500,7 @@ textarea {
 }
 
 .admin-row {
-  grid-template-columns: 42px 1fr 32px 32px;
+  grid-template-columns: 42px 32px 1fr 32px 32px;
   display: grid;
   gap: 8px;
   padding: 7px;
@@ -496,6 +524,15 @@ textarea {
   border-radius: 6px;
   background: #f8f1e8;
   color: #2d2924;
+}
+
+.admin-color-input {
+  width: 32px;
+  height: 32px;
+  align-self: center;
+  padding: 2px;
+  border-radius: 7px;
+  cursor: pointer;
 }
 
 @media (max-width: 1120px) {
@@ -635,6 +672,11 @@ textarea {
   .piece-icon {
     width: 30px;
     height: 30px;
+  }
+
+  .dimension-readout,
+  .dimension-grid {
+    grid-template-columns: 1fr;
   }
 
   .stage-wrap {

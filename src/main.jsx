@@ -70,6 +70,8 @@ function publicModelPiece(id, name, filename, color) {
     verticalEdges: [],
     displayEdges: [],
     sourceHeightPx: '',
+    sourceWidthPx: '',
+    sourceLengthPx: '',
     sourceFootprintScale: '',
     keepAspectRatio: true,
     analysisVersion: 0,
@@ -121,6 +123,8 @@ function App() {
         !piece.snapEdges?.length ||
         piece.sourceHeightPx === undefined ||
         piece.sourceHeightPx === '' ||
+        piece.sourceWidthPx === undefined ||
+        piece.sourceLengthPx === undefined ||
         piece.sourceFootprintScale === undefined ||
         piece.analysisVersion !== ANALYSIS_VERSION ||
         needsTargetedDisplayBoundary;
@@ -138,6 +142,8 @@ function App() {
               displayEdges: usesTargetedRealBoundary(item) ? analysis.displayEdges : item.displayEdges,
               height: item.height || analysis.sourceHeightPx || analysis.height,
               sourceHeightPx: analysis.sourceHeightPx,
+              sourceWidthPx: analysis.sourceWidthPx,
+              sourceLengthPx: analysis.sourceLengthPx,
               sourceFootprintScale: analysis.sourceFootprintScale,
               analysisVersion: analysis.analysisVersion,
             };
@@ -268,7 +274,11 @@ function App() {
       name: draft.name.trim() || 'Untitled Piece',
       color: draft.color,
       height: Number(draft.height) || 0.18,
+      stageWidth: parseOptionalNumber(draft.stageWidth),
+      stageLength: parseOptionalNumber(draft.stageLength),
       sourceHeightPx: parseOptionalNumber(draft.sourceHeightPx),
+      sourceWidthPx: parseOptionalNumber(draft.sourceWidthPx),
+      sourceLengthPx: parseOptionalNumber(draft.sourceLengthPx),
       sourceFootprintScale: parseOptionalNumber(draft.sourceFootprintScale),
       keepAspectRatio: draft.keepAspectRatio !== false,
       analysisVersion: draft.analysisVersion || ANALYSIS_VERSION,
@@ -303,7 +313,11 @@ function App() {
       name: piece.name,
       color: piece.color,
       height: piece.height,
+      stageWidth: pieceStageDimensions(piece).width,
+      stageLength: pieceStageDimensions(piece).length,
       sourceHeightPx: piece.sourceHeightPx ?? '',
+      sourceWidthPx: piece.sourceWidthPx ?? '',
+      sourceLengthPx: piece.sourceLengthPx ?? '',
       sourceFootprintScale: piece.sourceFootprintScale ?? '',
       keepAspectRatio: piece.keepAspectRatio !== false,
       analysisVersion: piece.analysisVersion || '',
@@ -326,7 +340,11 @@ function App() {
       name: file.name.replace(/\.(obj|glb)$/i, ''),
       color: draft.color,
       height: imported.sourceHeightPx || imported.height,
+      stageWidth: imported.sourceWidthPx || pieceStageDimensions(imported).width,
+      stageLength: imported.sourceLengthPx || pieceStageDimensions(imported).length,
       sourceHeightPx: imported.sourceHeightPx ?? '',
+      sourceWidthPx: imported.sourceWidthPx ?? '',
+      sourceLengthPx: imported.sourceLengthPx ?? '',
       sourceFootprintScale: imported.sourceFootprintScale ?? '',
       keepAspectRatio: draft.keepAspectRatio !== false,
       analysisVersion: imported.analysisVersion,
@@ -341,13 +359,30 @@ function App() {
     event.target.value = '';
   }
 
-  function updateImportedHeight(value) {
-    const nextHeight = Number(value);
-    const nextDraft = { ...draft, sourceHeightPx: value };
-    if (Number.isFinite(nextHeight) && nextHeight > 0) {
-      nextDraft.height = Number(nextHeight.toFixed(4));
+  function updateDraftDimension(field, value) {
+    const next = { ...draft, [field]: value };
+    const valueNumber = Number(value);
+    if (draft.keepAspectRatio !== false && Number.isFinite(valueNumber) && valueNumber > 0) {
+      const dimensions = draftStageDimensions(draft);
+      const currentValue = dimensions[field];
+      if (Number.isFinite(currentValue) && currentValue > 0) {
+        const ratio = valueNumber / currentValue;
+        if (field !== 'stageWidth') next.stageWidth = formatDimensionValue(dimensions.stageWidth * ratio);
+        if (field !== 'stageLength') next.stageLength = formatDimensionValue(dimensions.stageLength * ratio);
+        if (field !== 'height') next.height = formatDimensionValue(dimensions.height * ratio);
+      }
     }
-    setDraft(nextDraft);
+    setDraft(next);
+  }
+
+  function updatePieceColor(piece, color) {
+    const nextPiece = { ...piece, color };
+    saveAdminPieceSetting(nextPiece);
+    setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
+    commitPlaced((items) =>
+      items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
+    );
+    setDraft((current) => (editingId === piece.id ? { ...current, color } : current));
   }
 
   function deletePiece(id) {
@@ -851,16 +886,6 @@ function App() {
               onChange={(event) => setDraft({ ...draft, color: event.target.value })}
             />
           </label>
-          <label>
-            Stage height
-            <input
-              type="number"
-              min="0.05"
-              step="0.01"
-              value={draft.height}
-              onChange={(event) => setDraft({ ...draft, height: event.target.value })}
-            />
-          </label>
           {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
             <label className="checkbox-field">
               <input
@@ -872,26 +897,45 @@ function App() {
             </label>
           )}
           {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
+            <div className="dimension-readout">
+              <span>Original size</span>
+              <strong>W {formatDimensionLabel(draft.sourceWidthPx)}</strong>
+              <strong>L {formatDimensionLabel(draft.sourceLengthPx)}</strong>
+              <strong>H {formatDimensionLabel(draft.sourceHeightPx)}</strong>
+            </div>
+          )}
+          <div className="dimension-grid">
             <label>
-              Imported height
+              Stage width
               <input
                 type="number"
-                min="0"
+                min="0.01"
                 step="0.001"
-                value={draft.sourceHeightPx}
-                onChange={(event) => updateImportedHeight(event.target.value)}
+                value={draft.stageWidth}
+                onChange={(event) => updateDraftDimension('stageWidth', event.target.value)}
               />
-              <span className="field-note">Edit this to match the needed real height; the stage uses this height directly.</span>
             </label>
-          )}
-          <label>
-            Edge points
-            <textarea
-              value={draft.points}
-              onChange={(event) => setDraft({ ...draft, points: event.target.value })}
-              placeholder="-1,-1 1,-1 1,1 -1,1"
-            />
-          </label>
+            <label>
+              Stage length
+              <input
+                type="number"
+                min="0.01"
+                step="0.001"
+                value={draft.stageLength}
+                onChange={(event) => updateDraftDimension('stageLength', event.target.value)}
+              />
+            </label>
+            <label>
+              Stage height
+              <input
+                type="number"
+                min="0.01"
+                step="0.001"
+                value={draft.height}
+                onChange={(event) => updateDraftDimension('height', event.target.value)}
+              />
+            </label>
+          </div>
           <button type="submit">
             <Save size={16} />
             {editingId ? 'Update piece' : 'Import piece'}
@@ -902,6 +946,13 @@ function App() {
           {pieces.map((piece) => (
             <div className="admin-row" key={piece.id}>
               <PieceIcon piece={piece} />
+              <input
+                className="admin-color-input"
+                type="color"
+                value={piece.color}
+                aria-label={`Change ${piece.name} color`}
+                onChange={(event) => updatePieceColor(piece, event.target.value)}
+              />
               <span>
                 {piece.name}
                 {piece.type === 'obj' && <small>OBJ</small>}
@@ -1294,7 +1345,8 @@ function updateSelectionOutline(outline, piece) {
 
 function createShapePieceObject(piece) {
   const shape = new THREE.Shape();
-  piece.points.forEach(([x, y], index) => {
+  const points = getLocalCollisionPoints(piece);
+  points.forEach(([x, y], index) => {
     if (index === 0) shape.moveTo(x, y);
     else shape.lineTo(x, y);
   });
@@ -1374,9 +1426,15 @@ function normalizeImportedObject(object, piece) {
   const size = bounds.getSize(new THREE.Vector3());
   const center = bounds.getCenter(new THREE.Vector3());
   const verticalScale = importedUniformScale(piece, size.y || piece.sourceHeightPx || 1);
-  const horizontalScale = piece.keepAspectRatio === false ? Number(piece.sourceFootprintScale) || 1 : verticalScale;
-  object.scale.set(horizontalScale, verticalScale, horizontalScale);
-  object.position.set(-center.x * horizontalScale, -bounds.min.y * verticalScale, -center.z * horizontalScale);
+  const sourceWidth = Number(piece.sourceWidthPx) || size.x || 1;
+  const sourceLength = Number(piece.sourceLengthPx) || size.z || 1;
+  const stageWidth = Number(piece.stageWidth);
+  const stageLength = Number(piece.stageLength);
+  const fallbackScale = piece.keepAspectRatio === false ? Number(piece.sourceFootprintScale) || 1 : verticalScale;
+  const scaleX = Number.isFinite(stageWidth) && stageWidth > 0 ? stageWidth / sourceWidth : fallbackScale;
+  const scaleZ = Number.isFinite(stageLength) && stageLength > 0 ? stageLength / sourceLength : fallbackScale;
+  object.scale.set(scaleX, verticalScale, scaleZ);
+  object.position.set(-center.x * scaleX, -bounds.min.y * verticalScale, -center.z * scaleZ);
 }
 
 function applyPieceMaterial(object, piece, materialName, selected) {
@@ -1613,19 +1671,17 @@ function collisionPolygon(piece) {
 }
 
 function getLocalCollisionPoints(piece) {
-  const multiplier = importedFootprintMultiplier(piece);
+  return scaleLocalPointsForPiece(piece, getBaseLocalCollisionPoints(piece));
+}
+
+function getBaseLocalCollisionPoints(piece) {
   if ((piece.type === 'obj' || piece.type === 'glb') && piece.snapEdges?.length) {
-    const segments = piece.snapEdges.map(([start, end]) => [
-      multiplier === 1 ? start : scalePoint(start, multiplier),
-      multiplier === 1 ? end : scalePoint(end, multiplier),
-    ]);
-    const boundary = orderedBoundaryPoints(segments);
+    const boundary = orderedBoundaryPoints(piece.snapEdges);
     if (boundary.length >= 3) return boundary;
   }
-  if (piece.points?.length) {
-    return piece.points.map((point) => (multiplier === 1 ? point : scalePoint(point, multiplier)));
-  }
-  const edgePoints = getLocalSnapSegments(piece).flat();
+  if (piece.points?.length) return piece.points;
+  const rawSegments = piece.snapEdges?.length ? piece.snapEdges : [];
+  const edgePoints = rawSegments.flat();
   return convexHull(dedupePoints(edgePoints));
 }
 
@@ -1842,17 +1898,79 @@ function worldEdges(piece) {
 
 function getLocalSnapSegments(piece) {
   if (piece.snapEdges?.length) return scaleImportedSegments(piece, piece.snapEdges);
-  return piece.points.map((point, index) => [point, piece.points[(index + 1) % piece.points.length]]);
+  return piece.points.map((point, index) => [
+    scaleLocalPointForPiece(piece, point),
+    scaleLocalPointForPiece(piece, piece.points[(index + 1) % piece.points.length]),
+  ]);
 }
 
 function scaleImportedSegments(piece, segments) {
-  const multiplier = importedFootprintMultiplier(piece);
-  if (multiplier === 1) return segments;
-  return segments.map(([start, end]) => [scalePoint(start, multiplier), scalePoint(end, multiplier)]);
+  return segments.map(([start, end]) => [scaleLocalPointForPiece(piece, start), scaleLocalPointForPiece(piece, end)]);
 }
 
-function scalePoint([x, y], multiplier) {
-  return [x * multiplier, y * multiplier];
+function scaleLocalPointsForPiece(piece, points) {
+  return points.map((point) => scaleLocalPointForPiece(piece, point));
+}
+
+function scaleLocalPointForPiece(piece, [x, y]) {
+  const scale = footprintScaleForPiece(piece);
+  return [x * scale.x, y * scale.y];
+}
+
+function footprintScaleForPiece(piece) {
+  const base = baseFootprintDimensions(piece);
+  const fallback = importedFootprintMultiplier(piece);
+  const stageWidth = Number(piece.stageWidth);
+  const stageLength = Number(piece.stageLength);
+  return {
+    x: Number.isFinite(stageWidth) && stageWidth > 0 && base.width > 0 ? stageWidth / base.width : fallback,
+    y: Number.isFinite(stageLength) && stageLength > 0 && base.length > 0 ? stageLength / base.length : fallback,
+  };
+}
+
+function baseFootprintDimensions(piece) {
+  const points = getBaseLocalCollisionPoints(piece);
+  if (!points.length) return { width: 1, length: 1 };
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs) || 1,
+    length: Math.max(...ys) - Math.min(...ys) || 1,
+  };
+}
+
+function pieceStageDimensions(piece) {
+  const base = baseFootprintDimensions(piece);
+  const scale = footprintScaleForPiece(piece);
+  return {
+    stageWidth: base.width * scale.x,
+    stageLength: base.length * scale.y,
+    width: base.width * scale.x,
+    length: base.length * scale.y,
+    height: Number(piece.height) || 0.18,
+  };
+}
+
+function draftStageDimensions(draft) {
+  return pieceStageDimensions({
+    ...draft,
+    height: Number(draft.height) || 0.18,
+    stageWidth: parseOptionalNumber(draft.stageWidth),
+    stageLength: parseOptionalNumber(draft.stageLength),
+    sourceHeightPx: parseOptionalNumber(draft.sourceHeightPx),
+    sourceFootprintScale: parseOptionalNumber(draft.sourceFootprintScale),
+    points: parsePoints(draft.points),
+    type: draft.glbDataUrl || draft.glbUrl ? 'glb' : draft.objText ? 'obj' : 'shape',
+  });
+}
+
+function formatDimensionValue(value) {
+  return Number.isFinite(Number(value)) ? Number(Number(value).toFixed(4)) : '';
+}
+
+function formatDimensionLabel(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Number(number.toFixed(4)) : 'n/a';
 }
 
 function importedFootprintMultiplier(piece) {
@@ -1945,8 +2063,7 @@ function usesTargetedRealBoundary(piece) {
 
 function getIconVerticalPoints(piece) {
   if (!piece.verticalEdges?.length) return [];
-  const multiplier = importedFootprintMultiplier(piece);
-  return piece.verticalEdges.map((point) => (multiplier === 1 ? point : scalePoint(point, multiplier)));
+  return piece.verticalEdges.map((point) => scaleLocalPointForPiece(piece, point));
 }
 
 function usePersistentPieces() {
@@ -1985,7 +2102,11 @@ function saveAdminPieceSetting(piece) {
   const nextSetting = {
     color: piece.color,
     height: piece.height,
+    stageWidth: piece.stageWidth,
+    stageLength: piece.stageLength,
     sourceHeightPx: piece.sourceHeightPx,
+    sourceWidthPx: piece.sourceWidthPx,
+    sourceLengthPx: piece.sourceLengthPx,
     sourceFootprintScale: piece.sourceFootprintScale,
     keepAspectRatio: piece.keepAspectRatio !== false,
   };
@@ -2009,12 +2130,26 @@ function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.
     ...piece,
     color: setting.color || piece.color,
     height: Number.isFinite(Number(setting.height)) ? Number(setting.height) : piece.height,
+    stageWidth: Number.isFinite(Number(setting.stageWidth)) ? Number(setting.stageWidth) : piece.stageWidth,
+    stageLength: Number.isFinite(Number(setting.stageLength)) ? Number(setting.stageLength) : piece.stageLength,
     sourceHeightPx:
       setting.sourceHeightPx === undefined || setting.sourceHeightPx === ''
         ? piece.sourceHeightPx
         : Number.isFinite(Number(setting.sourceHeightPx))
           ? Number(setting.sourceHeightPx)
           : piece.sourceHeightPx,
+    sourceWidthPx:
+      setting.sourceWidthPx === undefined || setting.sourceWidthPx === ''
+        ? piece.sourceWidthPx
+        : Number.isFinite(Number(setting.sourceWidthPx))
+          ? Number(setting.sourceWidthPx)
+          : piece.sourceWidthPx,
+    sourceLengthPx:
+      setting.sourceLengthPx === undefined || setting.sourceLengthPx === ''
+        ? piece.sourceLengthPx
+        : Number.isFinite(Number(setting.sourceLengthPx))
+          ? Number(setting.sourceLengthPx)
+          : piece.sourceLengthPx,
     sourceFootprintScale:
       setting.sourceFootprintScale === undefined || setting.sourceFootprintScale === ''
         ? piece.sourceFootprintScale
@@ -2045,11 +2180,15 @@ function emptyDraft() {
     name: '',
     color: '#1c7c74',
     height: 0.18,
+    stageWidth: 2,
+    stageLength: 2,
     points: '-1,-1 1,-1 1,1 -1,1',
     snapEdges: [],
     verticalEdges: [],
     displayEdges: [],
     sourceHeightPx: '',
+    sourceWidthPx: '',
+    sourceLengthPx: '',
     sourceFootprintScale: '',
     keepAspectRatio: true,
     analysisVersion: '',
@@ -2084,6 +2223,8 @@ async function readObjModel(file) {
     verticalEdges: analysis.verticalEdges,
     displayEdges: analysis.displayEdges,
     sourceHeightPx: analysis.sourceHeightPx,
+    sourceWidthPx: analysis.sourceWidthPx,
+    sourceLengthPx: analysis.sourceLengthPx,
     sourceFootprintScale: analysis.sourceFootprintScale,
     analysisVersion: analysis.analysisVersion,
     height: analysis.height,
@@ -2107,7 +2248,7 @@ function analyzeObjText(objText) {
 async function readGlbModel(file) {
   const buffer = await file.arrayBuffer();
   const dataUrl = await arrayBufferToDataUrl(buffer, 'model/gltf-binary');
-  const { points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, analysisVersion, height } = await parseGlbFootprint(buffer);
+  const { points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, analysisVersion, height } = await parseGlbFootprint(buffer);
   return {
     type: 'glb',
     glbDataUrl: dataUrl,
@@ -2116,6 +2257,8 @@ async function readGlbModel(file) {
     verticalEdges,
     displayEdges,
     sourceHeightPx,
+    sourceWidthPx,
+    sourceLengthPx,
     sourceFootprintScale,
     analysisVersion,
     height,
@@ -2169,6 +2312,8 @@ async function parseGlbFootprint(buffer) {
       verticalEdges: [],
       displayEdges: [],
       sourceHeightPx: '',
+      sourceWidthPx: '',
+      sourceLengthPx: '',
       sourceFootprintScale: '',
       analysisVersion: ANALYSIS_VERSION,
       height: 0.18,
@@ -2225,6 +2370,8 @@ function analyzeGeometryFootprint(vertices, triangles) {
       verticalEdges: [],
       displayEdges: polygonToEdges(points),
       sourceHeightPx: '',
+      sourceWidthPx: '',
+      sourceLengthPx: '',
       sourceFootprintScale: '',
       analysisVersion: ANALYSIS_VERSION,
       height: 0.18,
@@ -2234,6 +2381,8 @@ function analyzeGeometryFootprint(vertices, triangles) {
   const fallbackPoints = footprintFromVertices(vertices);
   const height = estimateHeightFromVertices(vertices);
   const sourceHeightPx = measureSourceHeightPx(vertices);
+  const sourceWidthPx = basis.width;
+  const sourceLengthPx = basis.length;
   if (!triangles.length) {
     return {
       points: fallbackPoints,
@@ -2241,6 +2390,8 @@ function analyzeGeometryFootprint(vertices, triangles) {
       verticalEdges: [],
       displayEdges: polygonToEdges(fallbackPoints),
       sourceHeightPx,
+      sourceWidthPx,
+      sourceLengthPx,
       sourceFootprintScale: basis.scale,
       analysisVersion: ANALYSIS_VERSION,
       height,
@@ -2285,6 +2436,8 @@ function analyzeGeometryFootprint(vertices, triangles) {
     verticalEdges: [...verticalEdgeMap.values()],
     displayEdges: rawSnapEdges.length ? rawSnapEdges : externalSnapEdges,
     sourceHeightPx,
+    sourceWidthPx,
+    sourceLengthPx,
     sourceFootprintScale: basis.scale,
     analysisVersion: ANALYSIS_VERSION,
     height,
@@ -2310,6 +2463,8 @@ function footprintBasis(vertices) {
     verticalAxis,
     centerA: (minA + maxA) / 2,
     centerB: (minB + maxB) / 2,
+    width: maxA - minA,
+    length: maxB - minB,
     scale: OBJ_DISPLAY_SIZE / Math.max(maxA - minA || 1, maxB - minB || 1),
   };
 }
@@ -2607,7 +2762,7 @@ function serializeSceneModel(name, placed, style, material) {
     exportedAt: new Date().toISOString(),
     style,
     material: normalizedMaterial,
-    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
+    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
@@ -2617,6 +2772,8 @@ function serializeSceneModel(name, placed, style, material) {
       verticalEdges,
       displayEdges,
       sourceHeightPx,
+      sourceWidthPx,
+      sourceLengthPx,
       sourceFootprintScale,
       keepAspectRatio: keepAspectRatio !== false,
       analysisVersion,
@@ -2624,7 +2781,7 @@ function serializeSceneModel(name, placed, style, material) {
       glbDataUrl,
       glbUrl,
       snappedTo,
-      transform: { x, y, rotation, height },
+      transform: { x, y, rotation, height, stageWidth, stageLength },
       material: { type: normalizedMaterial, color },
     })),
   };
@@ -2652,6 +2809,8 @@ function rehydrateScenePieces(model) {
         verticalEdges: piece.verticalEdges,
         displayEdges: piece.displayEdges,
         sourceHeightPx: piece.sourceHeightPx,
+        sourceWidthPx: piece.sourceWidthPx,
+        sourceLengthPx: piece.sourceLengthPx,
         sourceFootprintScale: piece.sourceFootprintScale,
         keepAspectRatio: piece.keepAspectRatio !== false,
         analysisVersion: piece.analysisVersion,
@@ -2662,6 +2821,8 @@ function rehydrateScenePieces(model) {
         y: Number(transform.y) || 0,
         rotation: Number(transform.rotation) || 0,
         height: Number(transform.height || piece.height) || 0.18,
+        stageWidth: parseOptionalNumber(transform.stageWidth ?? piece.stageWidth),
+        stageLength: parseOptionalNumber(transform.stageLength ?? piece.stageLength),
         snappedTo: piece.snappedTo || null,
       };
     })
