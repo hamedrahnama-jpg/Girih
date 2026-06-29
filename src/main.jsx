@@ -1388,7 +1388,7 @@ function findBestSnap(moving, others) {
   const collided = collidingPieces(moving, others);
   const isColliding = collided.length > 0;
   const snapTargets = isColliding ? collided : others;
-  const movingEdges = worldEdges(moving);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...others]);
   let best = null;
   snapTargets.forEach((target) => {
     if (moving.sourceId && target.sourceId && moving.sourceId === target.sourceId) return;
@@ -1402,7 +1402,7 @@ function findBestSnap(moving, others) {
         const releaseFaceScore = touchingFaceScore(movingEdge, targetEdge);
         const rotation = moving.rotation + shortAngle(angle);
         const rotated = { ...moving, rotation };
-        const updatedMovingEdge = worldEdges(rotated)[movingEdgeIndex];
+        const updatedMovingEdge = worldEdges(rotated)[movingEdge.localIndex ?? movingEdgeIndex];
         const targetMatch = targetEdges[targetEdgeIndex];
         const distance = updatedMovingEdge.mid.distanceTo(targetMatch.mid);
         if (!isColliding && distance > SNAP_DISTANCE) return;
@@ -1414,7 +1414,7 @@ function findBestSnap(moving, others) {
         };
         const candidate = { ...moving, ...transform };
         if (collidesWithAny(candidate, others)) return;
-        const alignedEdge = worldEdges(candidate)[movingEdgeIndex];
+        const alignedEdge = worldEdges(candidate)[movingEdge.localIndex ?? movingEdgeIndex];
         const endpointGap = alignedEdge.start.distanceTo(targetMatch.end) + alignedEdge.end.distanceTo(targetMatch.start);
         const contactWeight = isColliding ? 30 : 8;
         const score = releaseFaceScore * contactWeight + distance + endpointGap * 4 + lengthDelta * 6 + Math.abs(shortAngle(angle)) * 0.03;
@@ -1434,14 +1434,17 @@ function findBestSnap(moving, others) {
 function findBestCollisionPlacement(moving, others) {
   const collided = collidingPieces(moving, others);
   if (!collided.length) return null;
-  const movingEdges = worldEdges(moving);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...others]);
   let best = null;
 
   collided.forEach((target) => {
+    if (moving.sourceId && target.sourceId && moving.sourceId === target.sourceId) return;
     const targetEdges = visibleWorldEdges(target, others);
     movingEdges.forEach((movingEdge, movingEdgeIndex) => {
       targetEdges.forEach((targetEdge) => {
         const lengthDelta = Math.abs(movingEdge.length - targetEdge.length);
+        const lengthTolerance = Math.max(0.025, Math.min(movingEdge.length, targetEdge.length) * 0.04);
+        if (lengthDelta > lengthTolerance) return;
         const lengthPenalty = lengthDelta / Math.max(0.0001, Math.min(movingEdge.length, targetEdge.length));
         const releaseFaceScore = touchingFaceScore(movingEdge, targetEdge);
         const rotationOptions = [
@@ -1451,7 +1454,7 @@ function findBestCollisionPlacement(moving, others) {
 
         rotationOptions.forEach((rotation) => {
           const rotated = { ...moving, rotation };
-          const updatedMovingEdge = worldEdges(rotated)[movingEdgeIndex];
+          const updatedMovingEdge = worldEdges(rotated)[movingEdge.localIndex ?? movingEdgeIndex];
           const delta = targetEdge.mid.clone().sub(updatedMovingEdge.mid);
           const transform = {
             x: moving.x + delta.x,
@@ -1460,7 +1463,7 @@ function findBestCollisionPlacement(moving, others) {
           };
           const candidate = { ...moving, ...transform };
           if (collidesWithAny(candidate, others)) return;
-          const alignedEdge = worldEdges(candidate)[movingEdgeIndex];
+          const alignedEdge = worldEdges(candidate)[movingEdge.localIndex ?? movingEdgeIndex];
           const endpointGap = Math.min(
             alignedEdge.start.distanceTo(targetEdge.end) + alignedEdge.end.distanceTo(targetEdge.start),
             alignedEdge.start.distanceTo(targetEdge.start) + alignedEdge.end.distanceTo(targetEdge.end),
@@ -1487,7 +1490,7 @@ function findNextSnappedFace(moving, others) {
   if (!targetIds.size && moving.snappedTo) targetIds.add(moving.snappedTo);
   if (!targetIds.size) return null;
 
-  const movingEdges = worldEdges(moving);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...others]);
   let best = null;
 
   others
@@ -1510,7 +1513,7 @@ function findNextSnappedFace(moving, others) {
           const angle = normalizeAngle(targetEdge.angle + Math.PI - movingEdge.angle);
           const rotation = moving.rotation + shortAngle(angle);
           const rotated = { ...moving, rotation };
-          const updatedMovingEdge = worldEdges(rotated)[movingEdgeIndex];
+          const updatedMovingEdge = worldEdges(rotated)[movingEdge.localIndex ?? movingEdgeIndex];
           const delta = targetEdge.mid.clone().sub(updatedMovingEdge.mid);
           const transform = {
             x: moving.x + delta.x,
@@ -1521,7 +1524,7 @@ function findNextSnappedFace(moving, others) {
           if (sameTransform(moving, candidate)) return;
           if (collidesWithAny(candidate, others)) return;
 
-          const alignedEdge = worldEdges(candidate)[movingEdgeIndex];
+          const alignedEdge = worldEdges(candidate)[movingEdge.localIndex ?? movingEdgeIndex];
           const endpointGap = alignedEdge.start.distanceTo(targetEdge.end) + alignedEdge.end.distanceTo(targetEdge.start);
           const faceStep = cycleDistance(targetEdges.length, anchorTargetPosition, targetEdgePosition);
           const movingFacePenalty = preferredMovingIndexes.size && !preferredMovingIndexes.has(movingEdgeIndex) ? 3 : 0;
@@ -1541,7 +1544,7 @@ function findNextSnappedFace(moving, others) {
 }
 
 function snappedFaceContacts(piece, others) {
-  const movingEdges = worldEdges(piece);
+  const movingEdges = visibleWorldEdges(piece, [piece, ...others]);
   const contacts = [];
   others.forEach((target) => {
     if (piece.sourceId && target.sourceId && piece.sourceId === target.sourceId) return;
@@ -1607,6 +1610,7 @@ function getLocalCollisionPoints(piece) {
 function polygonsOverlap(a, b) {
   if (a.length < 3 || b.length < 3) return false;
   if (!polygonArea(a) || !polygonArea(b)) return false;
+  if (polygonsHavePositiveAreaOverlap(a, b)) return true;
   for (let aIndex = 0; aIndex < a.length; aIndex += 1) {
     const aStart = a[aIndex];
     const aEnd = a[(aIndex + 1) % a.length];
@@ -1618,6 +1622,56 @@ function polygonsOverlap(a, b) {
   }
   if (a.some((point) => pointInsidePolygon(point, b)) || b.some((point) => pointInsidePolygon(point, a))) return true;
   return polygonsShareSameOccupiedArea(a, b);
+}
+
+function polygonsHavePositiveAreaOverlap(a, b) {
+  if (!isConvexPolygon(a) || !isConvexPolygon(b)) {
+    return polygonSamplePoints(a).some((point) => pointInsidePolygon(point, b)) || polygonSamplePoints(b).some((point) => pointInsidePolygon(point, a));
+  }
+  const axes = [...polygonNormals(a), ...polygonNormals(b)];
+  return axes.every((axis) => {
+    const projectionA = projectPolygon(a, axis);
+    const projectionB = projectPolygon(b, axis);
+    const overlap = Math.min(projectionA.max, projectionB.max) - Math.max(projectionA.min, projectionB.min);
+    return overlap > 0.002;
+  });
+}
+
+function isConvexPolygon(points) {
+  let sign = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const previous = points[index];
+    const current = points[(index + 1) % points.length];
+    const next = points[(index + 2) % points.length];
+    const cross = cross2(previous, current, next);
+    if (Math.abs(cross) < 0.0001) continue;
+    const nextSign = Math.sign(cross);
+    if (!sign) sign = nextSign;
+    else if (sign !== nextSign) return false;
+  }
+  return true;
+}
+
+function polygonSamplePoints(points) {
+  const centroid = points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / points.length);
+  const midpoints = points.map((point, index) => point.clone().add(points[(index + 1) % points.length]).multiplyScalar(0.5));
+  return [centroid, ...midpoints];
+}
+
+function polygonNormals(points) {
+  return points
+    .map((point, index) => {
+      const next = points[(index + 1) % points.length];
+      const edge = next.clone().sub(point);
+      if (edge.lengthSq() < 0.000001) return null;
+      return new THREE.Vector2(-edge.y, edge.x).normalize();
+    })
+    .filter(Boolean);
+}
+
+function projectPolygon(points, axis) {
+  const values = points.map((point) => point.dot(axis));
+  return { min: Math.min(...values), max: Math.max(...values) };
 }
 
 function polygonArea(points) {
@@ -1747,13 +1801,14 @@ function edgesTouchFaceToFace(edge, candidate) {
 }
 
 function worldEdges(piece) {
-  return getLocalSnapSegments(piece).map(([localStart, localEnd]) => {
+  return getLocalSnapSegments(piece).map(([localStart, localEnd], localIndex) => {
     const [startX, startY] = rotatePoint(localStart[0], localStart[1], piece.rotation);
     const [endX, endY] = rotatePoint(localEnd[0], localEnd[1], piece.rotation);
     const start = new THREE.Vector2(startX + piece.x, startY + piece.y);
     const end = new THREE.Vector2(endX + piece.x, endY + piece.y);
     const vector = end.clone().sub(start);
     return {
+      localIndex,
       start,
       end,
       mid: start.clone().add(end).multiplyScalar(0.5),
