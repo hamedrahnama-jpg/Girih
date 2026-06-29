@@ -164,6 +164,16 @@ label {
   font-weight: 700;
 }
 
+.checkbox-field {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
 input,
 select,
 textarea {

@@ -71,6 +71,7 @@ function publicModelPiece(id, name, filename, color) {
     displayEdges: [],
     sourceHeightPx: '',
     sourceFootprintScale: '',
+    keepAspectRatio: true,
     analysisVersion: 0,
   };
 }
@@ -269,6 +270,7 @@ function App() {
       height: Number(draft.height) || 0.18,
       sourceHeightPx: parseOptionalNumber(draft.sourceHeightPx),
       sourceFootprintScale: parseOptionalNumber(draft.sourceFootprintScale),
+      keepAspectRatio: draft.keepAspectRatio !== false,
       analysisVersion: draft.analysisVersion || ANALYSIS_VERSION,
       points,
       snapEdges: draft.snapEdges?.length ? draft.snapEdges : undefined,
@@ -286,7 +288,9 @@ function App() {
     });
     if (editingId) {
       commitPlaced((items) =>
-        items.map((item) => (item.sourceId === editingId ? applyLibraryPieceToInstance(piece, item) : item)),
+        items.map((item) =>
+          item.sourceId === editingId || item.sourceId === piece.id ? applyLibraryPieceToInstance(piece, item) : item,
+        ),
       );
     }
     setDraft(emptyDraft());
@@ -301,6 +305,7 @@ function App() {
       height: piece.height,
       sourceHeightPx: piece.sourceHeightPx ?? '',
       sourceFootprintScale: piece.sourceFootprintScale ?? '',
+      keepAspectRatio: piece.keepAspectRatio !== false,
       analysisVersion: piece.analysisVersion || '',
       points: piece.points.map((point) => point.join(',')).join(' '),
       snapEdges: piece.snapEdges || [],
@@ -323,6 +328,7 @@ function App() {
       height: imported.sourceHeightPx || imported.height,
       sourceHeightPx: imported.sourceHeightPx ?? '',
       sourceFootprintScale: imported.sourceFootprintScale ?? '',
+      keepAspectRatio: draft.keepAspectRatio !== false,
       analysisVersion: imported.analysisVersion,
       points: imported.points.map((point) => point.map((value) => Number(value.toFixed(4))).join(',')).join(' '),
       snapEdges: imported.snapEdges,
@@ -856,6 +862,16 @@ function App() {
             />
           </label>
           {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={draft.keepAspectRatio !== false}
+                onChange={(event) => setDraft({ ...draft, keepAspectRatio: event.target.checked })}
+              />
+              <span>Keep aspect ratio when height changes</span>
+            </label>
+          )}
+          {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
             <label>
               Imported height
               <input
@@ -1357,9 +1373,10 @@ function normalizeImportedObject(object, piece) {
   const bounds = new THREE.Box3().setFromObject(object);
   const size = bounds.getSize(new THREE.Vector3());
   const center = bounds.getCenter(new THREE.Vector3());
-  const uniformScale = importedUniformScale(piece, size.y || piece.sourceHeightPx || 1);
-  object.scale.setScalar(uniformScale);
-  object.position.set(-center.x * uniformScale, -bounds.min.y * uniformScale, -center.z * uniformScale);
+  const verticalScale = importedUniformScale(piece, size.y || piece.sourceHeightPx || 1);
+  const horizontalScale = piece.keepAspectRatio === false ? Number(piece.sourceFootprintScale) || 1 : verticalScale;
+  object.scale.set(horizontalScale, verticalScale, horizontalScale);
+  object.position.set(-center.x * horizontalScale, -bounds.min.y * verticalScale, -center.z * horizontalScale);
 }
 
 function applyPieceMaterial(object, piece, materialName, selected) {
@@ -1840,6 +1857,7 @@ function scalePoint([x, y], multiplier) {
 
 function importedFootprintMultiplier(piece) {
   if (piece.type !== 'obj' && piece.type !== 'glb') return 1;
+  if (piece.keepAspectRatio === false) return 1;
   const sourceFootprintScale = Number(piece.sourceFootprintScale);
   if (!Number.isFinite(sourceFootprintScale) || sourceFootprintScale <= 0) return 1;
   return importedUniformScale(piece, Number(piece.sourceHeightPx) || 1) / sourceFootprintScale;
@@ -1969,6 +1987,7 @@ function saveAdminPieceSetting(piece) {
     height: piece.height,
     sourceHeightPx: piece.sourceHeightPx,
     sourceFootprintScale: piece.sourceFootprintScale,
+    keepAspectRatio: piece.keepAspectRatio !== false,
   };
   localStorage.setItem(
     ADMIN_SETTINGS_STORAGE_KEY,
@@ -2002,6 +2021,7 @@ function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.
         : Number.isFinite(Number(setting.sourceFootprintScale))
           ? Number(setting.sourceFootprintScale)
           : piece.sourceFootprintScale,
+    keepAspectRatio: setting.keepAspectRatio === undefined ? piece.keepAspectRatio !== false : setting.keepAspectRatio !== false,
   };
 }
 
@@ -2031,6 +2051,7 @@ function emptyDraft() {
     displayEdges: [],
     sourceHeightPx: '',
     sourceFootprintScale: '',
+    keepAspectRatio: true,
     analysisVersion: '',
     objText: '',
     glbDataUrl: '',
@@ -2586,7 +2607,7 @@ function serializeSceneModel(name, placed, style, material) {
     exportedAt: new Date().toISOString(),
     style,
     material: normalizedMaterial,
-    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
+    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
@@ -2597,6 +2618,7 @@ function serializeSceneModel(name, placed, style, material) {
       displayEdges,
       sourceHeightPx,
       sourceFootprintScale,
+      keepAspectRatio: keepAspectRatio !== false,
       analysisVersion,
       objText,
       glbDataUrl,
@@ -2631,6 +2653,7 @@ function rehydrateScenePieces(model) {
         displayEdges: piece.displayEdges,
         sourceHeightPx: piece.sourceHeightPx,
         sourceFootprintScale: piece.sourceFootprintScale,
+        keepAspectRatio: piece.keepAspectRatio !== false,
         analysisVersion: piece.analysisVersion,
         objText: piece.objText,
         glbDataUrl: piece.glbDataUrl,
