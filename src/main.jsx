@@ -37,6 +37,13 @@ const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
 const EXPORT_MATERIALS = new Set(['conceptual', 'glass', 'marble', 'tile', 'wood', 'plastic']);
+const EDGE_LINE_MODES = new Set(['single', 'double']);
+const DEFAULT_RENDER_SETTINGS = {
+  backgroundColor: '#f6efe3',
+  edgeColor: '#123f3a',
+  edgeThickness: 3,
+  edgeMode: 'single',
+};
 
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
@@ -100,6 +107,10 @@ function App() {
   const [stageCamera, setStageCamera] = useState('top');
   const [exportView, setExportView] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
+  const [renderBgColor, setRenderBgColor] = useState(DEFAULT_RENDER_SETTINGS.backgroundColor);
+  const [renderEdgeColor, setRenderEdgeColor] = useState(DEFAULT_RENDER_SETTINGS.edgeColor);
+  const [renderEdgeThickness, setRenderEdgeThickness] = useState(DEFAULT_RENDER_SETTINGS.edgeThickness);
+  const [renderEdgeMode, setRenderEdgeMode] = useState(DEFAULT_RENDER_SETTINGS.edgeMode);
   const [printPreview, setPrintPreview] = useState(null);
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -109,6 +120,15 @@ function App() {
 
   const selected = placed.find((item) => item.id === selectedId);
   const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
+
+  function currentRenderSettings() {
+    return normalizeRenderSettings({
+      backgroundColor: renderBgColor,
+      edgeColor: renderEdgeColor,
+      edgeThickness: renderEdgeThickness,
+      edgeMode: renderEdgeMode,
+    });
+  }
 
   useEffect(() => {
     if (selectedId && !placed.some((item) => item.id === selectedId)) setSelectedId(null);
@@ -397,7 +417,7 @@ function App() {
   function saveCurrentModel() {
     if (!placed.length) return;
     const name = modelName.trim() || `Girih model ${savedModels.length + 1}`;
-    const model = serializeSceneModel(name, placed, style, material);
+    const model = serializeSceneModel(name, placed, style, material, currentRenderSettings());
     setSavedModels((items) => [model, ...items]);
     setModelName(name);
   }
@@ -407,6 +427,11 @@ function App() {
     commitPlaced(() => next);
     setStyle(model.style || style);
     setMaterial(normalizeMaterialName(model.material || material));
+    const renderSettings = normalizeRenderSettings(model.renderSettings);
+    setRenderBgColor(renderSettings.backgroundColor);
+    setRenderEdgeColor(renderSettings.edgeColor);
+    setRenderEdgeThickness(renderSettings.edgeThickness);
+    setRenderEdgeMode(renderSettings.edgeMode);
     setSelectedId(null);
   }
 
@@ -434,14 +459,15 @@ function App() {
   }
 
   async function exportScene(format) {
-    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', placed, style, material);
+    const renderSettings = currentRenderSettings();
+    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', placed, style, material, renderSettings);
     if (format === 'png') {
-      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation });
+      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings });
       downloadCanvasPng('girih-model.png', canvas);
       return;
     }
     if (format === 'pdf') {
-      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation });
+      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings });
       downloadPdfFromCanvas('girih-model.pdf', canvas, exportOrientation);
       return;
     }
@@ -451,7 +477,7 @@ function App() {
 
   async function openPrintPreview() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation });
+    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings: currentRenderSettings() });
     setPrintPreview({
       imageUrl: canvas.toDataURL('image/png'),
       orientation: exportOrientation,
@@ -461,7 +487,7 @@ function App() {
 
   async function printCurrentModel() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation });
+    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings: currentRenderSettings() });
     printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${exportView}`);
   }
 
@@ -596,6 +622,31 @@ function App() {
               <option value="portrait">Portrait</option>
             </select>
           </label>
+          <label>
+            Stage BG color
+            <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+          </label>
+          <label>
+            Edge line color
+            <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+          </label>
+          <label>
+            Edge thickness
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={renderEdgeThickness}
+              onChange={(event) => setRenderEdgeThickness(event.target.value)}
+            />
+          </label>
+          <label>
+            Edge line style
+            <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+              <option value="single">Single line</option>
+              <option value="double">Double line</option>
+            </select>
+          </label>
           <div className="action-row">
             <button onClick={openPrintPreview} disabled={!placed.length}>
               <Eye size={16} /> Preview
@@ -711,6 +762,31 @@ function App() {
             <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
               <option value="landscape">Landscape</option>
               <option value="portrait">Portrait</option>
+            </select>
+          </label>
+          <label>
+            Stage BG color
+            <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+          </label>
+          <label>
+            Edge line color
+            <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+          </label>
+          <label>
+            Edge thickness
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={renderEdgeThickness}
+              onChange={(event) => setRenderEdgeThickness(event.target.value)}
+            />
+          </label>
+          <label>
+            Edge line style
+            <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+              <option value="single">Single line</option>
+              <option value="double">Double line</option>
             </select>
           </label>
           <div className="action-row">
@@ -2780,7 +2856,7 @@ function slugify(value) {
     .replace(/^-|-$/g, '');
 }
 
-function serializeSceneModel(name, placed, style, material) {
+function serializeSceneModel(name, placed, style, material, renderSettings = DEFAULT_RENDER_SETTINGS) {
   const normalizedMaterial = normalizeMaterialName(material);
   return {
     id: `model-${crypto.randomUUID()}`,
@@ -2791,6 +2867,7 @@ function serializeSceneModel(name, placed, style, material) {
     exportedAt: new Date().toISOString(),
     style,
     material: normalizedMaterial,
+    renderSettings: normalizeRenderSettings(renderSettings),
     pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
@@ -3040,6 +3117,7 @@ async function renderSceneCanvas(placed, options = {}) {
   const view = options.view || 'top';
   if (view === 'isometric') return renderIsometricSceneCanvas(placed, options);
   const material = normalizeMaterialName(options.material);
+  const renderSettings = normalizeRenderSettings(options.renderSettings);
   const orientation = options.orientation || 'landscape';
   const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
   const padding = 180;
@@ -3065,7 +3143,7 @@ async function renderSceneCanvas(placed, options = {}) {
   canvas.width = size[0];
   canvas.height = size[1];
   const context = canvas.getContext('2d');
-  context.fillStyle = '#f6efe3';
+  context.fillStyle = renderSettings.backgroundColor;
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   const offsetX = (canvas.width - widthUnits * scale) / 2;
@@ -3131,9 +3209,13 @@ async function renderSceneCanvas(placed, options = {}) {
     context.fill();
     context.globalAlpha = 1;
     context.shadowColor = 'transparent';
-    context.lineWidth = Math.max(2, scale * 0.018);
-    context.strokeStyle = materialStrokeColor(material, piece.color || '#1c7c74');
-    context.stroke();
+    strokeCanvasPath(context, topPoints, {
+      color: renderSettings.edgeColor || materialStrokeColor(material, piece.color || '#1c7c74'),
+      lineWidth: renderSettings.edgeThickness,
+      mode: renderSettings.edgeMode,
+      gapColor: renderSettings.backgroundColor,
+      closed: true,
+    });
     context.restore();
   });
 
@@ -3170,6 +3252,48 @@ function drawCanvasPolygon(context, points, fill, stroke, lineWidth) {
   context.restore();
 }
 
+function strokeCanvasPath(context, points, options = {}) {
+  if (!points.length || Number(options.lineWidth) <= 0) return;
+  const lineWidth = Math.max(0, Number(options.lineWidth) || DEFAULT_RENDER_SETTINGS.edgeThickness);
+  const color = options.color || DEFAULT_RENDER_SETTINGS.edgeColor;
+  const gapColor = options.gapColor || DEFAULT_RENDER_SETTINGS.backgroundColor;
+  const mode = EDGE_LINE_MODES.has(options.mode) ? options.mode : DEFAULT_RENDER_SETTINGS.edgeMode;
+  const closed = options.closed !== false;
+
+  function tracePath() {
+    context.beginPath();
+    points.forEach(([x, y], index) => {
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    if (closed) context.closePath();
+  }
+
+  context.save();
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  if (mode === 'double') {
+    tracePath();
+    context.lineWidth = lineWidth * 2.6;
+    context.strokeStyle = color;
+    context.stroke();
+    tracePath();
+    context.lineWidth = lineWidth * 1.45;
+    context.strokeStyle = gapColor;
+    context.stroke();
+    tracePath();
+    context.lineWidth = Math.max(1, lineWidth * 0.65);
+    context.strokeStyle = color;
+    context.stroke();
+  } else {
+    tracePath();
+    context.lineWidth = lineWidth;
+    context.strokeStyle = color;
+    context.stroke();
+  }
+  context.restore();
+}
+
 function shadeColor(color, factor) {
   const hex = color.replace('#', '');
   const full = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
@@ -3185,6 +3309,21 @@ function normalizeMaterialName(material) {
   if (EXPORT_MATERIALS.has(material)) return material;
   if (material === 'ceramic' || material === 'stone' || material === 'brass') return 'plastic';
   return 'conceptual';
+}
+
+function normalizeRenderSettings(settings = {}) {
+  const source = settings || {};
+  const edgeThickness = Number(source.edgeThickness);
+  return {
+    backgroundColor: normalizeHexColor(source.backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor),
+    edgeColor: normalizeHexColor(source.edgeColor, DEFAULT_RENDER_SETTINGS.edgeColor),
+    edgeThickness: Number.isFinite(edgeThickness) && edgeThickness >= 0 ? edgeThickness : DEFAULT_RENDER_SETTINGS.edgeThickness,
+    edgeMode: EDGE_LINE_MODES.has(source.edgeMode) ? source.edgeMode : DEFAULT_RENDER_SETTINGS.edgeMode,
+  };
+}
+
+function normalizeHexColor(value, fallback) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 }
 
 function materialStrokeColor(material, color) {
@@ -3205,15 +3344,16 @@ function canvasMaterialFill(context, material, color) {
 }
 
 async function renderIsometricSceneCanvas(placed, options = {}) {
+  const renderSettings = normalizeRenderSettings(options.renderSettings);
   const orientation = options.orientation || 'landscape';
   const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(size[0], size[1], false);
-  renderer.setClearColor('#f6efe3', 1);
+  renderer.setClearColor(renderSettings.backgroundColor, 1);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#f6efe3');
+  scene.background = new THREE.Color(renderSettings.backgroundColor);
   const group = new THREE.Group();
   scene.add(group);
 
@@ -3262,6 +3402,7 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   canvas.height = size[1];
   const context = canvas.getContext('2d');
   context.drawImage(renderer.domElement, 0, 0);
+  drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, options.style);
   context.fillStyle = '#4f4538';
   context.font = '24px Inter, Arial, sans-serif';
   context.fillText(`Girih isometric ${options.style || 'model'} export`, 32, canvas.height - 34);
@@ -3269,6 +3410,36 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   disposeObject(group);
   renderer.dispose();
   return canvas;
+}
+
+function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName) {
+  camera.updateMatrixWorld(true);
+  const project = (x, y, z) => {
+    const projected = new THREE.Vector3(x, y, z).project(camera);
+    return [(projected.x * 0.5 + 0.5) * size[0], (-projected.y * 0.5 + 0.5) * size[1]];
+  };
+  placed.forEach((piece) => {
+    const footprint = worldFootprintPoints(piece);
+    if (footprint.length < 3) return;
+    const height = Math.max(0.02, Number(piece.height) || 0.18) * (styleName === 'pattern' ? 0.35 : 1);
+    const top = footprint.map(([x, y]) => project(x, height, y));
+    strokeCanvasPath(context, top, {
+      color: renderSettings.edgeColor,
+      lineWidth: renderSettings.edgeThickness,
+      mode: renderSettings.edgeMode,
+      gapColor: renderSettings.backgroundColor,
+      closed: true,
+    });
+    footprint.forEach(([x, y]) => {
+      strokeCanvasPath(context, [project(x, 0, y), project(x, height, y)], {
+        color: renderSettings.edgeColor,
+        lineWidth: renderSettings.edgeThickness,
+        mode: renderSettings.edgeMode,
+        gapColor: renderSettings.backgroundColor,
+        closed: false,
+      });
+    });
+  });
 }
 
 async function createExportPieceObject(piece) {
