@@ -1532,51 +1532,61 @@ function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSe
 function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
   if (!segments.length) return null;
-  const group = new THREE.Group();
-  group.name = 'stage-edge-overlay';
-  group.userData.isStageEdge = true;
-  group.renderOrder = 8;
   const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
+  const edgeOffsets = renderSettings.edgeMode === 'double' ? [-thickness * 1.6, thickness * 1.6] : [0];
+  const verticalPoints = uniqueSegmentCoordinatePoints(segments);
+  const instanceCount = segments.length * edgeOffsets.length * 2 + verticalPoints.length;
+  if (!instanceCount) return null;
   const material = new THREE.MeshBasicMaterial({
     color: renderSettings.edgeColor,
     depthTest: !isGlass,
     depthWrite: false,
     toneMapped: false,
   });
+  const overlay = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, instanceCount);
+  overlay.name = 'stage-edge-overlay';
+  overlay.userData.isStageEdge = true;
+  overlay.renderOrder = 8;
   const height = Math.max(0.02, Number(piece.height) || 0.18);
   const topY = height + thickness * 0.55;
   const bottomY = thickness * 0.55;
+  let matrixIndex = 0;
   segments.forEach(([start, end]) => {
-    createStageEdgeBars(start, end, topY, thickness, material, renderSettings.edgeMode).forEach((bar) => group.add(bar));
-    createStageEdgeBars(start, end, bottomY, thickness, material, renderSettings.edgeMode).forEach((bar) => group.add(bar));
+    edgeOffsets.forEach((offset) => {
+      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, offset);
+      matrixIndex += 1;
+      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, offset);
+      matrixIndex += 1;
+    });
   });
-  uniqueSegmentCoordinatePoints(segments).forEach(([x, y]) => {
-    const vertical = new THREE.Mesh(new THREE.BoxGeometry(thickness, height, thickness), material.clone());
-    vertical.position.set(x, height / 2, y);
-    vertical.renderOrder = 8;
-    vertical.userData.isStageEdge = true;
-    group.add(vertical);
+  verticalPoints.forEach(([x, y]) => {
+    const matrix = new THREE.Matrix4();
+    matrix.compose(
+      new THREE.Vector3(x, height / 2, y),
+      new THREE.Quaternion(),
+      new THREE.Vector3(thickness, height, thickness),
+    );
+    overlay.setMatrixAt(matrixIndex, matrix);
+    matrixIndex += 1;
   });
-  material.dispose();
-  return group;
+  overlay.instanceMatrix.needsUpdate = true;
+  return overlay;
 }
 
-function createStageEdgeBars(start, end, y, thickness, material, mode) {
+function setStageEdgeBarMatrix(overlay, index, start, end, y, thickness, offset) {
   const dx = end[0] - start[0];
   const dz = end[1] - start[1];
   const length = Math.hypot(dx, dz);
-  if (length <= 0.0001) return [];
-  const offsets = mode === 'double' ? [-thickness * 1.6, thickness * 1.6] : [0];
+  if (length <= 0.0001) return;
   const normalX = -dz / length;
   const normalZ = dx / length;
-  return offsets.map((offset) => {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, thickness), material.clone());
-    bar.position.set((start[0] + end[0]) / 2 + normalX * offset, y, (start[1] + end[1]) / 2 + normalZ * offset);
-    bar.rotation.y = -Math.atan2(dz, dx);
-    bar.renderOrder = 8;
-    bar.userData.isStageEdge = true;
-    return bar;
-  });
+  const matrix = new THREE.Matrix4();
+  matrix.compose(
+    new THREE.Vector3((start[0] + end[0]) / 2 + normalX * offset, y, (start[1] + end[1]) / 2 + normalZ * offset),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.atan2(dz, dx), 0)),
+    new THREE.Vector3(length, thickness, thickness),
+  );
+  overlay.setMatrixAt(index, matrix);
 }
 
 function stageEdgeWorldThickness(value) {
@@ -3656,22 +3666,20 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(renderSettings.backgroundColor);
-  const environment = exportMaterial === 'glass' ? createGlassEnvironmentMap(renderSettings.backgroundColor) : null;
-  if (environment) scene.environment = environment;
   const glassRearColor = exportMaterial === 'glass' ? rgbToHex(ambientGlassColor(renderSettings.backgroundColor)) : '#ffffff';
   const group = new THREE.Group();
   scene.add(group);
 
   const ambient = new THREE.HemisphereLight(
-    '#ffffff',
-    exportMaterial === 'glass' ? '#343434' : '#4f4a42',
-    exportMaterial === 'glass' ? 1.9 : 2,
+    exportMaterial === 'glass' ? '#fff7e8' : '#ffffff',
+    exportMaterial === 'glass' ? '#3e506b' : '#4f4a42',
+    exportMaterial === 'glass' ? 1.45 : 2,
   );
   scene.add(ambient);
-  const key = new THREE.DirectionalLight('#ffffff', 2.1);
-  key.position.set(-5, 8, 4);
+  const key = new THREE.DirectionalLight('#ffffff', exportMaterial === 'glass' ? 2 : 2.1);
+  key.position.set(exportMaterial === 'glass' ? 3 : -5, exportMaterial === 'glass' ? 6 : 8, 4);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? glassRearColor : '#ffffff', exportMaterial === 'glass' ? 0.95 : 0.45);
+  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? glassRearColor : '#ffffff', exportMaterial === 'glass' ? 0.35 : 0.45);
   fill.position.set(5, 4, -6);
   scene.add(fill);
 
@@ -3711,59 +3719,18 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   canvas.height = size[1];
   const context = canvas.getContext('2d');
   context.drawImage(renderer.domElement, 0, 0);
-  drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, options.style);
+  drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, options.style, exportMaterial);
   context.fillStyle = '#4f4538';
   context.font = '24px Inter, Arial, sans-serif';
   context.fillText(`Girih isometric ${options.style || 'model'} export`, 32, canvas.height - 34);
 
   disposeObject(group);
-  environment.dispose?.();
   renderer.dispose();
   return canvas;
 }
 
-function createGlassEnvironmentMap(backgroundColor) {
-  const ambient = ambientGlassColor(backgroundColor);
-  const warm = { r: 255, g: 248, b: 226 };
-  const cool = { r: 185, g: 241, b: 255 };
-  const dark = { r: 48, g: 68, b: 78 };
-  const neutral = { r: 244, g: 248, b: 250 };
-  const glint = {
-    r: clampColor(ambient.r * 0.55 + 255 * 0.45),
-    g: clampColor(ambient.g * 0.55 + 255 * 0.45),
-    b: clampColor(ambient.b * 0.55 + 255 * 0.45),
-  };
-  const faces = [
-    [ambient, glint],
-    [warm, neutral],
-    [neutral, glint],
-    [cool, dark],
-    [warm, neutral],
-    [ambient, dark],
-  ];
-  const canvases = faces.map(([start, end], index) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const context = canvas.getContext('2d');
-    const gradient = context.createLinearGradient(index % 2 ? 64 : 0, 0, index % 2 ? 0 : 64, 64);
-    gradient.addColorStop(0, rgbaFromRgb(start, 1));
-    gradient.addColorStop(0.48, rgbaFromRgb(glint, 0.78));
-    gradient.addColorStop(1, rgbaFromRgb(end, 1));
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, 64, 64);
-    context.globalAlpha = 0.34;
-    context.fillStyle = rgbaFromRgb(glint, 0.9);
-    context.fillRect(index % 3 === 0 ? 6 : 34, index % 2 === 0 ? 8 : 38, 20, 10);
-    return canvas;
-  });
-  const texture = new THREE.CubeTexture(canvases);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName) {
+function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName, materialName = 'conceptual') {
+  const isGlass = normalizeMaterialName(materialName) === 'glass';
   camera.updateMatrixWorld(true);
   const project = (x, y, z) => {
     const projected = new THREE.Vector3(x, y, z).project(camera);
@@ -3772,6 +3739,7 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
   placed.forEach((piece) => {
     const topSegments = worldRenderSegments(piece);
     if (!topSegments.length) return;
+    const sideSegments = isGlass ? topSegments : visibleCameraFacingSegments(piece, topSegments, camera);
     const height = Math.max(0.02, Number(piece.height) || 0.18) * (styleName === 'pattern' ? 0.35 : 1);
     topSegments.forEach(([start, end]) => {
       strokeCanvasPath(context, [project(start.x, height, start.y), project(end.x, height, end.y)], {
@@ -3782,7 +3750,7 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
         closed: false,
       });
     });
-    topSegments.forEach(([start, end]) => {
+    sideSegments.forEach(([start, end]) => {
       strokeCanvasPath(context, [project(start.x, 0, start.y), project(end.x, 0, end.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
@@ -3802,7 +3770,7 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
         closed: true,
       });
     }
-    uniqueSegmentPoints(topSegments).forEach((point) => {
+    uniqueSegmentPoints(sideSegments).forEach((point) => {
       strokeCanvasPath(context, [project(point.x, 0, point.y), project(point.x, height, point.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
@@ -3811,6 +3779,24 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
         closed: false,
       });
     });
+  });
+}
+
+function visibleCameraFacingSegments(piece, segments, camera) {
+  const footprint = worldFootprintPoints(piece);
+  const centroid = footprint.length
+    ? footprint.reduce((sum, [x, y]) => sum.add(new THREE.Vector2(x, y)), new THREE.Vector2()).multiplyScalar(1 / footprint.length)
+    : segments.reduce((sum, [start, end]) => sum.add(start).add(end), new THREE.Vector2()).multiplyScalar(1 / Math.max(segments.length * 2, 1));
+  return segments.filter(([start, end]) => {
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    const edge = end.clone().sub(start);
+    if (edge.lengthSq() <= 0.000001) return false;
+    const normalA = new THREE.Vector2(-edge.y, edge.x).normalize();
+    const normalB = normalA.clone().multiplyScalar(-1);
+    const awayFromCenter = mid.clone().sub(centroid);
+    const outward = normalA.dot(awayFromCenter) >= normalB.dot(awayFromCenter) ? normalA : normalB;
+    const cameraDirection = new THREE.Vector2(camera.position.x - mid.x, camera.position.z - mid.y).normalize();
+    return outward.dot(cameraDirection) > -0.05;
   });
 }
 
@@ -3884,26 +3870,13 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'glass') {
-    const glassColor = glassTintColor(color);
-    return new THREE.MeshPhysicalMaterial({
-      color: glassColor,
+    return new THREE.MeshStandardMaterial({
+      color,
       metalness: 0,
-      roughness: 0.01,
-      transmission: 0.66,
-      thickness: 0.72,
-      ior: 1.45,
+      roughness: 0.04,
       transparent: true,
-      opacity: 0.56,
+      opacity: 0.42,
       depthWrite: false,
-      blending: THREE.NormalBlending,
-      clearcoat: 1,
-      clearcoatRoughness: 0.01,
-      specularIntensity: 1,
-      specularColor: '#ffffff',
-      reflectivity: 1,
-      attenuationColor: glassColor,
-      attenuationDistance: 1.25,
-      envMapIntensity: 1.65,
       side: THREE.DoubleSide,
     });
   }
@@ -4021,9 +3994,25 @@ function woodBaseColor(color) {
 
 function downloadCanvasPng(filename, canvas) {
   canvas.toBlob((blob) => {
-    if (!blob) return;
+    if (!blob) {
+      downloadCanvasDataUrl(filename, canvas);
+      return;
+    }
     downloadBlob(filename, blob);
   }, 'image/png');
+}
+
+function downloadCanvasDataUrl(filename, canvas) {
+  try {
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (error) {
+    console.error('Failed to export PNG', error);
+  }
 }
 
 function downloadPdfFromCanvas(filename, canvas, orientation = 'landscape') {
