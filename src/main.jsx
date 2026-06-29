@@ -207,7 +207,6 @@ function App() {
       };
       return [...items, placeNewPieceNearCollection(instance, items, stageVisibleBounds)];
     });
-    setMobilePiecesOpen(false);
   }
 
   function updatePlaced(id, transform) {
@@ -469,7 +468,7 @@ function App() {
   return (
     <div className="app-shell">
       <div className="mobile-topbar">
-        <button type="button" onClick={() => setMobilePiecesOpen(true)}>
+        <button type="button" onClick={() => setMobilePiecesOpen((open) => !open)}>
           <Layers3 size={18} /> Shapes
         </button>
         <button type="button" onClick={() => setMobileMenuOpen(true)}>
@@ -477,13 +476,12 @@ function App() {
         </button>
       </div>
 
-      {(mobilePiecesOpen || mobileMenuOpen || mobileAdminOpen) && (
+      {(mobileMenuOpen || mobileAdminOpen) && (
         <button
           type="button"
           className="mobile-scrim"
           aria-label="Close mobile panel"
           onClick={() => {
-            setMobilePiecesOpen(false);
             setMobileMenuOpen(false);
             setMobileAdminOpen(false);
           }}

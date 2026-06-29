@@ -618,10 +618,11 @@ textarea {
 
   .library-panel {
     left: 0;
-    width: min(78vw, 268px);
-    padding: 58px 12px 14px;
+    width: 64px;
+    padding: 58px 8px 12px;
     border-right: 1px solid #d8ccba;
     transform: translateX(-105%);
+    box-shadow: 0 12px 36px rgba(36, 30, 24, 0.16);
   }
 
   .library-panel.open {
@@ -651,27 +652,35 @@ textarea {
     margin-top: 0;
   }
 
+  .library-panel .section-title {
+    justify-content: center;
+  }
+
+  .library-panel .section-title svg,
+  .library-panel .section-title span,
+  .library-panel .mobile-close-button {
+    display: none;
+  }
+
   .piece-list {
-    gap: 6px;
+    gap: 7px;
   }
 
   .piece-card {
-    grid-template-columns: 34px minmax(0, 1fr) 14px;
-    gap: 7px;
+    grid-template-columns: 1fr;
+    place-items: center;
     min-height: 44px;
-    padding: 5px 7px;
-    font-size: 13px;
+    padding: 5px;
   }
 
-  .piece-card span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .piece-card span,
+  .piece-card > svg:last-child {
+    display: none;
   }
 
   .piece-icon {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
   }
 
   .dimension-readout,
