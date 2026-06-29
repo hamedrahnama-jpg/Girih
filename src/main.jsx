@@ -888,6 +888,9 @@ function App() {
           style={style}
           cameraMode={stageCamera}
           backgroundColor={renderBgColor}
+          edgeColor={renderEdgeColor}
+          edgeThickness={renderEdgeThickness}
+          edgeMode={renderEdgeMode}
           onSelect={setSelectedId}
           onMove={updatePlaced}
           onSettle={settlePiece}
@@ -1162,14 +1165,62 @@ function pieceGeometrySignature(piece) {
   });
 }
 
-function GirihStage({ placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange }) {
+function GirihStage({
+  placed,
+  selectedId,
+  material,
+  style,
+  cameraMode,
+  backgroundColor,
+  edgeColor,
+  edgeThickness,
+  edgeMode,
+  onSelect,
+  onMove,
+  onSettle,
+  onRotate,
+  onContextMenu,
+  onViewBoundsChange,
+}) {
   const mountRef = useRef(null);
-  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange });
+  const stateRef = useRef({
+    placed,
+    selectedId,
+    material,
+    style,
+    cameraMode,
+    backgroundColor,
+    edgeColor,
+    edgeThickness,
+    edgeMode,
+    onSelect,
+    onMove,
+    onSettle,
+    onRotate,
+    onContextMenu,
+    onViewBoundsChange,
+  });
   const rendererRef = useRef(null);
 
   useEffect(() => {
-    stateRef.current = { placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange };
-  }, [placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
+    stateRef.current = {
+      placed,
+      selectedId,
+      material,
+      style,
+      cameraMode,
+      backgroundColor,
+      edgeColor,
+      edgeThickness,
+      edgeMode,
+      onSelect,
+      onMove,
+      onSettle,
+      onRotate,
+      onContextMenu,
+      onViewBoundsChange,
+    };
+  }, [placed, selectedId, material, style, cameraMode, backgroundColor, edgeColor, edgeThickness, edgeMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1243,7 +1294,22 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, backgroun
     scene.add(grid);
 
     function syncMeshes() {
-      const { placed: current, selectedId: selected, material: materialName, style: styleName } = stateRef.current;
+      const {
+        placed: current,
+        selectedId: selected,
+        material: materialName,
+        style: styleName,
+        backgroundColor: stageBackgroundColor,
+        edgeColor: stageEdgeColor,
+        edgeThickness: stageEdgeThickness,
+        edgeMode: stageEdgeMode,
+      } = stateRef.current;
+      const stageRenderSettings = normalizeRenderSettings({
+        backgroundColor: stageBackgroundColor,
+        edgeColor: stageEdgeColor,
+        edgeThickness: stageEdgeThickness,
+        edgeMode: stageEdgeMode,
+      });
       const wanted = new Set(current.map((item) => item.id));
       for (const [id, mesh] of meshes) {
         if (!wanted.has(id)) {
@@ -1272,6 +1338,7 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, backgroun
         mesh.rotation.y = -item.rotation;
         mesh.scale.y = styleName === 'pattern' ? 0.35 : 1;
         applyPieceMaterial(mesh, item, materialName, item.id === selected);
+        updateStageEdgeOverlay(mesh, item, styleName, stageRenderSettings);
       });
       updateSelectionOutline(selectionOutline, current.find((item) => item.id === selected));
     }
@@ -1437,6 +1504,93 @@ function applyStageBackground(scene, renderer, backgroundColor) {
   renderer.setClearColor(color, 1);
 }
 
+function updateStageEdgeOverlay(object, piece, styleName, renderSettings) {
+  const thickness = Math.max(0, Number(renderSettings.edgeThickness) || 0);
+  const signature = [
+    pieceGeometrySignature(piece),
+    styleName,
+    renderSettings.edgeColor,
+    thickness,
+    renderSettings.edgeMode,
+  ].join('|');
+  if (object.userData.stageEdgeSignature === signature) return;
+  if (object.userData.stageEdgeOverlay) {
+    object.remove(object.userData.stageEdgeOverlay);
+    disposeObject(object.userData.stageEdgeOverlay);
+    object.userData.stageEdgeOverlay = null;
+  }
+  object.userData.stageEdgeSignature = signature;
+  if (thickness <= 0) return;
+  const overlay = createStageEdgeOverlay(piece, renderSettings);
+  if (!overlay) return;
+  object.userData.stageEdgeOverlay = overlay;
+  object.add(overlay);
+}
+
+function createStageEdgeOverlay(piece, renderSettings) {
+  const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
+  if (!segments.length) return null;
+  const group = new THREE.Group();
+  group.name = 'stage-edge-overlay';
+  group.userData.isStageEdge = true;
+  group.renderOrder = 8;
+  const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
+  const material = new THREE.MeshBasicMaterial({
+    color: renderSettings.edgeColor,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const topY = height + thickness * 0.55;
+  const bottomY = thickness * 0.55;
+  segments.forEach(([start, end]) => {
+    createStageEdgeBars(start, end, topY, thickness, material, renderSettings.edgeMode).forEach((bar) => group.add(bar));
+    createStageEdgeBars(start, end, bottomY, thickness, material, renderSettings.edgeMode).forEach((bar) => group.add(bar));
+  });
+  uniqueSegmentCoordinatePoints(segments).forEach(([x, y]) => {
+    const vertical = new THREE.Mesh(new THREE.BoxGeometry(thickness, height, thickness), material.clone());
+    vertical.position.set(x, height / 2, y);
+    vertical.renderOrder = 8;
+    vertical.userData.isStageEdge = true;
+    group.add(vertical);
+  });
+  material.dispose();
+  return group;
+}
+
+function createStageEdgeBars(start, end, y, thickness, material, mode) {
+  const dx = end[0] - start[0];
+  const dz = end[1] - start[1];
+  const length = Math.hypot(dx, dz);
+  if (length <= 0.0001) return [];
+  const offsets = mode === 'double' ? [-thickness * 1.6, thickness * 1.6] : [0];
+  const normalX = -dz / length;
+  const normalZ = dx / length;
+  return offsets.map((offset) => {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, thickness), material.clone());
+    bar.position.set((start[0] + end[0]) / 2 + normalX * offset, y, (start[1] + end[1]) / 2 + normalZ * offset);
+    bar.rotation.y = -Math.atan2(dz, dx);
+    bar.renderOrder = 8;
+    bar.userData.isStageEdge = true;
+    return bar;
+  });
+}
+
+function stageEdgeWorldThickness(value) {
+  const number = Math.max(0, Number(value) || DEFAULT_RENDER_SETTINGS.edgeThickness);
+  return Math.min(0.12, Math.max(0.006, number * 0.006));
+}
+
+function uniqueSegmentCoordinatePoints(segments) {
+  const points = new Map();
+  segments.flat().forEach((point) => {
+    const key = `${point[0].toFixed(4)},${point[1].toFixed(4)}`;
+    if (!points.has(key)) points.set(key, point);
+  });
+  return [...points.values()];
+}
+
 function createPieceObject(piece) {
   if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) return createGlbPieceObject(piece);
   if (piece.type === 'obj' && piece.objText) return createObjPieceObject(piece);
@@ -1568,6 +1722,7 @@ function normalizeImportedObject(object, piece) {
 
 function applyPieceMaterial(object, piece, materialName, selected) {
   object.traverse((child) => {
+    if (child.userData?.isStageEdge) return;
     if (!child.isMesh || !child.material) return;
     child.material.color.set(piece.color);
     child.material.metalness = 0.08;
