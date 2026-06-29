@@ -3215,9 +3215,12 @@ async function renderSceneCanvas(placed, options = {}) {
     context.shadowBlur = 18;
     context.shadowOffsetX = 8;
     context.shadowOffsetY = 10;
-    context.globalAlpha = material === 'glass' ? 0.58 : 1;
-    context.fillStyle = canvasMaterialFill(context, material, piece.color || '#1c7c74');
+    context.globalAlpha = material === 'glass' ? 0.72 : 1;
+    context.fillStyle = canvasMaterialFill(context, material, piece.color || '#1c7c74', renderSettings.backgroundColor);
     context.fill();
+    if (material === 'glass') {
+      drawGlassCanvasHighlight(context, topPoints, renderSettings.backgroundColor);
+    }
     context.globalAlpha = 1;
     context.shadowColor = 'transparent';
     strokeCanvasPath(context, topPoints, {
@@ -3305,6 +3308,33 @@ function strokeCanvasPath(context, points, options = {}) {
   context.restore();
 }
 
+function drawGlassCanvasHighlight(context, points, backgroundColor) {
+  if (points.length < 3) return;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const gradient = context.createLinearGradient(minX, minY, maxX, maxY);
+  gradient.addColorStop(0, rgbaFromHex(backgroundColor, 0.62));
+  gradient.addColorStop(0.38, rgbaFromHex('#ffffff', 0.28));
+  gradient.addColorStop(1, rgbaFromHex(backgroundColor, 0.08));
+  context.save();
+  context.beginPath();
+  points.forEach(([x, y], index) => {
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.closePath();
+  context.clip();
+  context.globalAlpha = 1;
+  context.globalCompositeOperation = 'screen';
+  context.fillStyle = gradient;
+  context.fillRect(minX, minY, maxX - minX || 1, maxY - minY || 1);
+  context.restore();
+}
+
 function shadeColor(color, factor) {
   const hex = color.replace('#', '');
   const full = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
@@ -3314,6 +3344,50 @@ function shadeColor(color, factor) {
   const g = Math.max(0, Math.min(255, Math.round(((number >> 8) & 255) * factor)));
   const b = Math.max(0, Math.min(255, Math.round((number & 255) * factor)));
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+function glassTintColor(color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
+  const piece = hexToRgb(color) || hexToRgb('#1c7c74');
+  const bg = hexToRgb(backgroundColor) || hexToRgb(DEFAULT_RENDER_SETTINGS.backgroundColor);
+  const bgIntensity = colorLuminance(bg);
+  const multiplier = 0.82 + bgIntensity * 0.72;
+  const bgMix = 0.32 + bgIntensity * 0.22;
+  const rgb = {
+    r: clampColor(piece.r * multiplier + bg.r * bgMix),
+    g: clampColor(piece.g * multiplier + bg.g * bgMix),
+    b: clampColor(piece.b * multiplier + bg.b * bgMix),
+  };
+  return rgbToHex(rgb);
+}
+
+function colorLuminance({ r, g, b }) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function hexToRgb(value) {
+  if (typeof value !== 'string') return null;
+  const hex = value.replace('#', '');
+  const full = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+  const number = Number.parseInt(full, 16);
+  return {
+    r: (number >> 16) & 255,
+    g: (number >> 8) & 255,
+    b: number & 255,
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b].map((value) => clampColor(value).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rgbaFromHex(color, alpha) {
+  const rgb = hexToRgb(color) || { r: 255, g: 255, b: 255 };
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
+function clampColor(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 function normalizeMaterialName(material) {
@@ -3346,11 +3420,11 @@ function materialStrokeColor(material, color) {
   return '#123f3a';
 }
 
-function canvasMaterialFill(context, material, color) {
+function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
   if (material === 'marble' || material === 'tile' || material === 'wood') {
     return context.createPattern(createMaterialPatternCanvas(color, material, 256), 'repeat') || color;
   }
-  if (material === 'glass') return color;
+  if (material === 'glass') return glassTintColor(color, backgroundColor);
   return color;
 }
 
@@ -3383,7 +3457,7 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
     object.position.set(piece.x, 0, piece.y);
     object.rotation.y = -piece.rotation;
     object.scale.y = options.style === 'pattern' ? 0.35 : 1;
-    applyExportPieceMaterial(object, piece, options.material);
+    applyExportPieceMaterial(object, piece, options.material, renderSettings);
     group.add(object);
   }
 
@@ -3479,9 +3553,9 @@ function createExportFootprintObject(piece) {
   return mesh;
 }
 
-function applyExportPieceMaterial(object, piece, materialName) {
+function applyExportPieceMaterial(object, piece, materialName, renderSettings = DEFAULT_RENDER_SETTINGS) {
   const normalizedMaterialName = normalizeMaterialName(materialName);
-  const material = createExportMaterial(piece, normalizedMaterialName);
+  const material = createExportMaterial(piece, normalizedMaterialName, renderSettings);
   object.traverse((child) => {
     if (!child.isMesh) return;
     child.castShadow = normalizedMaterialName !== 'glass';
@@ -3492,22 +3566,30 @@ function applyExportPieceMaterial(object, piece, materialName) {
   material.dispose();
 }
 
-function createExportMaterial(piece, materialName = 'conceptual') {
+function createExportMaterial(piece, materialName = 'conceptual', renderSettings = DEFAULT_RENDER_SETTINGS) {
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'glass') {
+    const glassColor = glassTintColor(color, normalizeRenderSettings(renderSettings).backgroundColor);
     return new THREE.MeshPhysicalMaterial({
-      color,
+      color: glassColor,
       metalness: 0,
-      roughness: 0.04,
-      transmission: 0.55,
-      thickness: 0.45,
+      roughness: 0.01,
+      transmission: 0.78,
+      thickness: 0.7,
       ior: 1.45,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.58,
       depthWrite: false,
       clearcoat: 1,
-      clearcoatRoughness: 0.03,
+      clearcoatRoughness: 0.01,
+      specularIntensity: 1,
+      specularColor: '#ffffff',
+      attenuationColor: glassColor,
+      attenuationDistance: 2.5,
+      envMapIntensity: 1.35,
+      emissive: glassColor,
+      emissiveIntensity: 0.07,
       side: THREE.DoubleSide,
     });
   }
