@@ -3224,6 +3224,9 @@ async function renderSceneCanvas(placed, options = {}) {
     }
     context.fillStyle = canvasMaterialFill(context, material, piece.color || '#1c7c74', renderSettings.backgroundColor);
     context.fill();
+    if (material === 'glass') {
+      drawGlassReflectionSheen(context, topPoints, renderSettings.backgroundColor);
+    }
     context.globalCompositeOperation = 'source-over';
     context.globalAlpha = 1;
     context.shadowColor = 'transparent';
@@ -3312,6 +3315,58 @@ function strokeCanvasPath(context, points, options = {}) {
   context.restore();
 }
 
+function drawGlassReflectionSheen(context, points, backgroundColor) {
+  if (points.length < 3) return;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 1);
+  const height = Math.max(maxY - minY, 1);
+  const ambient = ambientGlassColor(backgroundColor);
+  const sheen = context.createLinearGradient(minX, minY, maxX, maxY);
+  sheen.addColorStop(0, `rgba(255, 255, 255, 0.38)`);
+  sheen.addColorStop(0.22, rgbaFromRgb(ambient, 0.26));
+  sheen.addColorStop(0.55, `rgba(255, 255, 255, 0.08)`);
+  sheen.addColorStop(1, rgbaFromRgb(ambient, 0.18));
+
+  context.save();
+  traceCanvasPolygon(context, points);
+  context.clip();
+  context.globalCompositeOperation = 'screen';
+  context.globalAlpha = 0.55;
+  context.fillStyle = sheen;
+  context.fillRect(minX, minY, width, height);
+
+  context.globalAlpha = 0.32;
+  context.strokeStyle = 'rgba(255,255,255,0.72)';
+  context.lineWidth = Math.max(1.5, Math.min(width, height) * 0.035);
+  context.beginPath();
+  context.moveTo(minX + width * 0.14, minY + height * 0.2);
+  context.lineTo(maxX - width * 0.16, minY + height * 0.48);
+  context.stroke();
+
+  context.globalAlpha = 0.18;
+  context.strokeStyle = rgbaFromRgb(ambient, 0.9);
+  context.lineWidth = Math.max(1, Math.min(width, height) * 0.018);
+  context.beginPath();
+  context.moveTo(minX + width * 0.26, maxY - height * 0.16);
+  context.lineTo(maxX - width * 0.1, minY + height * 0.22);
+  context.stroke();
+  context.restore();
+}
+
+function traceCanvasPolygon(context, points) {
+  context.beginPath();
+  points.forEach(([x, y], index) => {
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.closePath();
+}
+
 function shadeColor(color, factor) {
   const hex = color.replace('#', '');
   const full = hex.length === 3 ? hex.split('').map((char) => char + char).join('') : hex;
@@ -3327,7 +3382,7 @@ function glassTintColor(color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgro
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
   const bg = hexToRgb(backgroundColor) || hexToRgb(DEFAULT_RENDER_SETTINGS.backgroundColor);
   const vivid = saturateRgb(piece, 1.42);
-  const multiplied = multiplyRgb(piece, bg);
+  const multiplied = multiplyRgb(piece, ambientGlassColor(backgroundColor));
   const bgIntensity = colorLuminance(bg);
   const rgb = {
     r: clampColor(vivid.r * 0.86 + multiplied.r * 0.14 + bgIntensity * 10),
@@ -3354,6 +3409,15 @@ function multiplyRgb(foreground, background) {
   };
 }
 
+function ambientGlassColor(backgroundColor) {
+  const bg = hexToRgb(backgroundColor) || hexToRgb(DEFAULT_RENDER_SETTINGS.backgroundColor);
+  return {
+    r: clampColor(bg.r * 0.68 + 255 * 0.2 + 84 * 0.12),
+    g: clampColor(bg.g * 0.68 + 255 * 0.18 + 220 * 0.14),
+    b: clampColor(bg.b * 0.68 + 255 * 0.14 + 255 * 0.18),
+  };
+}
+
 function colorLuminance({ r, g, b }) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
@@ -3373,6 +3437,10 @@ function hexToRgb(value) {
 
 function rgbToHex({ r, g, b }) {
   return `#${[r, g, b].map((value) => clampColor(value).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rgbaFromRgb({ r, g, b }, alpha) {
+  return `rgba(${clampColor(r)}, ${clampColor(g)}, ${clampColor(b)}, ${alpha})`;
 }
 
 function clampColor(value) {
@@ -3428,6 +3496,8 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(renderSettings.backgroundColor);
+  const environment = createGlassEnvironmentMap(renderSettings.backgroundColor);
+  scene.environment = environment;
   const group = new THREE.Group();
   scene.add(group);
 
@@ -3482,8 +3552,44 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   context.fillText(`Girih isometric ${options.style || 'model'} export`, 32, canvas.height - 34);
 
   disposeObject(group);
+  environment.dispose?.();
   renderer.dispose();
   return canvas;
+}
+
+function createGlassEnvironmentMap(backgroundColor) {
+  const ambient = ambientGlassColor(backgroundColor);
+  const warm = { r: 255, g: 248, b: 226 };
+  const cool = { r: 185, g: 241, b: 255 };
+  const dark = { r: 48, g: 68, b: 78 };
+  const faces = [
+    [warm, ambient],
+    [ambient, cool],
+    [warm, cool],
+    [cool, dark],
+    [warm, dark],
+    [ambient, warm],
+  ];
+  const canvases = faces.map(([start, end], index) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    const gradient = context.createLinearGradient(index % 2 ? 64 : 0, 0, index % 2 ? 0 : 64, 64);
+    gradient.addColorStop(0, rgbaFromRgb(start, 1));
+    gradient.addColorStop(0.48, 'rgba(255,255,255,0.86)');
+    gradient.addColorStop(1, rgbaFromRgb(end, 1));
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 64, 64);
+    context.globalAlpha = 0.34;
+    context.fillStyle = 'white';
+    context.fillRect(index % 3 === 0 ? 6 : 34, index % 2 === 0 ? 8 : 38, 20, 10);
+    return canvas;
+  });
+  const texture = new THREE.CubeTexture(canvases);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName) {
@@ -3564,20 +3670,21 @@ function createExportMaterial(piece, materialName = 'conceptual', renderSettings
       color: glassColor,
       metalness: 0,
       roughness: 0.01,
-      transmission: 0.46,
-      thickness: 0.9,
+      transmission: 0.66,
+      thickness: 0.72,
       ior: 1.45,
       transparent: true,
-      opacity: 0.48,
+      opacity: 0.42,
       depthWrite: false,
       blending: THREE.MultiplyBlending,
       clearcoat: 1,
       clearcoatRoughness: 0.01,
       specularIntensity: 1,
       specularColor: '#ffffff',
+      reflectivity: 1,
       attenuationColor: glassColor,
-      attenuationDistance: 1.05,
-      envMapIntensity: 1.05,
+      attenuationDistance: 1.25,
+      envMapIntensity: 2.4,
       side: THREE.DoubleSide,
     });
   }
