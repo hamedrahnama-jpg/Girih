@@ -887,6 +887,7 @@ function App() {
           material={material}
           style={style}
           cameraMode={stageCamera}
+          backgroundColor={renderBgColor}
           onSelect={setSelectedId}
           onMove={updatePlaced}
           onSettle={settlePiece}
@@ -1161,25 +1162,27 @@ function pieceGeometrySignature(piece) {
   });
 }
 
-function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange }) {
+function GirihStage({ placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange }) {
   const mountRef = useRef(null);
-  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange });
+  const stateRef = useRef({ placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange });
   const rendererRef = useRef(null);
 
   useEffect(() => {
-    stateRef.current = { placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange };
-  }, [placed, selectedId, material, style, cameraMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
+    stateRef.current = { placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange };
+  }, [placed, selectedId, material, style, cameraMode, backgroundColor, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
 
   useEffect(() => {
     const mount = mountRef.current;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#f4efe6');
+    const initialBackground = normalizeHexColor(stateRef.current.backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor);
+    scene.background = new THREE.Color(initialBackground);
 
     const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.setClearColor(initialBackground, 1);
     renderer.shadowMap.enabled = true;
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -1401,6 +1404,7 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
     function animate() {
       syncMeshes();
       applyStageCameraView(stateRef.current.cameraMode || 'top');
+      applyStageBackground(scene, renderer, stateRef.current.backgroundColor);
       controls.update();
       reportViewBounds();
       renderer.render(scene, camera);
@@ -1422,6 +1426,15 @@ function GirihStage({ placed, selectedId, material, style, cameraMode, onSelect,
   }, []);
 
   return <div className="stage-canvas" ref={mountRef} />;
+}
+
+function applyStageBackground(scene, renderer, backgroundColor) {
+  const color = normalizeHexColor(backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor);
+  if (scene.userData.stageBackgroundColor === color) return;
+  scene.userData.stageBackgroundColor = color;
+  if (!scene.background?.isColor) scene.background = new THREE.Color(color);
+  else scene.background.set(color);
+  renderer.setClearColor(color, 1);
 }
 
 function createPieceObject(piece) {
