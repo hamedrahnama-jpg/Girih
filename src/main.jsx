@@ -36,6 +36,7 @@ const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
+const EXPORT_MATERIALS = new Set(['glass', 'marble', 'tile', 'wood', 'plastic']);
 
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
@@ -87,7 +88,7 @@ function App() {
     canRedo,
   } = useStageHistory([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [material, setMaterial] = useState('ceramic');
+  const [material, setMaterial] = useState('plastic');
   const [style, setStyle] = useState('presentation');
   const [draft, setDraft] = useState(emptyDraft());
   const [editingId, setEditingId] = useState(null);
@@ -365,7 +366,7 @@ function App() {
     const next = centerScenePieces(rehydrateScenePieces(model));
     commitPlaced(() => next);
     setStyle(model.style || style);
-    setMaterial(model.material || material);
+    setMaterial(normalizeMaterialName(model.material || material));
     setSelectedId(null);
   }
 
@@ -488,10 +489,11 @@ function App() {
           <label>
             Material
             <select value={material} onChange={(event) => setMaterial(event.target.value)}>
-              <option value="ceramic">Ceramic glaze</option>
-              <option value="wood">Carved wood</option>
-              <option value="brass">Brushed brass</option>
-              <option value="stone">Matte stone</option>
+              <option value="glass">Glass</option>
+              <option value="marble">Marble</option>
+              <option value="tile">Tile</option>
+              <option value="wood">Wood</option>
+              <option value="plastic">Plastic</option>
             </select>
           </label>
         </section>
@@ -604,10 +606,11 @@ function App() {
           <label>
             Material
             <select value={material} onChange={(event) => setMaterial(event.target.value)}>
-              <option value="ceramic">Ceramic glaze</option>
-              <option value="wood">Carved wood</option>
-              <option value="brass">Brushed brass</option>
-              <option value="stone">Matte stone</option>
+              <option value="glass">Glass</option>
+              <option value="marble">Marble</option>
+              <option value="tile">Tile</option>
+              <option value="wood">Wood</option>
+              <option value="plastic">Plastic</option>
             </select>
           </label>
         </section>
@@ -1363,8 +1366,10 @@ function applyPieceMaterial(object, piece, materialName, selected) {
   object.traverse((child) => {
     if (!child.isMesh || !child.material) return;
     child.material.color.set(piece.color);
-    child.material.metalness = materialName === 'brass' ? 0.55 : 0.08;
-    child.material.roughness = materialName === 'ceramic' ? 0.28 : 0.65;
+    child.material.metalness = 0.08;
+    child.material.roughness = 0.42;
+    child.material.transparent = false;
+    child.material.opacity = 1;
     child.material.emissive?.set(selected ? '#362000' : '#000000');
     child.material.emissiveIntensity = selected ? 0.12 : 0;
   });
@@ -2571,6 +2576,7 @@ function slugify(value) {
 }
 
 function serializeSceneModel(name, placed, style, material) {
+  const normalizedMaterial = normalizeMaterialName(material);
   return {
     id: `model-${crypto.randomUUID()}`,
     app: 'Girih',
@@ -2579,7 +2585,7 @@ function serializeSceneModel(name, placed, style, material) {
     name,
     exportedAt: new Date().toISOString(),
     style,
-    material,
+    material: normalizedMaterial,
     pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceFootprintScale, analysisVersion, x, y, rotation, height, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
@@ -2597,7 +2603,7 @@ function serializeSceneModel(name, placed, style, material) {
       glbUrl,
       snappedTo,
       transform: { x, y, rotation, height },
-      material: { type: material, color },
+      material: { type: normalizedMaterial, color },
     })),
   };
 }
@@ -2820,6 +2826,7 @@ function worldFootprintPoints(piece) {
 async function renderSceneCanvas(placed, options = {}) {
   const view = options.view || 'top';
   if (view === 'isometric') return renderIsometricSceneCanvas(placed, options);
+  const material = normalizeMaterialName(options.material);
   const orientation = options.orientation || 'landscape';
   const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
   const padding = 180;
@@ -2906,11 +2913,13 @@ async function renderSceneCanvas(placed, options = {}) {
     context.shadowBlur = 18;
     context.shadowOffsetX = 8;
     context.shadowOffsetY = 10;
-    context.fillStyle = piece.color || '#1c7c74';
+    context.globalAlpha = material === 'glass' ? 0.58 : 1;
+    context.fillStyle = material === 'marble' ? '#f8f4ed' : piece.color || '#1c7c74';
     context.fill();
+    context.globalAlpha = 1;
     context.shadowColor = 'transparent';
     context.lineWidth = Math.max(2, scale * 0.018);
-    context.strokeStyle = options.material === 'brass' ? '#d7b76a' : '#123f3a';
+    context.strokeStyle = materialStrokeColor(material, piece.color || '#1c7c74');
     context.stroke();
     context.restore();
   });
@@ -2959,6 +2968,20 @@ function shadeColor(color, factor) {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+function normalizeMaterialName(material) {
+  if (EXPORT_MATERIALS.has(material)) return material;
+  if (material === 'ceramic' || material === 'stone' || material === 'brass') return 'plastic';
+  return 'plastic';
+}
+
+function materialStrokeColor(material, color) {
+  if (material === 'glass') return shadeColor(color, 0.82);
+  if (material === 'marble') return '#b8aa98';
+  if (material === 'tile') return '#f5eee3';
+  if (material === 'wood') return '#5a351f';
+  return '#123f3a';
+}
+
 async function renderIsometricSceneCanvas(placed, options = {}) {
   const orientation = options.orientation || 'landscape';
   const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
@@ -2987,7 +3010,7 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
     object.position.set(piece.x, 0, piece.y);
     object.rotation.y = -piece.rotation;
     object.scale.y = options.style === 'pattern' ? 0.35 : 1;
-    applyPieceMaterial(object, piece, options.material, false);
+    applyExportPieceMaterial(object, piece, options.material);
     group.add(object);
   }
 
@@ -3051,12 +3074,114 @@ function prepareExportMeshes(object, piece) {
     if (!child.isMesh) return;
     child.castShadow = false;
     child.receiveShadow = false;
-    child.material = new THREE.MeshStandardMaterial({
-      color: piece.color,
-      metalness: 0.08,
-      roughness: 0.42,
-    });
+    child.material = createExportMaterial(piece, 'plastic');
   });
+}
+
+function applyExportPieceMaterial(object, piece, materialName) {
+  const material = createExportMaterial(piece, materialName);
+  object.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = materialName !== 'glass';
+    child.receiveShadow = materialName !== 'glass';
+    child.material?.dispose?.();
+    child.material = material.clone();
+  });
+  material.dispose();
+}
+
+function createExportMaterial(piece, materialName = 'plastic') {
+  const material = normalizeMaterialName(materialName);
+  const color = piece.color || '#1c7c74';
+  if (material === 'glass') {
+    return new THREE.MeshPhysicalMaterial({
+      color,
+      metalness: 0,
+      roughness: 0.04,
+      transmission: 0.55,
+      thickness: 0.45,
+      ior: 1.45,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      clearcoat: 1,
+      clearcoatRoughness: 0.03,
+      side: THREE.DoubleSide,
+    });
+  }
+
+  const texture = material === 'plastic' ? null : createMaterialTexture(color, material);
+  return new THREE.MeshStandardMaterial({
+    color: material === 'marble' ? '#f8f4ed' : color,
+    map: texture,
+    metalness: 0,
+    roughness: material === 'plastic' ? 0.36 : material === 'tile' ? 0.18 : material === 'wood' ? 0.58 : 0.24,
+    envMapIntensity: material === 'tile' ? 0.75 : 0.35,
+  });
+}
+
+function createMaterialTexture(color, materialName) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  context.fillStyle = materialName === 'marble' ? '#f8f4ed' : color;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (materialName === 'marble') {
+    for (let index = 0; index < 24; index += 1) {
+      context.strokeStyle = `rgba(${index % 2 ? '96, 110, 112' : '205, 190, 170'}, ${0.16 + (index % 4) * 0.035})`;
+      context.lineWidth = 1 + (index % 3);
+      context.beginPath();
+      const startY = index * 13 - 30;
+      context.moveTo(-20, startY);
+      for (let x = -20; x <= 280; x += 28) {
+        context.lineTo(x, startY + Math.sin((x + index * 21) * 0.035) * 22 + x * 0.18);
+      }
+      context.stroke();
+    }
+  }
+
+  if (materialName === 'tile') {
+    const gradient = context.createLinearGradient(0, 0, 256, 256);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.42)');
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.08)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0.12)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+    context.strokeStyle = 'rgba(255,255,255,0.55)';
+    context.lineWidth = 4;
+    for (let value = 0; value <= 256; value += 64) {
+      context.beginPath();
+      context.moveTo(value, 0);
+      context.lineTo(value, 256);
+      context.moveTo(0, value);
+      context.lineTo(256, value);
+      context.stroke();
+    }
+  }
+
+  if (materialName === 'wood') {
+    context.fillStyle = shadeColor(color, 0.82);
+    context.fillRect(0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 8) {
+      context.strokeStyle = y % 24 === 0 ? 'rgba(64, 36, 18, 0.28)' : 'rgba(255, 232, 176, 0.16)';
+      context.lineWidth = y % 24 === 0 ? 3 : 1;
+      context.beginPath();
+      context.moveTo(0, y);
+      for (let x = 0; x <= 256; x += 18) {
+        context.lineTo(x, y + Math.sin((x + y) * 0.05) * 5);
+      }
+      context.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1.8, 1.8);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function downloadCanvasPng(filename, canvas) {
