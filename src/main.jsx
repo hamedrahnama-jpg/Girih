@@ -48,13 +48,24 @@ const DEFAULT_RENDER_SETTINGS = {
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
   publicModelPiece('chenari', 'Chenari', 'Chenari.glb', '#8a6bb8'),
+  publicModelPiece('giveh', 'Giveh', 'Giveh.glb', '#2b7a6f'),
+  publicModelPiece('loz', 'Loz', 'Loz.glb', '#b86f3e'),
   publicModelPiece('maku', 'Maku', 'Maku.glb', '#1f6f68'),
+  publicModelPiece('panj', 'Panj', 'Panj.glb', '#6e7fbd'),
+  publicModelPiece('sekro', 'Sekro', 'Sekro.glb', '#8b6f47'),
+  publicModelPiece('separi', 'Separi', 'Separi.glb', '#3f8c82'),
   publicModelPiece('setareh', 'Setareh', 'Setareh.glb', '#2e8278'),
+  publicModelPiece('setareh-shol', 'Setareh Shol', 'Setareh Shol.glb', '#2b716a'),
   publicModelPiece('shamseh', 'Shamseh', 'Shamseh.glb', '#d58a36'),
+  publicModelPiece('shamseh-kond', 'Shamseh Kond', 'Shamseh Kond.glb', '#c4812f'),
   publicModelPiece('shesh-band', 'Shesh Band', 'Shesh Band.glb', '#1c7c74'),
+  publicModelPiece('shesh-shol', 'Shesh Shol', 'Shesh Shol.glb', '#2f8d7e'),
+  publicModelPiece('sormehdan', 'Sormehdan', 'Sormehdan.glb', '#526d93'),
+  publicModelPiece('tabl', 'Tabl', 'Tabl.glb', '#9a5845'),
   publicModelPiece('tah-borideh', 'Tah Borideh', 'Tah Borideh.glb', '#b9455a'),
   publicModelPiece('taragheh', 'Taragheh', 'Taragheh.glb', '#4076b8'),
   publicModelPiece('toranj', 'Toranj', 'Toranj.glb', '#6f8d44'),
+  publicModelPiece('toranj-kond', 'Toranj Kond', 'Toranj Kond.glb', '#78914a'),
 ];
 
 const DEFAULT_PIECES = [...PUBLIC_MODEL_PIECES];
