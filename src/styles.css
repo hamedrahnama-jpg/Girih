@@ -38,7 +38,7 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(420px, 1fr) 320px;
+  grid-template-columns: 300px minmax(420px, 1fr);
   height: 100vh;
   overflow: hidden;
 }
@@ -62,8 +62,34 @@ button:disabled {
 }
 
 .admin-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 35;
+  width: 320px;
   border-right: 0;
   border-left: 1px solid #d8ccba;
+  box-shadow: 0 18px 55px rgba(36, 30, 24, 0.25);
+  transform: translateX(105%);
+  transition: transform 180ms ease;
+}
+
+.admin-panel.open {
+  transform: translateX(0);
+}
+
+.admin-panel .mobile-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-height: 32px;
+  margin-left: auto;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2d2924;
+  padding: 0;
 }
 
 .brand-block {
@@ -139,10 +165,72 @@ button:disabled {
 }
 
 .piece-card:hover,
+.piece-group-toggle:hover,
+.admin-group-toggle:hover,
 .admin-row button:hover,
 .action-row button:hover,
 .admin-form button:hover {
   background: #f3eadc;
+}
+
+.piece-group {
+  display: grid;
+  gap: 6px;
+}
+
+.piece-group-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto 20px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #fbf7ef;
+  color: #241e18;
+  font-weight: 700;
+  text-align: left;
+}
+
+.piece-group-toggle small {
+  color: #746757;
+  font-weight: 600;
+}
+
+.piece-group-items {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-group {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-group-toggle {
+  display: grid;
+  grid-template-columns: 1fr auto 20px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #fbf7ef;
+  color: #241e18;
+  font-weight: 700;
+  text-align: left;
+}
+
+.admin-group-toggle small {
+  color: #746757;
+  font-weight: 600;
+}
+
+.admin-group-items {
+  display: grid;
+  gap: 6px;
 }
 
 .piece-icon {
@@ -154,6 +242,29 @@ button:disabled {
 .controls-grid {
   display: grid;
   gap: 10px;
+}
+
+.transform-row {
+  display: grid;
+  grid-template-columns: 64px repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px;
+}
+
+.transform-row-single {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.transform-row > span {
+  color: #65594d;
+  font-size: 12px;
+  font-weight: 800;
+  padding-bottom: 10px;
+}
+
+.transform-field {
+  gap: 4px;
+  min-width: 0;
 }
 
 label {
@@ -341,6 +452,7 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .history-controls {
@@ -351,18 +463,22 @@ textarea {
 .stage-view-controls {
   gap: 6px;
   pointer-events: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 520px;
 }
 
 .stage-view-controls button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 38px;
+  min-height: 32px;
   border: 1px solid rgba(216, 204, 186, 0.95);
   border-radius: 8px;
   background: rgba(255, 250, 241, 0.9);
   color: #2d2924;
-  padding: 8px 10px;
+  padding: 6px 8px;
+  font-size: 12px;
   backdrop-filter: blur(10px);
 }
 
@@ -537,7 +653,11 @@ textarea {
 
 @media (max-width: 1120px) {
   .app-shell {
-    grid-template-columns: 240px minmax(360px, 1fr) 280px;
+    grid-template-columns: 240px minmax(360px, 1fr);
+  }
+
+  .admin-panel {
+    width: 280px;
   }
 }
 
@@ -619,7 +739,7 @@ textarea {
   .library-panel {
     left: 0;
     width: 64px;
-    padding: 58px 8px 12px;
+    padding: 52px 8px 12px;
     border-right: 1px solid #d8ccba;
     transform: translateX(-105%);
     box-shadow: 0 12px 36px rgba(36, 30, 24, 0.16);
@@ -654,33 +774,134 @@ textarea {
 
   .library-panel .section-title {
     justify-content: center;
+    gap: 0;
   }
 
   .library-panel .section-title svg,
-  .library-panel .section-title span,
-  .library-panel .mobile-close-button {
+  .library-panel .section-title span {
     display: none;
   }
 
-  .piece-list {
+  .library-panel .mobile-close-button {
+    display: inline-flex;
+    margin-left: 0;
+  }
+
+  .library-panel .piece-list {
     gap: 7px;
   }
 
-  .piece-card {
+  .library-panel .piece-group {
+    gap: 5px;
+  }
+
+  .library-panel .piece-group-toggle {
+    min-height: 28px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    gap: 0;
+    padding: 3px;
+    font-size: 12px;
+  }
+
+  .library-panel .piece-group-toggle span:first-child,
+  .library-panel .piece-group-toggle small {
+    display: none;
+  }
+
+  .library-panel .piece-group-toggle span:last-child {
+    text-align: center;
+  }
+
+  .library-panel .piece-group-items {
+    gap: 5px;
+  }
+
+  .library-panel .piece-card {
     grid-template-columns: 1fr;
     place-items: center;
     min-height: 44px;
     padding: 5px;
   }
 
-  .piece-card span,
-  .piece-card > svg:last-child {
+  .library-panel .piece-card span,
+  .library-panel .piece-card > svg:last-child {
     display: none;
+  }
+
+  .library-panel .piece-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .admin-group-toggle {
+    min-height: 38px;
+    grid-template-columns: minmax(0, 1fr) auto 20px;
+  }
+
+  .admin-group-toggle span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-group-toggle span:last-child {
+    text-align: center;
+  }
+
+  .admin-group-items {
+    gap: 6px;
+  }
+
+  .admin-row {
+    grid-template-columns: 34px 30px minmax(0, 1fr) 28px 28px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .admin-row span {
+    min-width: 0;
+  }
+
+  .admin-row span > small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-row button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 4px;
+  }
+
+  .admin-color-input {
+    width: 30px;
+    height: 30px;
   }
 
   .piece-icon {
     width: 34px;
     height: 34px;
+  }
+
+  .library-panel .piece-library-section .section-title {
+    position: sticky;
+    top: -52px;
+    z-index: 1;
+    margin: -52px -8px 8px;
+    padding: 8px;
+    background: #fffaf1;
+    border-bottom: 1px solid #d8ccba;
+  }
+
+  .piece-library-section .section-title .mobile-close-button {
+    margin-left: 0;
+  }
+
+  .piece-list {
+    gap: 7px;
   }
 
   .dimension-readout,

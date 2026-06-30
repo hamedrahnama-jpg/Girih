@@ -36,14 +36,127 @@ const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
-const EXPORT_MATERIALS = new Set(['conceptual', 'glass', 'marble', 'tile', 'wood', 'plastic']);
-const EDGE_LINE_MODES = new Set(['single', 'double']);
+const EXPORT_MATERIALS = new Set(['glass', 'plastic']);
+const EDGE_LINE_MODES = new Set(['single', 'double', 'offset']);
+const DEFAULT_SCENE_STYLE = 'presentation';
+const STAGE_CAMERA_VIEWS = [
+  { id: 'top', label: 'Top', position: [0, 12, 0.001], up: [0, 0, -1], lockRotate: true },
+  { id: 'iso-ne', label: 'NE', position: [7.2, 6.4, 7.2], up: [0, 1, 0] },
+  { id: 'iso-nw', label: 'NW', position: [-7.2, 6.4, 7.2], up: [0, 1, 0] },
+  { id: 'iso-se', label: 'SE', position: [7.2, 6.4, -7.2], up: [0, 1, 0] },
+  { id: 'iso-sw', label: 'SW', position: [-7.2, 6.4, -7.2], up: [0, 1, 0] },
+];
+const STAGE_CAMERA_VIEW_MAP = new Map(STAGE_CAMERA_VIEWS.map((view) => [view.id, view]));
 const DEFAULT_RENDER_SETTINGS = {
   backgroundColor: '#f6efe3',
   edgeColor: '#123f3a',
-  edgeThickness: 3,
+  edgeThickness: 0,
   edgeMode: 'single',
+  edgeOffsetCount: 3,
+  edgeOffsetDistance: 8,
 };
+const DEFAULT_MODEL_TRANSFORM = {
+  scaleX: 1,
+  scaleY: 1,
+  scaleZ: 1,
+  positionX: 0,
+  positionY: 0,
+  positionZ: 0,
+  rotationX: 0,
+  rotationY: 0,
+  rotationZ: 0,
+};
+const STAGE_HEMISPHERE_LIGHT = {
+  sky: '#fff7e8',
+  ground: '#3e506b',
+  intensity: 1.4,
+};
+const STAGE_KEY_LIGHT = {
+  color: '#ffffff',
+  intensity: 2,
+  position: [3, 6, 4],
+};
+const EXPORT_SHADOW_MAP_SIZE = 8192;
+const EXPORT_RENDER_SCALE = 1.5;
+const GLASS_EXPORT_RENDER_SCALE = 0.5;
+const MODEL_TRANSFORM_FIELDS = [
+  { id: 'scaleX', label: 'Scale X', min: 0.05, step: 0.05 },
+  { id: 'scaleY', label: 'Scale Y', min: 0.05, step: 0.05 },
+  { id: 'scaleZ', label: 'Scale Z', min: 0.05, step: 0.05 },
+  { id: 'positionX', label: 'Position X', step: 0.1 },
+  { id: 'positionY', label: 'Position Y', step: 0.1 },
+  { id: 'positionZ', label: 'Position Z', step: 0.1 },
+  { id: 'rotationX', label: 'Rotate X', step: 1 },
+  { id: 'rotationY', label: 'Rotate Y', step: 1 },
+  { id: 'rotationZ', label: 'Rotate Z', step: 1 },
+];
+
+function getStageCameraView(view) {
+  return STAGE_CAMERA_VIEW_MAP.get(view) || STAGE_CAMERA_VIEW_MAP.get('top');
+}
+
+function normalizeCameraSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.position) || !Array.isArray(snapshot.target) || !Array.isArray(snapshot.up)) return null;
+  const position = snapshot.position.map(Number);
+  const target = snapshot.target.map(Number);
+  const up = snapshot.up.map(Number);
+  const fov = Number(snapshot.fov);
+  if (
+    position.length !== 3 ||
+    target.length !== 3 ||
+    up.length !== 3 ||
+    !position.every(Number.isFinite) ||
+    !target.every(Number.isFinite) ||
+    !up.every(Number.isFinite)
+  ) {
+    return null;
+  }
+  return {
+    position,
+    target,
+    up,
+    fov: Number.isFinite(fov) && fov > 0 ? fov : 42,
+  };
+}
+
+function normalizeModelTransform(transform = {}) {
+  const source = transform || {};
+  const scaleX = parsePositiveTransformNumber(source.scaleX, DEFAULT_MODEL_TRANSFORM.scaleX);
+  const scaleY = parsePositiveTransformNumber(source.scaleY, DEFAULT_MODEL_TRANSFORM.scaleY);
+  const scaleZ = parsePositiveTransformNumber(source.scaleZ, DEFAULT_MODEL_TRANSFORM.scaleZ);
+  return {
+    scaleX,
+    scaleY,
+    scaleZ,
+    positionX: parseTransformNumber(source.positionX, DEFAULT_MODEL_TRANSFORM.positionX),
+    positionY: parseTransformNumber(source.positionY, DEFAULT_MODEL_TRANSFORM.positionY),
+    positionZ: parseTransformNumber(source.positionZ, DEFAULT_MODEL_TRANSFORM.positionZ),
+    rotationX: parseTransformNumber(source.rotationX, DEFAULT_MODEL_TRANSFORM.rotationX),
+    rotationY: parseTransformNumber(source.rotationY, DEFAULT_MODEL_TRANSFORM.rotationY),
+    rotationZ: parseTransformNumber(source.rotationZ, DEFAULT_MODEL_TRANSFORM.rotationZ),
+  };
+}
+
+function parseTransformNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function parsePositiveTransformNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function applyModelTransform(object, transform) {
+  const normalized = normalizeModelTransform(transform);
+  object.position.set(normalized.positionX, normalized.positionY, normalized.positionZ);
+  object.scale.set(normalized.scaleX, normalized.scaleY, normalized.scaleZ);
+  object.rotation.set(
+    THREE.MathUtils.degToRad(normalized.rotationX),
+    THREE.MathUtils.degToRad(normalized.rotationY),
+    THREE.MathUtils.degToRad(normalized.rotationZ),
+  );
+}
 
 const PUBLIC_MODEL_PIECES = [
   publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
@@ -74,6 +187,7 @@ function publicModelPiece(id, name, filename, color) {
   return {
     id,
     name,
+    group: 'Default',
     color,
     height: 0.18,
     type: 'glb',
@@ -109,28 +223,33 @@ function App() {
     canRedo,
   } = useStageHistory([]);
   const [selectedId, setSelectedId] = useState(null);
-  const [material, setMaterial] = useState('conceptual');
-  const [style, setStyle] = useState('presentation');
+  const [material, setMaterial] = useState('plastic');
   const [draft, setDraft] = useState(emptyDraft());
   const [editingId, setEditingId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [modelName, setModelName] = useState('');
+  const [modelTransform, setModelTransform] = useState(DEFAULT_MODEL_TRANSFORM);
   const [stageCamera, setStageCamera] = useState('top');
-  const [exportView, setExportView] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
   const [renderBgColor, setRenderBgColor] = useState(DEFAULT_RENDER_SETTINGS.backgroundColor);
   const [renderEdgeColor, setRenderEdgeColor] = useState(DEFAULT_RENDER_SETTINGS.edgeColor);
   const [renderEdgeThickness, setRenderEdgeThickness] = useState(DEFAULT_RENDER_SETTINGS.edgeThickness);
   const [renderEdgeMode, setRenderEdgeMode] = useState(DEFAULT_RENDER_SETTINGS.edgeMode);
+  const [renderEdgeOffsetCount, setRenderEdgeOffsetCount] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetCount);
+  const [renderEdgeOffsetDistance, setRenderEdgeOffsetDistance] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetDistance);
   const [printPreview, setPrintPreview] = useState(null);
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
+  const [collapsedPieceGroups, setCollapsedPieceGroups] = useState(() => new Set());
+  const [collapsedAdminGroups, setCollapsedAdminGroups] = useState(() => new Set());
   const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
+  const [stageCameraSnapshot, setStageCameraSnapshot] = useState(null);
   const importSceneInputRef = useRef(null);
 
   const selected = placed.find((item) => item.id === selectedId);
   const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
+  const pieceGroups = useMemo(() => groupLibraryPieces(pieces), [pieces]);
 
   function currentRenderSettings() {
     return normalizeRenderSettings({
@@ -138,6 +257,35 @@ function App() {
       edgeColor: renderEdgeColor,
       edgeThickness: renderEdgeThickness,
       edgeMode: renderEdgeMode,
+      edgeOffsetCount: renderEdgeOffsetCount,
+      edgeOffsetDistance: renderEdgeOffsetDistance,
+    });
+  }
+
+  function changeMaterial(nextMaterial) {
+    const normalized = normalizeMaterialName(nextMaterial);
+    setMaterial(normalized);
+  }
+
+  function updateModelTransform(field, value) {
+    setModelTransform((current) => normalizeModelTransform({ ...current, [field]: value }));
+  }
+
+  function togglePieceGroup(groupName) {
+    setCollapsedPieceGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
+      return next;
+    });
+  }
+
+  function toggleAdminGroup(groupName) {
+    setCollapsedAdminGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
+      return next;
     });
   }
 
@@ -302,6 +450,7 @@ function App() {
     const piece = {
       id: editingId || slugify(draft.name) || crypto.randomUUID(),
       name: draft.name.trim() || 'Untitled Piece',
+      group: normalizePieceGroupName(draft.group),
       color: draft.color,
       height: Number(draft.height) || 0.18,
       stageWidth: parseOptionalNumber(draft.stageWidth),
@@ -341,6 +490,7 @@ function App() {
     setEditingId(piece.id);
     setDraft({
       name: piece.name,
+      group: normalizePieceGroupName(piece.group),
       color: piece.color,
       height: piece.height,
       stageWidth: pieceStageDimensions(piece).width,
@@ -368,6 +518,7 @@ function App() {
     const imported = isGlb ? await readGlbModel(file) : await readObjModel(file);
     setDraft({
       name: file.name.replace(/\.(obj|glb)$/i, ''),
+      group: normalizePieceGroupName(draft.group),
       color: draft.color,
       height: imported.sourceHeightPx || imported.height,
       stageWidth: imported.sourceWidthPx || pieceStageDimensions(imported).width,
@@ -423,12 +574,13 @@ function App() {
   function resetScene() {
     commitPlaced(() => []);
     setSelectedId(null);
+    setModelTransform(DEFAULT_MODEL_TRANSFORM);
   }
 
   function saveCurrentModel() {
     if (!placed.length) return;
     const name = modelName.trim() || `Girih model ${savedModels.length + 1}`;
-    const model = serializeSceneModel(name, placed, style, material, currentRenderSettings());
+    const model = serializeSceneModel(name, placed, DEFAULT_SCENE_STYLE, material, currentRenderSettings(), modelTransform);
     setSavedModels((items) => [model, ...items]);
     setModelName(name);
   }
@@ -436,13 +588,15 @@ function App() {
   function loadSavedModel(model) {
     const next = centerScenePieces(rehydrateScenePieces(model));
     commitPlaced(() => next);
-    setStyle(model.style || style);
     setMaterial(normalizeMaterialName(model.material || material));
     const renderSettings = normalizeRenderSettings(model.renderSettings);
+    setModelTransform(normalizeModelTransform(model.modelTransform));
     setRenderBgColor(renderSettings.backgroundColor);
     setRenderEdgeColor(renderSettings.edgeColor);
     setRenderEdgeThickness(renderSettings.edgeThickness);
     setRenderEdgeMode(renderSettings.edgeMode);
+    setRenderEdgeOffsetCount(renderSettings.edgeOffsetCount);
+    setRenderEdgeOffsetDistance(renderSettings.edgeOffsetDistance);
     setSelectedId(null);
   }
 
@@ -471,14 +625,14 @@ function App() {
 
   async function exportScene(format) {
     const renderSettings = currentRenderSettings();
-    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', placed, style, material, renderSettings);
+    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', placed, DEFAULT_SCENE_STYLE, material, renderSettings, modelTransform);
     if (format === 'png') {
-      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings });
+      const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings });
       downloadCanvasPng('girih-model.png', canvas);
       return;
     }
     if (format === 'pdf') {
-      const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings });
+      const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings });
       downloadPdfFromCanvas('girih-model.pdf', canvas, exportOrientation);
       return;
     }
@@ -488,18 +642,18 @@ function App() {
 
   async function openPrintPreview() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings: currentRenderSettings() });
+    const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings() });
     setPrintPreview({
       imageUrl: canvas.toDataURL('image/png'),
       orientation: exportOrientation,
-      view: exportView,
+      view: stageCamera,
     });
   }
 
   async function printCurrentModel() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style, material, view: exportView, orientation: exportOrientation, renderSettings: currentRenderSettings() });
-    printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${exportView}`);
+    const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings() });
+    printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${stageCamera}`);
   }
 
   return (
@@ -543,36 +697,36 @@ function App() {
             </button>
           </div>
           <div className="piece-list">
-            {pieces.map((piece) => (
-              <button key={piece.id} className="piece-card" onClick={() => addPiece(piece)}>
-                <PieceIcon piece={piece} />
-                <span>{piece.name}</span>
-                <Plus size={16} />
-              </button>
-            ))}
+            {pieceGroups.map((group) => {
+              const collapsed = collapsedPieceGroups.has(group.name);
+              return (
+                <div className="piece-group" key={group.name}>
+                  <button
+                    type="button"
+                    className="piece-group-toggle"
+                    title={group.name}
+                    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${group.name} group`}
+                    onClick={() => togglePieceGroup(group.name)}
+                  >
+                    <span>{group.name}</span>
+                    <small>{group.items.length}</small>
+                    <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
+                  </button>
+                  {!collapsed && (
+                    <div className="piece-group-items">
+                      {group.items.map((piece) => (
+                        <button key={piece.id} className="piece-card" title={piece.name} aria-label={`Add ${piece.name}`} onClick={() => addPiece(piece)}>
+                          <PieceIcon piece={piece} />
+                          <span>{piece.name}</span>
+                          <Plus size={16} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        </section>
-
-        <section className="panel-section controls-grid desktop-library-controls">
-          <label>
-            Style
-            <select value={style} onChange={(event) => setStyle(event.target.value)}>
-              <option value="presentation">Presentation render</option>
-              <option value="manufacturing">Manufacturing layout</option>
-              <option value="pattern">Flat pattern</option>
-            </select>
-          </label>
-          <label>
-            Material
-            <select value={material} onChange={(event) => setMaterial(event.target.value)}>
-              <option value="conceptual">Conceptual</option>
-              <option value="glass">Glass</option>
-              <option value="marble">Marble</option>
-              <option value="tile">Tile</option>
-              <option value="wood">Wood</option>
-              <option value="plastic">Plastic</option>
-            </select>
-          </label>
         </section>
 
         <section className="panel-section model-panel desktop-library-controls">
@@ -616,16 +770,27 @@ function App() {
 
         <section className="panel-section controls-grid desktop-library-controls">
           <div className="section-title">
-            <Printer size={18} />
-            <span>Export View</span>
+            <Box size={18} />
+            <span>Model Transform</span>
           </div>
+          <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+        </section>
+
+        <section className="panel-section controls-grid desktop-library-controls">
           <label>
-            Camera scenario
-            <select value={exportView} onChange={(event) => setExportView(event.target.value)}>
-              <option value="top">Flat top view</option>
-              <option value="isometric">Isometric view</option>
+            Material
+            <select value={material} onChange={(event) => changeMaterial(event.target.value)}>
+              <option value="plastic">Plastic</option>
+              <option value="glass">Glass</option>
             </select>
           </label>
+        </section>
+
+        <section className="panel-section controls-grid desktop-library-controls">
+          <div className="section-title">
+            <Printer size={18} />
+            <span>Export</span>
+          </div>
           <label>
             Page orientation
             <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
@@ -656,8 +821,35 @@ function App() {
             <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
               <option value="single">Single line</option>
               <option value="double">Double line</option>
+              <option value="offset">Offset line</option>
             </select>
           </label>
+          {renderEdgeMode === 'offset' && (
+            <>
+              <label>
+                Offset count
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  value={renderEdgeOffsetCount}
+                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                />
+              </label>
+              <label>
+                Offset distance px
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  step="0.5"
+                  value={renderEdgeOffsetDistance}
+                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                />
+              </label>
+            </>
+          )}
           <div className="action-row">
             <button onClick={openPrintPreview} disabled={!placed.length}>
               <Eye size={16} /> Preview
@@ -695,28 +887,6 @@ function App() {
             <X size={16} />
           </button>
         </div>
-
-        <section className="panel-section controls-grid">
-          <label>
-            Style
-            <select value={style} onChange={(event) => setStyle(event.target.value)}>
-              <option value="presentation">Presentation render</option>
-              <option value="manufacturing">Manufacturing layout</option>
-              <option value="pattern">Flat pattern</option>
-            </select>
-          </label>
-          <label>
-            Material
-            <select value={material} onChange={(event) => setMaterial(event.target.value)}>
-              <option value="conceptual">Conceptual</option>
-              <option value="glass">Glass</option>
-              <option value="marble">Marble</option>
-              <option value="tile">Tile</option>
-              <option value="wood">Wood</option>
-              <option value="plastic">Plastic</option>
-            </select>
-          </label>
-        </section>
 
         <section className="panel-section model-panel">
           <div className="section-title">
@@ -758,16 +928,27 @@ function App() {
 
         <section className="panel-section controls-grid">
           <div className="section-title">
-            <Printer size={18} />
-            <span>Export View</span>
+            <Box size={18} />
+            <span>Model Transform</span>
           </div>
+          <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+        </section>
+
+        <section className="panel-section controls-grid">
           <label>
-            Camera scenario
-            <select value={exportView} onChange={(event) => setExportView(event.target.value)}>
-              <option value="top">Flat top view</option>
-              <option value="isometric">Isometric view</option>
+            Material
+            <select value={material} onChange={(event) => changeMaterial(event.target.value)}>
+              <option value="plastic">Plastic</option>
+              <option value="glass">Glass</option>
             </select>
           </label>
+        </section>
+
+        <section className="panel-section controls-grid">
+          <div className="section-title">
+            <Printer size={18} />
+            <span>Export</span>
+          </div>
           <label>
             Page orientation
             <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
@@ -798,8 +979,35 @@ function App() {
             <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
               <option value="single">Single line</option>
               <option value="double">Double line</option>
+              <option value="offset">Offset line</option>
             </select>
           </label>
+          {renderEdgeMode === 'offset' && (
+            <>
+              <label>
+                Offset count
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  value={renderEdgeOffsetCount}
+                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                />
+              </label>
+              <label>
+                Offset distance px
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  step="0.5"
+                  value={renderEdgeOffsetDistance}
+                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                />
+              </label>
+            </>
+          )}
           <div className="action-row">
             <button onClick={openPrintPreview} disabled={!placed.length}>
               <Eye size={16} /> Preview
@@ -848,22 +1056,18 @@ function App() {
           </div>
           <div className="stage-tools">
             <div className="stage-view-controls" aria-label="Stage camera view">
-              <button
-                type="button"
-                className={stageCamera === 'top' ? 'active' : ''}
-                onClick={() => setStageCamera('top')}
-                title="Flat top stage view"
-              >
-                <Grid3X3 size={16} /> Top
-              </button>
-              <button
-                type="button"
-                className={stageCamera === 'isometric' ? 'active' : ''}
-                onClick={() => setStageCamera('isometric')}
-                title="Isometric stage view"
-              >
-                <Layers3 size={16} /> Iso
-              </button>
+              {STAGE_CAMERA_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  className={stageCamera === view.id ? 'active' : ''}
+                  onClick={() => setStageCamera(view.id)}
+                  title={`${view.label} viewport`}
+                >
+                  {view.id === 'top' ? <Grid3X3 size={14} /> : <Box size={14} />}
+                  {view.label}
+                </button>
+              ))}
             </div>
             <div className="history-controls">
               <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
@@ -885,18 +1089,22 @@ function App() {
           placed={placed}
           selectedId={selectedId}
           material={material}
-          style={style}
+          style={DEFAULT_SCENE_STYLE}
           cameraMode={stageCamera}
           backgroundColor={renderBgColor}
           edgeColor={renderEdgeColor}
           edgeThickness={renderEdgeThickness}
           edgeMode={renderEdgeMode}
+          edgeOffsetCount={renderEdgeOffsetCount}
+          edgeOffsetDistance={renderEdgeOffsetDistance}
+          modelTransform={modelTransform}
           onSelect={setSelectedId}
           onMove={updatePlaced}
           onSettle={settlePiece}
           onRotate={rotatePlaced}
           onContextMenu={setContextMenu}
           onViewBoundsChange={setStageVisibleBounds}
+          onCameraChange={setStageCameraSnapshot}
         />
         {contextMenu && (
           <div
@@ -925,7 +1133,7 @@ function App() {
               <div className="preview-header">
                 <strong>Print preview</strong>
                 <span>
-                  {printPreview.view === 'isometric' ? 'Isometric' : 'Flat top'} / {printPreview.orientation}
+                  {getStageCameraView(printPreview.view).label} / {printPreview.orientation}
                 </span>
               </div>
               <img src={printPreview.imageUrl} alt="Girih print preview" />
@@ -955,6 +1163,10 @@ function App() {
           <label>
             Piece name
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          </label>
+          <label>
+            Group
+            <input value={draft.group} onChange={(event) => setDraft({ ...draft, group: event.target.value })} placeholder="Default" />
           </label>
           <label className="file-import">
             3D model
@@ -1034,32 +1246,92 @@ function App() {
         </form>
 
         <div className="admin-list">
-          {pieces.map((piece) => (
-            <div className="admin-row" key={piece.id}>
-              <PieceIcon piece={piece} />
-              <input
-                className="admin-color-input"
-                type="color"
-                value={piece.color}
-                aria-label={`Change ${piece.name} color`}
-                onChange={(event) => updatePieceColor(piece, event.target.value)}
-              />
-              <span>
-                {piece.name}
-                {piece.type === 'obj' && <small>OBJ</small>}
-                {piece.type === 'glb' && <small>GLB</small>}
-              </span>
-              <button aria-label={`Edit ${piece.name}`} onClick={() => editPiece(piece)}>
-                <Edit3 size={15} />
-              </button>
-              <button aria-label={`Delete ${piece.name}`} onClick={() => deletePiece(piece.id)}>
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
+          {pieceGroups.map((group) => {
+            const collapsed = collapsedAdminGroups.has(group.name);
+            return (
+              <div className="admin-group" key={group.name}>
+                <button type="button" className="admin-group-toggle" onClick={() => toggleAdminGroup(group.name)}>
+                  <span>{group.name}</span>
+                  <small>{group.items.length}</small>
+                  <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
+                </button>
+                {!collapsed && (
+                  <div className="admin-group-items">
+                    {group.items.map((piece) => (
+                      <div className="admin-row" key={piece.id}>
+                        <PieceIcon piece={piece} />
+                        <input
+                          className="admin-color-input"
+                          type="color"
+                          value={piece.color}
+                          aria-label={`Change ${piece.name} color`}
+                          onChange={(event) => updatePieceColor(piece, event.target.value)}
+                        />
+                        <span>
+                          {piece.name}
+                          <small>{normalizePieceGroupName(piece.group)}</small>
+                          {piece.type === 'obj' && <small>OBJ</small>}
+                          {piece.type === 'glb' && <small>GLB</small>}
+                        </span>
+                        <button aria-label={`Edit ${piece.name}`} onClick={() => editPiece(piece)}>
+                          <Edit3 size={15} />
+                        </button>
+                        <button aria-label={`Delete ${piece.name}`} onClick={() => deletePiece(piece.id)}>
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </aside>
     </div>
+  );
+}
+
+function ModelTransformControls({ modelTransform, onChange }) {
+  const scaleFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('scale'));
+  const rotationFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('rotation'));
+  const positionFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('position'));
+  return (
+    <>
+      <div className="transform-row">
+        <span>Scale</span>
+        {scaleFields.map((field) => (
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+        ))}
+      </div>
+      <div className="transform-row">
+        <span>Rotation</span>
+        {rotationFields.map((field) => (
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+        ))}
+      </div>
+      <div className="transform-row">
+        <span>Position</span>
+        {positionFields.map((field) => (
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function TransformInput({ field, modelTransform, onChange }) {
+  return (
+    <label className="transform-field">
+      {field.label.replace(/^(Scale|Rotate|Position) /, '')}
+      <input
+        type="number"
+        min={field.min}
+        step={field.step}
+        value={modelTransform[field.id]}
+        onChange={(event) => onChange(field.id, event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -1175,12 +1447,16 @@ function GirihStage({
   edgeColor,
   edgeThickness,
   edgeMode,
+  edgeOffsetCount,
+  edgeOffsetDistance,
+  modelTransform,
   onSelect,
   onMove,
   onSettle,
   onRotate,
   onContextMenu,
   onViewBoundsChange,
+  onCameraChange,
 }) {
   const mountRef = useRef(null);
   const stateRef = useRef({
@@ -1193,12 +1469,16 @@ function GirihStage({
     edgeColor,
     edgeThickness,
     edgeMode,
+    edgeOffsetCount,
+    edgeOffsetDistance,
+    modelTransform,
     onSelect,
     onMove,
     onSettle,
     onRotate,
     onContextMenu,
     onViewBoundsChange,
+    onCameraChange,
   });
   const rendererRef = useRef(null);
 
@@ -1213,14 +1493,18 @@ function GirihStage({
       edgeColor,
       edgeThickness,
       edgeMode,
+      edgeOffsetCount,
+      edgeOffsetDistance,
+      modelTransform,
       onSelect,
       onMove,
       onSettle,
       onRotate,
       onContextMenu,
       onViewBoundsChange,
+      onCameraChange,
     };
-  }, [placed, selectedId, material, style, cameraMode, backgroundColor, edgeColor, edgeThickness, edgeMode, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange]);
+  }, [placed, selectedId, material, style, cameraMode, backgroundColor, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, modelTransform, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange, onCameraChange]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1250,23 +1534,15 @@ function GirihStage({
     function applyStageCameraView(mode, force = false) {
       if (!force && cameraView.mode === mode) return;
       cameraView.mode = mode;
+      const view = getStageCameraView(mode);
       controls.target.set(0, 0, 0);
-      if (mode === 'isometric') {
-        camera.up.set(0, 1, 0);
-        camera.position.set(-6.2, 6.4, 7.2);
-        controls.enableRotate = true;
-        controls.enablePan = true;
-        controls.minDistance = 3;
-        controls.maxDistance = 18;
-        controls.maxPolarAngle = Math.PI * 0.47;
-      } else {
-        camera.up.set(0, 0, -1);
-        camera.position.set(0, 12, 0.001);
-        controls.enableRotate = false;
-        controls.enablePan = true;
-        controls.minDistance = 4;
-        controls.maxDistance = 24;
-      }
+      camera.up.set(...view.up);
+      camera.position.set(...view.position);
+      controls.enableRotate = !view.lockRotate;
+      controls.enablePan = true;
+      controls.minDistance = view.lockRotate ? 4 : 3;
+      controls.maxDistance = view.lockRotate ? 24 : 18;
+      controls.maxPolarAngle = Math.PI;
       camera.lookAt(controls.target);
       controls.update();
     }
@@ -1281,16 +1557,27 @@ function GirihStage({
     const group = new THREE.Group();
     const selectionOutline = createSelectionOutline();
     const lastViewBounds = { current: null };
+    const lastCameraSnapshot = { current: null };
     scene.add(group);
-    scene.add(selectionOutline);
+    group.add(selectionOutline);
 
-    scene.add(new THREE.HemisphereLight('#fff7e8', '#3e506b', 1.4));
-    const light = new THREE.DirectionalLight('#ffffff', 2);
-    light.position.set(3, 6, 4);
+    scene.add(new THREE.HemisphereLight(STAGE_HEMISPHERE_LIGHT.sky, STAGE_HEMISPHERE_LIGHT.ground, STAGE_HEMISPHERE_LIGHT.intensity));
+    const light = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
+    light.position.set(...STAGE_KEY_LIGHT.position);
     light.castShadow = true;
+    light.shadow.mapSize.set(2048, 2048);
+    light.shadow.camera.near = 0.5;
+    light.shadow.camera.far = 30;
+    light.shadow.camera.left = -12;
+    light.shadow.camera.right = 12;
+    light.shadow.camera.top = 12;
+    light.shadow.camera.bottom = -12;
     scene.add(light);
 
+    const stageFloor = createStageFloor(initialBackground);
+    scene.add(stageFloor);
     const grid = new THREE.GridHelper(12, 24, '#d0c3a7', '#e5dac6');
+    grid.position.y = 0.006;
     scene.add(grid);
 
     function syncMeshes() {
@@ -1303,12 +1590,17 @@ function GirihStage({
         edgeColor: stageEdgeColor,
         edgeThickness: stageEdgeThickness,
         edgeMode: stageEdgeMode,
+        edgeOffsetCount: stageEdgeOffsetCount,
+        edgeOffsetDistance: stageEdgeOffsetDistance,
+        modelTransform: stageModelTransform,
       } = stateRef.current;
       const stageRenderSettings = normalizeRenderSettings({
         backgroundColor: stageBackgroundColor,
         edgeColor: stageEdgeColor,
         edgeThickness: stageEdgeThickness,
         edgeMode: stageEdgeMode,
+        edgeOffsetCount: stageEdgeOffsetCount,
+        edgeOffsetDistance: stageEdgeOffsetDistance,
       });
       const wanted = new Set(current.map((item) => item.id));
       for (const [id, mesh] of meshes) {
@@ -1341,6 +1633,7 @@ function GirihStage({
         updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings);
       });
       updateSelectionOutline(selectionOutline, current.find((item) => item.id === selected));
+      applyModelTransform(group, stageModelTransform);
     }
 
     function setPointer(event) {
@@ -1394,6 +1687,27 @@ function GirihStage({
       if (!changed) return;
       lastViewBounds.current = bounds;
       stateRef.current.onViewBoundsChange?.(bounds);
+    }
+
+    function reportCameraSnapshot() {
+      const snapshot = {
+        mode: stateRef.current.cameraMode || 'top',
+        position: camera.position.toArray(),
+        target: controls.target.toArray(),
+        up: camera.up.toArray(),
+        fov: camera.fov,
+        distance: camera.position.distanceTo(controls.target),
+      };
+      const previous = lastCameraSnapshot.current;
+      const changed =
+        !previous ||
+        previous.mode !== snapshot.mode ||
+        Math.abs(previous.distance - snapshot.distance) > 0.01 ||
+        previous.position.some((value, index) => Math.abs(value - snapshot.position[index]) > 0.01) ||
+        previous.target.some((value, index) => Math.abs(value - snapshot.target[index]) > 0.01);
+      if (!changed) return;
+      lastCameraSnapshot.current = snapshot;
+      stateRef.current.onCameraChange?.(snapshot);
     }
 
     function pointerDown(event) {
@@ -1472,8 +1786,10 @@ function GirihStage({
       syncMeshes();
       applyStageCameraView(stateRef.current.cameraMode || 'top');
       applyStageBackground(scene, renderer, stateRef.current.backgroundColor);
+      applyStageFloorColor(stageFloor, stateRef.current.backgroundColor);
       controls.update();
       reportViewBounds();
+      reportCameraSnapshot();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     }
@@ -1504,6 +1820,195 @@ function applyStageBackground(scene, renderer, backgroundColor) {
   renderer.setClearColor(color, 1);
 }
 
+function createStageFloor(backgroundColor) {
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(80, 80),
+    new THREE.MeshStandardMaterial({
+      color: normalizeHexColor(backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor),
+      roughness: 0.64,
+      metalness: 0,
+    }),
+  );
+  floor.name = 'stage-solid-floor';
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.004;
+  floor.receiveShadow = true;
+  return floor;
+}
+
+function applyStageFloorColor(floor, backgroundColor) {
+  const color = normalizeHexColor(backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor);
+  if (floor.userData.floorColor === color) return;
+  floor.userData.floorColor = color;
+  floor.material.color.set(color);
+  floor.material.needsUpdate = true;
+}
+
+function updateGlassColorCast(group, placed, materialName, modelTransform = DEFAULT_MODEL_TRANSFORM) {
+  const isGlass = normalizeMaterialName(materialName) === 'glass';
+  const normalizedTransform = normalizeModelTransform(modelTransform);
+  const transformSignature = JSON.stringify(normalizedTransform);
+  if (
+    group.userData.placedRef === placed &&
+    group.userData.materialName === materialName &&
+    group.userData.transformSignature === transformSignature
+  ) {
+    return;
+  }
+  group.userData.placedRef = placed;
+  group.userData.materialName = materialName;
+  group.userData.transformSignature = transformSignature;
+  const signature = isGlass
+    ? placed
+        .map(glassCastPieceSignature)
+        .join('|') + `|transform:${transformSignature}`
+    : 'hidden';
+  if (group.userData.signature === signature) return;
+  group.userData.signature = signature;
+  while (group.children.length) {
+    const child = group.children.pop();
+    disposeObject(child);
+  }
+  group.visible = isGlass;
+  if (!isGlass || !placed.length) return;
+  const cast = createGlassColorCastTextureMesh(placed, normalizedTransform);
+  if (cast) group.add(cast);
+}
+
+function glassCastPieceSignature(piece) {
+  return [
+    piece.id,
+    piece.sourceId,
+    piece.color,
+    piece.x,
+    piece.y,
+    piece.rotation,
+    piece.height,
+    piece.stageWidth,
+    piece.stageLength,
+    piece.points?.length || 0,
+    piece.snapEdges?.length || 0,
+    piece.displayEdges?.length || 0,
+  ].join(':');
+}
+
+function createGlassColorCastMesh(piece, modelTransform = DEFAULT_MODEL_TRANSFORM, opacity = 0.35) {
+  const projectedFootprint = projectedGlassFootprintPoints(piece, modelTransform);
+  if (projectedFootprint.length < 3) return null;
+  const shape = new THREE.Shape();
+  projectedFootprint.forEach(([sx, sy], index) => {
+    if (index === 0) shape.moveTo(sx, sy);
+    else shape.lineTo(sx, sy);
+  });
+  shape.closePath();
+  const geometry = new THREE.ShapeGeometry(shape);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.translate(0, 0.012, 0);
+  const material = new THREE.MeshBasicMaterial({
+    color: glassTintColor(piece.color || '#1c7c74'),
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.NormalBlending,
+    toneMapped: false,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'glass-color-cast';
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
+function createGlassColorCastTextureMesh(placed, modelTransform = DEFAULT_MODEL_TRANSFORM) {
+  const canvasSize = 1600;
+  const floorSize = 80;
+  const halfFloor = floorSize / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.clearRect(0, 0, canvasSize, canvasSize);
+  context.globalAlpha = 0.5;
+
+  const toCanvas = ([x, z]) => [
+    ((x + halfFloor) / floorSize) * canvasSize,
+    canvasSize - ((z + halfFloor) / floorSize) * canvasSize,
+  ];
+
+  placed.forEach((piece) => {
+    const footprint = projectedGlassFootprintPoints(piece, modelTransform);
+    if (footprint.length < 3) return;
+    const tint = glassTintColor(piece.color || '#1c7c74');
+    context.fillStyle = tint;
+    context.beginPath();
+    footprint.forEach((point, index) => {
+      const [x, y] = toCanvas(point);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.closePath();
+    context.fill();
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(floorSize, floorSize),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+    }),
+  );
+  mesh.name = 'glass-color-cast-texture';
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.014;
+  mesh.renderOrder = 1;
+  return mesh;
+}
+
+function projectedGlassFootprintPoints(piece, modelTransform) {
+  const footprint = worldFootprintPoints(piece);
+  if (footprint.length < 3) return [];
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const transformMatrix = modelTransformMatrix(modelTransform);
+  const lightDirection = stageLightDirection();
+  const points = footprint.flatMap(([x, z]) => [
+    projectPointToStageFloor(new THREE.Vector3(x, 0, z).applyMatrix4(transformMatrix), lightDirection),
+    projectPointToStageFloor(new THREE.Vector3(x, height, z).applyMatrix4(transformMatrix), lightDirection),
+  ]);
+  const unique = uniquePoints(points);
+  return convexHull(unique);
+}
+
+function stageLightDirection() {
+  return new THREE.Vector3(0, 0, 0).sub(new THREE.Vector3(...STAGE_KEY_LIGHT.position)).normalize();
+}
+
+function projectPointToStageFloor(point, lightDirection, floorY = 0) {
+  const direction = lightDirection.clone();
+  if (Math.abs(direction.y) < 0.0001) return [point.x, point.z];
+  const t = (floorY - point.y) / direction.y;
+  const projected = point.clone().add(direction.multiplyScalar(t));
+  return [projected.x, projected.z];
+}
+
+function glassCastOffset(height) {
+  const direction = stageLightDirection();
+  if (Math.abs(direction.y) < 0.0001) return { x: 0, y: 0 };
+  const t = -height / direction.y;
+  return {
+    x: direction.x * t,
+    y: direction.z * t,
+  };
+}
+
 function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
   const thickness = Math.max(0, Number(renderSettings.edgeThickness) || 0);
@@ -1514,6 +2019,8 @@ function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSe
     renderSettings.edgeColor,
     thickness,
     renderSettings.edgeMode,
+    renderSettings.edgeOffsetCount,
+    renderSettings.edgeOffsetDistance,
   ].join('|');
   if (object.userData.stageEdgeSignature === signature) return;
   if (object.userData.stageEdgeOverlay) {
@@ -1533,9 +2040,9 @@ function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
   if (!segments.length) return null;
   const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
-  const edgeOffsets = renderSettings.edgeMode === 'double' ? [-thickness * 1.6, thickness * 1.6] : [0];
-  const verticalPoints = uniqueSegmentCoordinatePoints(segments);
-  const instanceCount = segments.length * edgeOffsets.length * 2 + verticalPoints.length;
+  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings);
+  const verticalPoints = renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
+  const instanceCount = edgeSegments.length * 2 + verticalPoints.length;
   if (!instanceCount) return null;
   const material = new THREE.MeshBasicMaterial({
     color: renderSettings.edgeColor,
@@ -1550,14 +2057,13 @@ function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   const height = Math.max(0.02, Number(piece.height) || 0.18);
   const topY = height + thickness * 0.55;
   const bottomY = thickness * 0.55;
+  const interiorPoint = segmentInteriorPoint(segments);
   let matrixIndex = 0;
-  segments.forEach(([start, end]) => {
-    edgeOffsets.forEach((offset) => {
-      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, offset);
-      matrixIndex += 1;
-      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, offset);
-      matrixIndex += 1;
-    });
+  edgeSegments.forEach(([start, end]) => {
+    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, 0, interiorPoint);
+    matrixIndex += 1;
+    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
+    matrixIndex += 1;
   });
   verticalPoints.forEach(([x, y]) => {
     const matrix = new THREE.Matrix4();
@@ -1573,13 +2079,12 @@ function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   return overlay;
 }
 
-function setStageEdgeBarMatrix(overlay, index, start, end, y, thickness, offset) {
+function setStageEdgeBarMatrix(overlay, index, start, end, y, thickness, offset, interiorPoint = null) {
   const dx = end[0] - start[0];
   const dz = end[1] - start[1];
   const length = Math.hypot(dx, dz);
   if (length <= 0.0001) return;
-  const normalX = -dz / length;
-  const normalZ = dx / length;
+  const [normalX, normalZ] = edgeInteriorNormal(start, end, interiorPoint);
   const matrix = new THREE.Matrix4();
   matrix.compose(
     new THREE.Vector3((start[0] + end[0]) / 2 + normalX * offset, y, (start[1] + end[1]) / 2 + normalZ * offset),
@@ -1589,8 +2094,144 @@ function setStageEdgeBarMatrix(overlay, index, start, end, y, thickness, offset)
   overlay.setMatrixAt(index, matrix);
 }
 
+function edgeLineInteriorOffsets(thickness, mode, count = DEFAULT_RENDER_SETTINGS.edgeOffsetCount, distance = DEFAULT_RENDER_SETTINGS.edgeOffsetDistance) {
+  if (mode === 'offset') {
+    const lineCount = normalizeEdgeOffsetCount(count);
+    const spacing = stageEdgeWorldOffsetDistance(distance);
+    return Array.from({ length: lineCount }, (_, index) => spacing * (index + 1));
+  }
+  if (mode === 'double') return [-thickness * 1.6, thickness * 1.6];
+  return [0];
+}
+
+function edgeOverlaySegments(segments, thickness, renderSettings) {
+  const mode = renderSettings.edgeMode;
+  if (mode === 'offset') {
+    const boundary = orderedBoundaryPoints(segments);
+    if (boundary.length >= 3) {
+      return edgeLineInteriorOffsets(thickness, mode, renderSettings.edgeOffsetCount, renderSettings.edgeOffsetDistance)
+        .map((distance) => offsetClosedBoundary(boundary, distance))
+        .filter((points) => points.length >= 3)
+        .flatMap((points) => polygonToEdges(points));
+    }
+  }
+  const interiorPoint = segmentInteriorPoint(segments);
+  return segments.flatMap(([start, end]) =>
+    edgeLineInteriorOffsets(thickness, mode, renderSettings.edgeOffsetCount, renderSettings.edgeOffsetDistance).map((offset) =>
+      offsetSegmentTowardInterior(start, end, offset, interiorPoint),
+    ),
+  );
+}
+
+function offsetClosedBoundary(points, distance) {
+  const clean = dedupeSequentialPoints(points);
+  if (clean.length < 3 || distance <= 0) return clean;
+  const signedArea = polygonArea2(clean);
+  if (Math.abs(signedArea) < 0.0001) return clean;
+  const inwardSign = signedArea > 0 ? 1 : -1;
+  return clean.map((current, index) => {
+    const previous = clean[(index - 1 + clean.length) % clean.length];
+    const next = clean[(index + 1) % clean.length];
+    const prevLine = insetLine(previous, current, distance, inwardSign);
+    const nextLine = insetLine(current, next, distance, inwardSign);
+    const intersection = intersectInsetLines(prevLine, nextLine);
+    if (!intersection) return fallbackInsetPoint(current, prevLine.normal, nextLine.normal, distance);
+    const miterDistance = Math.hypot(intersection[0] - current[0], intersection[1] - current[1]);
+    if (miterDistance > distance * 5) return fallbackInsetPoint(current, prevLine.normal, nextLine.normal, distance);
+    return intersection;
+  });
+}
+
+function insetLine(start, end, distance, inwardSign) {
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const normal = [(-dy / length) * inwardSign, (dx / length) * inwardSign];
+  return {
+    point: [start[0] + normal[0] * distance, start[1] + normal[1] * distance],
+    direction: [dx / length, dy / length],
+    normal,
+  };
+}
+
+function intersectInsetLines(a, b) {
+  const cross = a.direction[0] * b.direction[1] - a.direction[1] * b.direction[0];
+  if (Math.abs(cross) < 0.0001) return null;
+  const dx = b.point[0] - a.point[0];
+  const dy = b.point[1] - a.point[1];
+  const t = (dx * b.direction[1] - dy * b.direction[0]) / cross;
+  return [a.point[0] + a.direction[0] * t, a.point[1] + a.direction[1] * t];
+}
+
+function fallbackInsetPoint(point, normalA, normalB, distance) {
+  const nx = normalA[0] + normalB[0];
+  const ny = normalA[1] + normalB[1];
+  const length = Math.hypot(nx, ny) || 1;
+  return [point[0] + (nx / length) * distance, point[1] + (ny / length) * distance];
+}
+
+function offsetSegmentTowardInterior(start, end, offset, interiorPoint) {
+  if (!offset) return [start, end];
+  const [normalX, normalY] = edgeInteriorNormal(start, end, interiorPoint);
+  return [
+    [start[0] + normalX * offset, start[1] + normalY * offset],
+    [end[0] + normalX * offset, end[1] + normalY * offset],
+  ];
+}
+
+function normalizeEdgeOffsetCount(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_RENDER_SETTINGS.edgeOffsetCount;
+  return Math.max(1, Math.min(12, Math.round(number)));
+}
+
+function normalizeEdgeOffsetDistance(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return DEFAULT_RENDER_SETTINGS.edgeOffsetDistance;
+  return Math.max(0, Math.min(80, number));
+}
+
+function stageEdgeWorldOffsetDistance(value) {
+  return normalizeEdgeOffsetDistance(value) * 0.006;
+}
+
+function segmentInteriorPoint(segments) {
+  const points = uniqueSegmentCoordinatePoints(segments);
+  if (!points.length) return null;
+  const total = points.reduce(
+    (sum, [x, y]) => {
+      sum.x += x;
+      sum.y += y;
+      return sum;
+    },
+    { x: 0, y: 0 },
+  );
+  return [total.x / points.length, total.y / points.length];
+}
+
+function edgeInteriorNormal(start, end, interiorPoint) {
+  const dx = end[0] - start[0];
+  const dz = end[1] - start[1];
+  const length = Math.hypot(dx, dz) || 1;
+  let normalX = -dz / length;
+  let normalZ = dx / length;
+  if (interiorPoint) {
+    const midX = (start[0] + end[0]) / 2;
+    const midZ = (start[1] + end[1]) / 2;
+    const towardInteriorX = interiorPoint[0] - midX;
+    const towardInteriorZ = interiorPoint[1] - midZ;
+    if (normalX * towardInteriorX + normalZ * towardInteriorZ < 0) {
+      normalX *= -1;
+      normalZ *= -1;
+    }
+  }
+  return [normalX, normalZ];
+}
+
 function stageEdgeWorldThickness(value) {
-  const number = Math.max(0, Number(value) || DEFAULT_RENDER_SETTINGS.edgeThickness);
+  const parsed = Number(value);
+  const number = Number.isFinite(parsed) ? Math.max(0, parsed) : DEFAULT_RENDER_SETTINGS.edgeThickness;
+  if (number <= 0) return 0;
   return Math.min(0.12, Math.max(0.006, number * 0.006));
 }
 
@@ -1734,18 +2375,34 @@ function normalizeImportedObject(object, piece) {
 
 function applyPieceMaterial(object, piece, materialName, selected) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
+  const signature = [
+    piece.color,
+    isGlass ? 'glass' : 'plastic',
+    selected ? 'selected' : 'normal',
+  ].join('|');
+  if (object.userData.materialSignature === signature) return;
+  object.userData.materialSignature = signature;
   object.traverse((child) => {
     if (child.userData?.isStageEdge) return;
     if (!child.isMesh || !child.material) return;
+    child.castShadow = !isGlass;
+    child.receiveShadow = !isGlass;
     child.material.color.set(piece.color);
     child.material.metalness = isGlass ? 0 : 0.08;
-    child.material.roughness = isGlass ? 0.04 : 0.42;
+    child.material.roughness = isGlass ? 0.06 : 0.42;
     child.material.transparent = isGlass;
-    child.material.opacity = isGlass ? 0.42 : 1;
+    child.material.opacity = isGlass ? 0.68 : 1;
     child.material.depthWrite = !isGlass;
-    child.material.side = isGlass ? THREE.DoubleSide : THREE.FrontSide;
+    child.material.side = THREE.FrontSide;
+    if ('clearcoat' in child.material) child.material.clearcoat = isGlass ? 0.65 : 0;
+    if ('clearcoatRoughness' in child.material) child.material.clearcoatRoughness = isGlass ? 0.05 : 0;
+    if ('transmission' in child.material) child.material.transmission = 0;
+    if ('thickness' in child.material) child.material.thickness = 0;
+    if ('ior' in child.material) child.material.ior = isGlass ? 1.48 : 1.5;
+    if ('attenuationColor' in child.material) child.material.attenuationColor.set(isGlass ? glassTintColor(piece.color) : '#ffffff');
+    if ('attenuationDistance' in child.material) child.material.attenuationDistance = Infinity;
     child.material.emissive?.set(selected ? '#362000' : '#000000');
-    child.material.emissiveIntensity = selected ? 0.12 : 0;
+    child.material.emissiveIntensity = selected ? 0.12 : isGlass ? 0.05 : 0;
     child.material.needsUpdate = true;
   });
 }
@@ -1759,8 +2416,15 @@ function getPieceRoot(object) {
 function disposeObject(object) {
   object.traverse((child) => {
     child.geometry?.dispose();
-    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose());
-    else child.material?.dispose();
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material) => {
+        material.map?.dispose();
+        material.dispose();
+      });
+    } else if (child.material) {
+      child.material.map?.dispose();
+      child.material.dispose();
+    }
   });
 }
 
@@ -2400,6 +3064,7 @@ function readAdminPieceSettings() {
 function saveAdminPieceSetting(piece) {
   const settings = readAdminPieceSettings();
   const nextSetting = {
+    group: normalizePieceGroupName(piece.group),
     color: piece.color,
     height: piece.height,
     stageWidth: piece.stageWidth,
@@ -2428,6 +3093,7 @@ function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.
   if (!setting) return piece;
   return {
     ...piece,
+    group: normalizePieceGroupName(setting.group ?? piece.group),
     color: setting.color || piece.color,
     height: Number.isFinite(Number(setting.height)) ? Number(setting.height) : piece.height,
     stageWidth: Number.isFinite(Number(setting.stageWidth)) ? Number(setting.stageWidth) : piece.stageWidth,
@@ -2478,6 +3144,7 @@ function usePersistentModels() {
 function emptyDraft() {
   return {
     name: '',
+    group: 'Default',
     color: '#1c7c74',
     height: 0.18,
     stageWidth: 2,
@@ -2496,6 +3163,30 @@ function emptyDraft() {
     glbDataUrl: '',
     glbUrl: '',
   };
+}
+
+function normalizePieceGroupName(group) {
+  const normalized = typeof group === 'string' ? group.trim() : '';
+  return normalized || 'Default';
+}
+
+function groupLibraryPieces(pieces) {
+  const groups = new Map();
+  pieces.forEach((piece) => {
+    const groupName = normalizePieceGroupName(piece.group);
+    if (!groups.has(groupName)) groups.set(groupName, []);
+    groups.get(groupName).push(piece);
+  });
+  return [...groups.entries()]
+    .map(([name, items]) => ({
+      name,
+      items: [...items].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    }))
+    .sort((a, b) => {
+      if (a.name === 'Default') return -1;
+      if (b.name === 'Default') return 1;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 function parsePoints(value) {
@@ -3051,7 +3742,7 @@ function slugify(value) {
     .replace(/^-|-$/g, '');
 }
 
-function serializeSceneModel(name, placed, style, material, renderSettings = DEFAULT_RENDER_SETTINGS) {
+function serializeSceneModel(name, placed, style, material, renderSettings = DEFAULT_RENDER_SETTINGS, modelTransform = DEFAULT_MODEL_TRANSFORM) {
   const normalizedMaterial = normalizeMaterialName(material);
   return {
     id: `model-${crypto.randomUUID()}`,
@@ -3063,10 +3754,12 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
     style,
     material: normalizedMaterial,
     renderSettings: normalizeRenderSettings(renderSettings),
-    pieces: placed.map(({ id, sourceId, name: pieceName, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
+    modelTransform: normalizeModelTransform(modelTransform),
+    pieces: placed.map(({ id, sourceId, name: pieceName, group, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
+      group: normalizePieceGroupName(group),
       type: type || 'shape',
       points,
       snapEdges,
@@ -3103,6 +3796,7 @@ function rehydrateScenePieces(model) {
         id: nextId,
         sourceId,
         name: piece.name || 'Imported model piece',
+        group: normalizePieceGroupName(piece.group),
         type: piece.type || 'shape',
         color: materialInfo.color || piece.color || '#1c7c74',
         points: piece.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number)),
@@ -3309,125 +4003,7 @@ function worldFootprintPoints(piece) {
 }
 
 async function renderSceneCanvas(placed, options = {}) {
-  const view = options.view || 'top';
-  if (view === 'isometric') return renderIsometricSceneCanvas(placed, options);
-  const material = normalizeMaterialName(options.material);
-  const renderSettings = normalizeRenderSettings(options.renderSettings);
-  const orientation = options.orientation || 'landscape';
-  const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
-  const padding = 180;
-  const projected = placed.map((piece) => {
-    const footprint = worldFootprintPoints(piece);
-    const height = Number(piece.height) || 0.18;
-    return {
-      piece,
-      base: footprint.map(([x, y]) => projectExportPoint(x, y, 0, view)),
-      top: footprint.map(([x, y]) => projectExportPoint(x, y, height, view)),
-    };
-  });
-  const allPoints = projected.flatMap((item) => (view === 'isometric' ? [...item.base, ...item.top] : item.top));
-  const xs = allPoints.map(([x]) => x);
-  const ys = allPoints.map(([, y]) => y);
-  const bounds = allPoints.length
-    ? { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
-    : { minX: -1, maxX: 1, minY: -1, maxY: 1 };
-  const widthUnits = Math.max(bounds.maxX - bounds.minX, 1);
-  const heightUnits = Math.max(bounds.maxY - bounds.minY, 1);
-  const scale = Math.min((size[0] - padding * 2) / widthUnits, (size[1] - padding * 2) / heightUnits);
-  const canvas = document.createElement('canvas');
-  canvas.width = size[0];
-  canvas.height = size[1];
-  const context = canvas.getContext('2d');
-  context.fillStyle = renderSettings.backgroundColor;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  const offsetX = (canvas.width - widthUnits * scale) / 2;
-  const offsetY = (canvas.height - heightUnits * scale) / 2;
-  const project = ([x, y]) => [
-    (x - bounds.minX) * scale + offsetX,
-    canvas.height - ((y - bounds.minY) * scale + offsetY),
-  ];
-
-  context.save();
-  context.strokeStyle = 'rgba(174, 152, 118, 0.22)';
-  context.lineWidth = 1;
-  if (view === 'top') {
-    const gridStep = Math.max(0.25, Math.pow(2, Math.floor(Math.log2(Math.max(widthUnits, heightUnits) / 12))));
-    for (let x = Math.floor(bounds.minX / gridStep) * gridStep; x <= bounds.maxX; x += gridStep) {
-      const [px] = project([x, bounds.minY]);
-      context.beginPath();
-      context.moveTo(px, 0);
-      context.lineTo(px, canvas.height);
-      context.stroke();
-    }
-    for (let y = Math.floor(bounds.minY / gridStep) * gridStep; y <= bounds.maxY; y += gridStep) {
-      const [, py] = project([bounds.minX, y]);
-      context.beginPath();
-      context.moveTo(0, py);
-      context.lineTo(canvas.width, py);
-      context.stroke();
-    }
-  }
-  context.restore();
-
-  const sorted = [...projected].sort((a, b) => {
-    const ay = averagePointY(a.base);
-    const by = averagePointY(b.base);
-    return ay - by;
-  });
-
-  sorted.forEach(({ piece, base, top }) => {
-    const topPoints = top.map(project);
-    if (topPoints.length < 3) return;
-    if (view === 'isometric') {
-      const basePoints = base.map(project);
-      for (let index = 0; index < topPoints.length; index += 1) {
-        const next = (index + 1) % topPoints.length;
-        const face = [basePoints[index], basePoints[next], topPoints[next], topPoints[index]];
-        const shade = index % 2 === 0 ? 0.72 : 0.58;
-        drawCanvasPolygon(context, face, shadeColor(piece.color || '#1c7c74', shade), 'rgba(18, 63, 58, 0.35)', Math.max(1, scale * 0.01));
-      }
-    }
-    context.save();
-    context.beginPath();
-    topPoints.forEach(([x, y], index) => {
-      if (index === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    });
-    context.closePath();
-    context.shadowColor = 'rgba(45, 35, 22, 0.22)';
-    context.shadowBlur = 18;
-    context.shadowOffsetX = 8;
-    context.shadowOffsetY = 10;
-    if (material === 'glass') {
-      context.globalCompositeOperation = 'multiply';
-      context.globalAlpha = 0.62;
-    } else {
-      context.globalCompositeOperation = 'source-over';
-      context.globalAlpha = 1;
-    }
-    context.fillStyle = canvasMaterialFill(context, material, piece.color || '#1c7c74', renderSettings.backgroundColor);
-    context.fill();
-    if (material === 'glass') {
-      drawGlassReflectionSheen(context, topPoints, renderSettings.backgroundColor);
-    }
-    context.globalCompositeOperation = 'source-over';
-    context.globalAlpha = 1;
-    context.shadowColor = 'transparent';
-    strokeCanvasPath(context, topPoints, {
-      color: renderSettings.edgeColor || materialStrokeColor(material, piece.color || '#1c7c74'),
-      lineWidth: renderSettings.edgeThickness,
-      mode: renderSettings.edgeMode,
-      gapColor: renderSettings.backgroundColor,
-      closed: true,
-    });
-    context.restore();
-  });
-
-  context.fillStyle = '#4f4538';
-  context.font = '24px Inter, Arial, sans-serif';
-  context.fillText(`Girih ${view === 'isometric' ? 'isometric' : 'flat top'} ${options.style || 'model'} export`, 32, canvas.height - 34);
-  return canvas;
+  return renderIsometricSceneCanvas(placed, options);
 }
 
 function projectExportPoint(x, y, z, view) {
@@ -3463,6 +4039,8 @@ function strokeCanvasPath(context, points, options = {}) {
   const color = options.color || DEFAULT_RENDER_SETTINGS.edgeColor;
   const gapColor = options.gapColor || DEFAULT_RENDER_SETTINGS.backgroundColor;
   const mode = EDGE_LINE_MODES.has(options.mode) ? options.mode : DEFAULT_RENDER_SETTINGS.edgeMode;
+  const offsetCount = normalizeEdgeOffsetCount(options.offsetCount);
+  const offsetDistance = normalizeEdgeOffsetDistance(options.offsetDistance);
   const closed = options.closed !== false;
 
   function tracePath() {
@@ -3477,7 +4055,36 @@ function strokeCanvasPath(context, points, options = {}) {
   context.save();
   context.lineJoin = 'round';
   context.lineCap = 'round';
-  if (mode === 'double') {
+  if (mode === 'offset') {
+    const center = points.reduce(
+      (sum, [x, y]) => {
+        sum.x += x;
+        sum.y += y;
+        return sum;
+      },
+      { x: 0, y: 0 },
+    );
+    center.x /= points.length;
+    center.y /= points.length;
+    Array.from({ length: offsetCount }).forEach((_, index) => {
+      const inset = offsetDistance * (index + 1);
+      const insetPoints = points.map(([x, y]) => {
+        const dx = center.x - x;
+        const dy = center.y - y;
+        const length = Math.hypot(dx, dy) || 1;
+        return [x + (dx / length) * inset, y + (dy / length) * inset];
+      });
+      context.beginPath();
+      insetPoints.forEach(([x, y], pointIndex) => {
+        if (pointIndex === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      if (closed) context.closePath();
+      context.lineWidth = lineWidth;
+      context.strokeStyle = color;
+      context.stroke();
+    });
+  } else if (mode === 'double') {
     tracePath();
     context.lineWidth = lineWidth * 2.6;
     context.strokeStyle = color;
@@ -3511,34 +4118,39 @@ function drawGlassReflectionSheen(context, points, backgroundColor) {
   const height = Math.max(maxY - minY, 1);
   const ambient = ambientGlassColor(backgroundColor);
   const sheen = context.createLinearGradient(minX, minY, maxX, maxY);
-  sheen.addColorStop(0, `rgba(255, 255, 255, 0.38)`);
-  sheen.addColorStop(0.22, rgbaFromRgb(ambient, 0.26));
-  sheen.addColorStop(0.55, `rgba(255, 255, 255, 0.08)`);
-  sheen.addColorStop(1, rgbaFromRgb(ambient, 0.18));
+  sheen.addColorStop(0, `rgba(255, 255, 255, 0.62)`);
+  sheen.addColorStop(0.2, rgbaFromRgb(ambient, 0.34));
+  sheen.addColorStop(0.52, `rgba(255, 255, 255, 0.12)`);
+  sheen.addColorStop(1, rgbaFromRgb(ambient, 0.24));
 
   context.save();
   traceCanvasPolygon(context, points);
   context.clip();
   context.globalCompositeOperation = 'screen';
-  context.globalAlpha = 0.55;
+  context.globalAlpha = 0.68;
   context.fillStyle = sheen;
   context.fillRect(minX, minY, width, height);
 
-  context.globalAlpha = 0.32;
-  context.strokeStyle = 'rgba(255,255,255,0.72)';
-  context.lineWidth = Math.max(1.5, Math.min(width, height) * 0.035);
+  context.globalAlpha = 0.52;
+  context.strokeStyle = 'rgba(255,255,255,0.88)';
+  context.lineWidth = Math.max(2, Math.min(width, height) * 0.045);
   context.beginPath();
   context.moveTo(minX + width * 0.14, minY + height * 0.2);
   context.lineTo(maxX - width * 0.16, minY + height * 0.48);
   context.stroke();
 
-  context.globalAlpha = 0.18;
+  context.globalAlpha = 0.28;
   context.strokeStyle = rgbaFromRgb(ambient, 0.9);
-  context.lineWidth = Math.max(1, Math.min(width, height) * 0.018);
+  context.lineWidth = Math.max(1.25, Math.min(width, height) * 0.024);
   context.beginPath();
   context.moveTo(minX + width * 0.26, maxY - height * 0.16);
   context.lineTo(maxX - width * 0.1, minY + height * 0.22);
   context.stroke();
+
+  context.globalCompositeOperation = 'multiply';
+  context.globalAlpha = 0.18;
+  context.fillStyle = rgbaFromRgb(ambient, 0.85);
+  context.fillRect(minX, minY, width, height);
   context.restore();
 }
 
@@ -3564,11 +4176,11 @@ function shadeColor(color, factor) {
 
 function glassTintColor(color) {
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
-  const vivid = saturateRgb(piece, 1.85);
+  const vivid = saturateRgb(piece, 2.35);
   const rgb = {
-    r: clampColor(vivid.r * 1.08 + 6),
-    g: clampColor(vivid.g * 1.08 + 6),
-    b: clampColor(vivid.b * 1.08 + 6),
+    r: clampColor(vivid.r * 1.16 + 10),
+    g: clampColor(vivid.g * 1.16 + 10),
+    b: clampColor(vivid.b * 1.16 + 10),
   };
   return rgbToHex(rgb);
 }
@@ -3618,8 +4230,7 @@ function clampColor(value) {
 
 function normalizeMaterialName(material) {
   if (EXPORT_MATERIALS.has(material)) return material;
-  if (material === 'ceramic' || material === 'stone' || material === 'brass') return 'plastic';
-  return 'conceptual';
+  return 'plastic';
 }
 
 function normalizeRenderSettings(settings = {}) {
@@ -3630,6 +4241,8 @@ function normalizeRenderSettings(settings = {}) {
     edgeColor: normalizeHexColor(source.edgeColor, DEFAULT_RENDER_SETTINGS.edgeColor),
     edgeThickness: Number.isFinite(edgeThickness) && edgeThickness >= 0 ? edgeThickness : DEFAULT_RENDER_SETTINGS.edgeThickness,
     edgeMode: EDGE_LINE_MODES.has(source.edgeMode) ? source.edgeMode : DEFAULT_RENDER_SETTINGS.edgeMode,
+    edgeOffsetCount: normalizeEdgeOffsetCount(source.edgeOffsetCount),
+    edgeOffsetDistance: normalizeEdgeOffsetDistance(source.edgeOffsetDistance),
   };
 }
 
@@ -3639,17 +4252,10 @@ function normalizeHexColor(value, fallback) {
 
 function materialStrokeColor(material, color) {
   if (material === 'glass') return shadeColor(color, 0.82);
-  if (material === 'marble') return '#b8aa98';
-  if (material === 'tile') return '#f5eee3';
-  if (material === 'wood') return '#5a351f';
-  if (material === 'conceptual') return shadeColor(color, 0.62);
   return '#123f3a';
 }
 
 function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_RENDER_SETTINGS.backgroundColor) {
-  if (material === 'marble' || material === 'tile' || material === 'wood') {
-    return context.createPattern(createMaterialPatternCanvas(color, material, 256), 'repeat') || color;
-  }
   if (material === 'glass') return glassTintColor(color);
   return color;
 }
@@ -3657,60 +4263,88 @@ function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_
 async function renderIsometricSceneCanvas(placed, options = {}) {
   const renderSettings = normalizeRenderSettings(options.renderSettings);
   const exportMaterial = normalizeMaterialName(options.material);
+  const modelTransform = normalizeModelTransform(options.modelTransform);
+  const cameraView = getStageCameraView(options.view);
+  const cameraSnapshot = normalizeCameraSnapshot(options.cameraSnapshot);
   const orientation = options.orientation || 'landscape';
-  const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  const baseSize = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
+  const renderScale = exportMaterial === 'glass' ? GLASS_EXPORT_RENDER_SCALE : EXPORT_RENDER_SCALE;
+  const size = baseSize.map((value) => Math.round(value * renderScale));
+  const renderer = new THREE.WebGLRenderer({ antialias: exportMaterial !== 'glass', preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(size[0], size[1], false);
   renderer.setClearColor(renderSettings.backgroundColor, 1);
+  renderer.shadowMap.enabled = exportMaterial !== 'glass';
+  if (exportMaterial !== 'glass') renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  if (exportMaterial !== 'glass') {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1;
+  }
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(renderSettings.backgroundColor);
-  const glassRearColor = exportMaterial === 'glass' ? rgbToHex(ambientGlassColor(renderSettings.backgroundColor)) : '#ffffff';
   const group = new THREE.Group();
+  const colorCastGroup = new THREE.Group();
+  colorCastGroup.name = 'export-glass-color-cast';
+  updateGlassColorCast(colorCastGroup, placed, exportMaterial, modelTransform);
+  const floor = createStageFloor(renderSettings.backgroundColor);
+  scene.add(floor);
+  scene.add(colorCastGroup);
   scene.add(group);
 
   const ambient = new THREE.HemisphereLight(
-    exportMaterial === 'glass' ? '#fff7e8' : '#ffffff',
-    exportMaterial === 'glass' ? '#3e506b' : '#4f4a42',
-    exportMaterial === 'glass' ? 1.45 : 2,
+    STAGE_HEMISPHERE_LIGHT.sky,
+    STAGE_HEMISPHERE_LIGHT.ground,
+    exportMaterial === 'glass' ? 1.45 : STAGE_HEMISPHERE_LIGHT.intensity,
   );
   scene.add(ambient);
-  const key = new THREE.DirectionalLight('#ffffff', exportMaterial === 'glass' ? 2 : 2.1);
-  key.position.set(exportMaterial === 'glass' ? 3 : -5, exportMaterial === 'glass' ? 6 : 8, 4);
+  const key = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
+  key.position.set(...STAGE_KEY_LIGHT.position);
+  key.castShadow = exportMaterial !== 'glass';
+  if (exportMaterial !== 'glass') {
+    key.shadow.mapSize.set(EXPORT_SHADOW_MAP_SIZE, EXPORT_SHADOW_MAP_SIZE);
+    key.shadow.bias = -0.00006;
+    key.shadow.normalBias = 0.018;
+    key.shadow.radius = 2.8;
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 40;
+    key.shadow.camera.left = -16;
+    key.shadow.camera.right = 16;
+    key.shadow.camera.top = 16;
+    key.shadow.camera.bottom = -16;
+  }
   scene.add(key);
-  const fill = new THREE.DirectionalLight(exportMaterial === 'glass' ? glassRearColor : '#ffffff', exportMaterial === 'glass' ? 0.35 : 0.45);
-  fill.position.set(5, 4, -6);
-  scene.add(fill);
-
   for (const piece of placed) {
     const object = await createExportPieceObject(piece);
     object.userData.id = piece.id;
     object.position.set(piece.x, 0, piece.y);
     object.rotation.y = -piece.rotation;
-    object.scale.y = options.style === 'pattern' ? 0.35 : 1;
-    applyExportPieceMaterial(object, piece, options.material, renderSettings);
+    object.scale.y = 1;
+    applyExportPieceMaterial(object, piece, exportMaterial, renderSettings);
+    const edgeOverlay = exportMaterial === 'glass' ? null : createExportEdgeOverlay(piece, renderSettings, false);
+    if (edgeOverlay) object.add(edgeOverlay);
     group.add(object);
   }
+  applyModelTransform(group, modelTransform);
 
   const bounds = new THREE.Box3().setFromObject(group);
   const center = bounds.getCenter(new THREE.Vector3());
   const sizeVector = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(sizeVector.x, sizeVector.y * 2.3, sizeVector.z, 1);
   const aspect = size[0] / size[1];
-  const frustum = radius * 1.8;
-  const camera = new THREE.OrthographicCamera(
-    (-frustum * aspect) / 2,
-    (frustum * aspect) / 2,
-    frustum / 2,
-    -frustum / 2,
-    0.01,
-    1000,
-  );
-
-  const distance = Math.max(radius * 3.2, 6);
-  camera.position.set(center.x - distance, center.y + distance * 0.9, center.z + distance);
-  camera.lookAt(center);
+  const camera = new THREE.PerspectiveCamera(cameraSnapshot?.fov || 42, aspect, 0.01, 1000);
+  if (cameraSnapshot) {
+    camera.up.fromArray(cameraSnapshot.up);
+    camera.position.fromArray(cameraSnapshot.position);
+    camera.lookAt(new THREE.Vector3().fromArray(cameraSnapshot.target));
+  } else {
+    const distance = Math.max((radius * 1.35) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), 6);
+    const viewDirection = new THREE.Vector3(...cameraView.position).normalize().multiplyScalar(distance);
+    camera.up.set(...cameraView.up);
+    camera.position.copy(center).add(viewDirection);
+    camera.lookAt(center);
+  }
   camera.updateProjectionMatrix();
 
   renderer.render(scene, camera);
@@ -3719,17 +4353,134 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   canvas.height = size[1];
   const context = canvas.getContext('2d');
   context.drawImage(renderer.domElement, 0, 0);
-  drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, options.style, exportMaterial);
   context.fillStyle = '#4f4538';
   context.font = '24px Inter, Arial, sans-serif';
-  context.fillText(`Girih isometric ${options.style || 'model'} export`, 32, canvas.height - 34);
+  context.fillText(`Girih ${cameraView.label} ${exportMaterial} export`, 32, canvas.height - 34);
 
   disposeObject(group);
   renderer.dispose();
   return canvas;
 }
 
-function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName, materialName = 'conceptual') {
+function createGlassRenderFloor(center, radius, backgroundColor) {
+  const width = radius * 5.8;
+  const depth = radius * 3.15;
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshPhysicalMaterial({
+      color: '#ffffff',
+      roughness: 0.2,
+      metalness: 0,
+      clearcoat: 0.62,
+      clearcoatRoughness: 0.16,
+      reflectivity: 0.36,
+      envMapIntensity: 0.35,
+      side: THREE.DoubleSide,
+    }),
+  );
+  floor.name = 'glass-render-reflection-floor';
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.x = center.x;
+  floor.position.z = center.z + radius * 1.05;
+  floor.receiveShadow = true;
+  floor.userData.floorInfo = {
+    centerX: floor.position.x,
+    centerZ: floor.position.z,
+    width,
+    depth,
+  };
+  return floor;
+}
+
+function drawGlassFloorCaustics(context, placed, group, camera, size, styleName, floorY = 0, floorInfo = null) {
+  camera.updateMatrixWorld(true);
+  group.updateMatrixWorld(true);
+  const project = (x, y, z) => {
+    const projected = new THREE.Vector3(x, y, z).project(camera);
+    return [(projected.x * 0.5 + 0.5) * size[0], (-projected.y * 0.5 + 0.5) * size[1]];
+  };
+  const patternBounds = glassPatternBounds(placed);
+  if (!patternBounds || !floorInfo) return;
+  const patternWidth = Math.max(patternBounds.maxX - patternBounds.minX, 0.001);
+  const patternDepth = Math.max(patternBounds.maxY - patternBounds.minY, 0.001);
+  const floorScale = Math.min((floorInfo.width * 0.62) / patternWidth, (floorInfo.depth * 0.58) / patternDepth);
+  const floorCenterX = floorInfo.centerX + floorInfo.width * 0.08;
+  const floorCenterZ = floorInfo.centerZ + floorInfo.depth * 0.04;
+  const toFloorPoint = ([x, y]) => [
+    floorCenterX + (x - (patternBounds.minX + patternWidth / 2)) * floorScale,
+    floorCenterZ + (y - (patternBounds.minY + patternDepth / 2)) * floorScale,
+  ];
+  context.save();
+  const floorPath = glassFloorCanvasPolygon(floorInfo, floorY + 0.004, project);
+  traceCanvasPolygon(context, floorPath);
+  context.clip();
+  context.globalCompositeOperation = 'source-over';
+  placed.forEach((piece) => {
+    const footprint = worldFootprintPoints(piece);
+    if (footprint.length < 3) return;
+    const tint = hexToRgb(glassTintColor(piece.color || '#1c7c74')) || hexToRgb('#1c7c74');
+    const caustic = footprint.map((point) => {
+      const [floorX, floorZ] = toFloorPoint(point);
+      const offset = glassCastOffset(Math.max(0.02, Number(piece.height) || 0.18));
+      return project(floorX + offset.x, floorY + 0.006, floorZ + offset.y);
+    });
+
+    context.save();
+    context.filter = 'blur(2px) saturate(2.2)';
+    context.globalAlpha = 0.22;
+    context.fillStyle = rgbaFromRgb(tint, 0.68);
+    traceCanvasPolygon(context, scaleCanvasPolygon(caustic, 1.08));
+    context.fill();
+    context.restore();
+
+    context.save();
+    context.filter = 'saturate(2.65)';
+    context.globalAlpha = 0.76;
+    context.fillStyle = rgbaFromRgb(tint, 0.82);
+    traceCanvasPolygon(context, caustic);
+    context.fill();
+    context.restore();
+  });
+  context.restore();
+}
+
+function glassPatternBounds(placed) {
+  const points = placed.flatMap((piece) => worldFootprintPoints(piece));
+  if (!points.length) return null;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+function glassFloorCanvasPolygon(floorInfo, y, project) {
+  const halfWidth = floorInfo.width / 2;
+  const halfDepth = floorInfo.depth / 2;
+  return [
+    project(floorInfo.centerX - halfWidth, y, floorInfo.centerZ - halfDepth),
+    project(floorInfo.centerX + halfWidth, y, floorInfo.centerZ - halfDepth),
+    project(floorInfo.centerX + halfWidth, y, floorInfo.centerZ + halfDepth),
+    project(floorInfo.centerX - halfWidth, y, floorInfo.centerZ + halfDepth),
+  ];
+}
+
+function scaleCanvasPolygon(points, scale) {
+  if (!points.length) return points;
+  const center = points.reduce(
+    ([sumX, sumY], [x, y]) => [sumX + x, sumY + y],
+    [0, 0],
+  ).map((value) => value / points.length);
+  return points.map(([x, y]) => [
+    center[0] + (x - center[0]) * scale,
+    center[1] + (y - center[1]) * scale,
+  ]);
+}
+
+function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings, styleName, materialName = 'plastic', yOffset = 0) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
   camera.updateMatrixWorld(true);
   const project = (x, y, z) => {
@@ -3742,39 +4493,47 @@ function drawIsometricEdgeOverlay(context, placed, camera, size, renderSettings,
     const sideSegments = isGlass ? topSegments : visibleCameraFacingSegments(piece, topSegments, camera);
     const height = Math.max(0.02, Number(piece.height) || 0.18) * (styleName === 'pattern' ? 0.35 : 1);
     topSegments.forEach(([start, end]) => {
-      strokeCanvasPath(context, [project(start.x, height, start.y), project(end.x, height, end.y)], {
+      strokeCanvasPath(context, [project(start.x, height + yOffset, start.y), project(end.x, height + yOffset, end.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
         mode: renderSettings.edgeMode,
+        offsetCount: renderSettings.edgeOffsetCount,
+        offsetDistance: renderSettings.edgeOffsetDistance,
         gapColor: renderSettings.backgroundColor,
         closed: false,
       });
     });
     sideSegments.forEach(([start, end]) => {
-      strokeCanvasPath(context, [project(start.x, 0, start.y), project(end.x, 0, end.y)], {
+      strokeCanvasPath(context, [project(start.x, yOffset, start.y), project(end.x, yOffset, end.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
         mode: renderSettings.edgeMode,
+        offsetCount: renderSettings.edgeOffsetCount,
+        offsetDistance: renderSettings.edgeOffsetDistance,
         gapColor: renderSettings.backgroundColor,
         closed: false,
       });
     });
     const footprint = worldFootprintPoints(piece);
     if (footprint.length >= 3) {
-      const top = footprint.map(([x, y]) => project(x, height, y));
+      const top = footprint.map(([x, y]) => project(x, height + yOffset, y));
       strokeCanvasPath(context, top, {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
         mode: renderSettings.edgeMode,
+        offsetCount: renderSettings.edgeOffsetCount,
+        offsetDistance: renderSettings.edgeOffsetDistance,
         gapColor: renderSettings.backgroundColor,
         closed: true,
       });
     }
     uniqueSegmentPoints(sideSegments).forEach((point) => {
-      strokeCanvasPath(context, [project(point.x, 0, point.y), project(point.x, height, point.y)], {
+      strokeCanvasPath(context, [project(point.x, yOffset, point.y), project(point.x, height + yOffset, point.y)], {
         color: renderSettings.edgeColor,
         lineWidth: renderSettings.edgeThickness,
         mode: renderSettings.edgeMode,
+        offsetCount: renderSettings.edgeOffsetCount,
+        offsetDistance: renderSettings.edgeOffsetDistance,
         gapColor: renderSettings.backgroundColor,
         closed: false,
       });
@@ -3827,6 +4586,51 @@ function uniqueSegmentPoints(segments) {
   return [...points.values()];
 }
 
+function createExportEdgeOverlay(piece, renderSettings, showThrough = false) {
+  const segments = getExportFootprintSegments(piece).filter(([start, end]) => start && end);
+  if (!segments.length) return null;
+  const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
+  if (thickness <= 0) return null;
+  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings);
+  const verticalPoints = renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
+  const instanceCount = edgeSegments.length * 2 + verticalPoints.length;
+  if (!instanceCount) return null;
+  const material = new THREE.MeshBasicMaterial({
+    color: renderSettings.edgeColor,
+    depthTest: !showThrough,
+    depthWrite: false,
+    transparent: showThrough,
+    opacity: showThrough ? 0.86 : 1,
+    toneMapped: false,
+  });
+  const overlay = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, instanceCount);
+  overlay.name = 'export-visible-edge-overlay';
+  overlay.renderOrder = 8;
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const topY = height + thickness * 0.55;
+  const bottomY = thickness * 0.55;
+  const interiorPoint = segmentInteriorPoint(segments);
+  let matrixIndex = 0;
+  edgeSegments.forEach(([start, end]) => {
+    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, 0, interiorPoint);
+    matrixIndex += 1;
+    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
+    matrixIndex += 1;
+  });
+  verticalPoints.forEach(([x, y]) => {
+    const matrix = new THREE.Matrix4();
+    matrix.compose(
+      new THREE.Vector3(x, height / 2, y),
+      new THREE.Quaternion(),
+      new THREE.Vector3(thickness, height, thickness),
+    );
+    overlay.setMatrixAt(matrixIndex, matrix);
+    matrixIndex += 1;
+  });
+  overlay.instanceMatrix.needsUpdate = true;
+  return overlay;
+}
+
 async function createExportPieceObject(piece) {
   return createExportFootprintObject(piece);
 }
@@ -3847,7 +4651,7 @@ function createExportFootprintObject(piece) {
   });
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, height, 0);
-  const mesh = new THREE.Mesh(geometry, createExportMaterial(piece, 'conceptual'));
+  const mesh = new THREE.Mesh(geometry, createExportMaterial(piece, 'plastic'));
   mesh.castShadow = false;
   mesh.receiveShadow = false;
   return mesh;
@@ -3866,28 +4670,36 @@ function applyExportPieceMaterial(object, piece, materialName, renderSettings = 
   material.dispose();
 }
 
-function createExportMaterial(piece, materialName = 'conceptual', renderSettings = DEFAULT_RENDER_SETTINGS) {
+function createExportMaterial(piece, materialName = 'plastic', renderSettings = DEFAULT_RENDER_SETTINGS) {
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'glass') {
+    const tint = glassTintColor(color);
     return new THREE.MeshStandardMaterial({
-      color,
+      color: tint,
       metalness: 0,
-      roughness: 0.04,
-      transparent: true,
-      opacity: 0.42,
-      depthWrite: false,
-      side: THREE.DoubleSide,
+      roughness: 0.12,
+      emissive: new THREE.Color(tint),
+      emissiveIntensity: 0.08,
+      transparent: false,
+      opacity: 1,
+      envMapIntensity: 0.9,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.FrontSide,
     });
   }
 
-  const texture = material === 'plastic' || material === 'conceptual' ? null : createMaterialTexture(color, material);
   return new THREE.MeshStandardMaterial({
-    color: material === 'marble' || material === 'tile' || material === 'wood' ? '#ffffff' : color,
-    map: texture,
-    metalness: material === 'conceptual' ? 0.08 : 0,
-    roughness: material === 'conceptual' ? 0.42 : material === 'plastic' ? 0.36 : material === 'tile' ? 0.18 : material === 'wood' ? 0.58 : 0.24,
-    envMapIntensity: material === 'conceptual' ? 0.25 : material === 'tile' ? 0.75 : 0.35,
+    color,
+    metalness: 0,
+    roughness: 0.36,
+    envMapIntensity: 0.35,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
   });
 }
 
@@ -4129,19 +4941,42 @@ function downloadText(filename, text) {
 }
 
 function toObj(scene) {
-  const lines = [`# Girih export`, `# material=${scene.material}`, `# style=${scene.style}`];
+  const modelTransform = normalizeModelTransform(scene.modelTransform);
+  const transformMatrix = modelTransformMatrix(modelTransform);
+  const lines = [
+    `# Girih export`,
+    `# material=${scene.material}`,
+    `# style=${scene.style}`,
+    `# modelTransform=${JSON.stringify(modelTransform)}`,
+  ];
   let vertexOffset = 1;
   scene.pieces.forEach((piece) => {
     lines.push(`o ${piece.name.replace(/\s+/g, '_')}_${piece.id}`);
     piece.points.forEach(([x, y]) => {
       const [rx, ry] = rotatePoint(x, y, piece.transform.rotation);
-      lines.push(`v ${(rx + piece.transform.x).toFixed(4)} 0 ${(ry + piece.transform.y).toFixed(4)}`);
+      const point = new THREE.Vector3(rx + piece.transform.x, 0, ry + piece.transform.y).applyMatrix4(transformMatrix);
+      lines.push(`v ${point.x.toFixed(4)} ${point.y.toFixed(4)} ${point.z.toFixed(4)}`);
     });
     const face = piece.points.map((_, index) => vertexOffset + index).join(' ');
     lines.push(`f ${face}`);
     vertexOffset += piece.points.length;
   });
   return lines.join('\n');
+}
+
+function modelTransformMatrix(transform) {
+  const normalized = normalizeModelTransform(transform);
+  const matrix = new THREE.Matrix4();
+  matrix.compose(
+    new THREE.Vector3(normalized.positionX, normalized.positionY, normalized.positionZ),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(normalized.rotationX),
+      THREE.MathUtils.degToRad(normalized.rotationY),
+      THREE.MathUtils.degToRad(normalized.rotationZ),
+    )),
+    new THREE.Vector3(normalized.scaleX, normalized.scaleY, normalized.scaleZ),
+  );
+  return matrix;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
