@@ -8,12 +8,11 @@ import {
   Download,
   Edit3,
   Eye,
-  FileArchive,
   FileText,
   Grid3X3,
-  Image,
   Layers3,
   Menu,
+  Palette,
   Plus,
   Printer,
   Redo2,
@@ -25,10 +24,12 @@ import {
   X,
 } from 'lucide-react';
 import * as THREE from 'three';
+import { PUBLIC_MODEL_FILES, PUBLIC_MODEL_GROUPS } from './publicModelPieces.generated.js';
 import './styles.css';
 
 const STORAGE_KEY = 'girih.pieces.v1';
 const ADMIN_SETTINGS_STORAGE_KEY = 'girih.pieceAdminSettings.v1';
+const GROUP_COLOR_PALETTES_STORAGE_KEY = 'girih.groupColorPalettes.v1';
 const MODELS_STORAGE_KEY = 'girih.models.v1';
 const ANALYSIS_VERSION = 6;
 const SNAP_DISTANCE = 0.45;
@@ -48,7 +49,7 @@ const STAGE_CAMERA_VIEWS = [
 ];
 const STAGE_CAMERA_VIEW_MAP = new Map(STAGE_CAMERA_VIEWS.map((view) => [view.id, view]));
 const DEFAULT_RENDER_SETTINGS = {
-  backgroundColor: '#f6efe3',
+  backgroundColor: '#1b3f3a',
   edgeColor: '#123f3a',
   edgeThickness: 0,
   edgeMode: 'single',
@@ -158,40 +159,20 @@ function applyModelTransform(object, transform) {
   );
 }
 
-const PUBLIC_MODEL_PIECES = [
-  publicModelPiece('badami', 'Badami', 'Badami.glb', '#2f7d73'),
-  publicModelPiece('chenari', 'Chenari', 'Chenari.glb', '#8a6bb8'),
-  publicModelPiece('giveh', 'Giveh', 'Giveh.glb', '#2b7a6f'),
-  publicModelPiece('loz', 'Loz', 'Loz.glb', '#b86f3e'),
-  publicModelPiece('maku', 'Maku', 'Maku.glb', '#1f6f68'),
-  publicModelPiece('panj', 'Panj', 'Panj.glb', '#6e7fbd'),
-  publicModelPiece('sekro', 'Sekro', 'Sekro.glb', '#8b6f47'),
-  publicModelPiece('separi', 'Separi', 'Separi.glb', '#3f8c82'),
-  publicModelPiece('setareh', 'Setareh', 'Setareh.glb', '#2e8278'),
-  publicModelPiece('setareh-shol', 'Setareh Shol', 'Setareh Shol.glb', '#2b716a'),
-  publicModelPiece('shamseh', 'Shamseh', 'Shamseh.glb', '#d58a36'),
-  publicModelPiece('shamseh-kond', 'Shamseh Kond', 'Shamseh Kond.glb', '#c4812f'),
-  publicModelPiece('shesh-band', 'Shesh Band', 'Shesh Band.glb', '#1c7c74'),
-  publicModelPiece('shesh-shol', 'Shesh Shol', 'Shesh Shol.glb', '#2f8d7e'),
-  publicModelPiece('sormehdan', 'Sormehdan', 'Sormehdan.glb', '#526d93'),
-  publicModelPiece('tabl', 'Tabl', 'Tabl.glb', '#9a5845'),
-  publicModelPiece('tah-borideh', 'Tah Borideh', 'Tah Borideh.glb', '#b9455a'),
-  publicModelPiece('taragheh', 'Taragheh', 'Taragheh.glb', '#4076b8'),
-  publicModelPiece('toranj', 'Toranj', 'Toranj.glb', '#6f8d44'),
-  publicModelPiece('toranj-kond', 'Toranj Kond', 'Toranj Kond.glb', '#78914a'),
-];
+const PUBLIC_MODEL_PIECES = PUBLIC_MODEL_FILES.map((piece) => publicModelPiece(piece.id, piece.name, piece.filename, piece.color, piece.group));
 
 const DEFAULT_PIECES = [...PUBLIC_MODEL_PIECES];
+const DEFAULT_PIECE_BY_ID = new Map(DEFAULT_PIECES.map((piece) => [piece.id, piece]));
 
-function publicModelPiece(id, name, filename, color) {
+function publicModelPiece(id, name, filename, color, group = 'Default') {
   return {
     id,
     name,
-    group: 'Default',
+    group: normalizePieceGroupName(group),
     color,
     height: 0.18,
     type: 'glb',
-    glbUrl: `/models/${encodeURIComponent(filename)}`,
+    glbUrl: `/models/${encodeModelPath(filename)}`,
     points: [
       [-0.55, -0.55],
       [0.55, -0.55],
@@ -208,6 +189,13 @@ function publicModelPiece(id, name, filename, color) {
     keepAspectRatio: true,
     analysisVersion: 0,
   };
+}
+
+function encodeModelPath(path) {
+  return String(path)
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
 }
 
 function App() {
@@ -231,25 +219,31 @@ function App() {
   const [modelTransform, setModelTransform] = useState(DEFAULT_MODEL_TRANSFORM);
   const [stageCamera, setStageCamera] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
+  const [exportFormat, setExportFormat] = useState('png');
   const [renderBgColor, setRenderBgColor] = useState(DEFAULT_RENDER_SETTINGS.backgroundColor);
   const [renderEdgeColor, setRenderEdgeColor] = useState(DEFAULT_RENDER_SETTINGS.edgeColor);
   const [renderEdgeThickness, setRenderEdgeThickness] = useState(DEFAULT_RENDER_SETTINGS.edgeThickness);
   const [renderEdgeMode, setRenderEdgeMode] = useState(DEFAULT_RENDER_SETTINGS.edgeMode);
   const [renderEdgeOffsetCount, setRenderEdgeOffsetCount] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetCount);
   const [renderEdgeOffsetDistance, setRenderEdgeOffsetDistance] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetDistance);
+  const [liveShadowsEnabled, setLiveShadowsEnabled] = useState(false);
   const [printPreview, setPrintPreview] = useState(null);
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
   const [collapsedPieceGroups, setCollapsedPieceGroups] = useState(() => new Set());
   const [collapsedAdminGroups, setCollapsedAdminGroups] = useState(() => new Set());
+  const [collapsedPaletteGroups, setCollapsedPaletteGroups] = useState(() => new Set());
+  const [groupColorPalettes, setGroupColorPalettes] = useState(readGroupColorPalettes);
+  const [selectedGroupPalettes, setSelectedGroupPalettes] = useState({});
+  const [modelTransformCollapsed, setModelTransformCollapsed] = useState(true);
   const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
   const [stageCameraSnapshot, setStageCameraSnapshot] = useState(null);
   const importSceneInputRef = useRef(null);
 
   const selected = placed.find((item) => item.id === selectedId);
   const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
-  const pieceGroups = useMemo(() => groupLibraryPieces(pieces), [pieces]);
+  const pieceGroups = useMemo(() => groupLibraryPieces(pieces, PUBLIC_MODEL_GROUPS), [pieces]);
 
   function currentRenderSettings() {
     return normalizeRenderSettings({
@@ -288,6 +282,78 @@ function App() {
       return next;
     });
   }
+
+  function togglePaletteGroup(groupName) {
+    setCollapsedPaletteGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
+      return next;
+    });
+  }
+
+  function saveGroupColorPalette(group) {
+    const groupName = normalizePieceGroupName(group.name);
+    if (!group.items.length) return;
+    const palette = {
+      id: crypto.randomUUID(),
+      savedAt: Date.now(),
+      colors: Object.fromEntries(group.items.map((piece) => [piece.id, piece.color])),
+    };
+    setGroupColorPalettes((current) => {
+      const existing = Array.isArray(current[groupName]) ? current[groupName] : [];
+      if (existing.length >= 6) return current;
+      const nextGroupPalettes = [...existing, palette].map((item, index) => ({ ...item, name: `${index + 1}` }));
+      return { ...current, [groupName]: nextGroupPalettes };
+    });
+    setSelectedGroupPalettes((current) => ({ ...current, [groupName]: palette.id }));
+  }
+
+  function deleteGroupColorPalette(groupName, paletteId) {
+    const normalizedGroupName = normalizePieceGroupName(groupName);
+    setGroupColorPalettes((current) => {
+      const existing = Array.isArray(current[normalizedGroupName]) ? current[normalizedGroupName] : [];
+      const nextGroupPalettes = existing
+        .filter((palette) => palette.id !== paletteId)
+        .map((item, index) => ({ ...item, name: `${index + 1}` }));
+      return { ...current, [normalizedGroupName]: nextGroupPalettes };
+    });
+    setSelectedGroupPalettes((current) => {
+      if (current[normalizedGroupName] !== paletteId) return current;
+      const next = { ...current };
+      delete next[normalizedGroupName];
+      return next;
+    });
+  }
+
+  function applyGroupColorPalette(group, paletteId) {
+    const groupName = normalizePieceGroupName(group.name);
+    const palettes = groupColorPalettes[groupName] || [];
+    const palette = palettes.find((item) => item.id === paletteId) || palettes[0];
+    if (!palette?.colors) return;
+    const updatedById = new Map(
+      group.items
+        .filter((piece) => typeof palette.colors[piece.id] === 'string')
+        .map((piece) => [piece.id, { ...piece, color: palette.colors[piece.id] }]),
+    );
+    if (!updatedById.size) return;
+    updatedById.forEach((piece) => saveAdminPieceSetting(piece));
+    setPieces((items) => items.map((item) => updatedById.get(item.id) || item));
+    commitPlaced((items) =>
+      items.map((item) => {
+        const nextSource = updatedById.get(item.sourceId);
+        return nextSource ? applyLibraryPieceToInstance(nextSource, item) : item;
+      }),
+    );
+    setDraft((current) => {
+      const nextSource = updatedById.get(editingId);
+      return nextSource ? { ...current, color: nextSource.color } : current;
+    });
+  }
+
+  useEffect(() => {
+    localStorage.setItem(GROUP_COLOR_PALETTES_STORAGE_KEY, JSON.stringify(groupColorPalettes));
+  }, [groupColorPalettes]);
 
   useEffect(() => {
     if (selectedId && !placed.some((item) => item.id === selectedId)) setSelectedId(null);
@@ -445,6 +511,7 @@ function App() {
 
   function savePiece(event) {
     event.preventDefault();
+    if (!editingId) return;
     const points = parsePoints(draft.points);
     if (points.length < 3) return;
     const piece = {
@@ -487,6 +554,11 @@ function App() {
   }
 
   function editPiece(piece) {
+    if (editingId === piece.id) {
+      setEditingId(null);
+      setDraft(emptyDraft());
+      return;
+    }
     setEditingId(piece.id);
     setDraft({
       name: piece.name,
@@ -564,6 +636,18 @@ function App() {
       items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
     );
     setDraft((current) => (editingId === piece.id ? { ...current, color } : current));
+  }
+
+  function updatePieceHeight(piece, value) {
+    const height = Number(value);
+    if (!Number.isFinite(height) || height <= 0) return;
+    const nextPiece = { ...piece, height };
+    saveAdminPieceSetting(nextPiece);
+    setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
+    commitPlaced((items) =>
+      items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
+    );
+    setDraft((current) => (editingId === piece.id ? { ...current, height } : current));
   }
 
   function deletePiece(id) {
@@ -656,8 +740,19 @@ function App() {
     printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${stageCamera}`);
   }
 
+  function exportSelectedFormat() {
+    exportScene(exportFormat);
+  }
+
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      onPointerDown={(event) => {
+        if (!mobileAdminOpen) return;
+        if (event.target.closest('.admin-panel') || event.target.closest('[data-admin-toggle]')) return;
+        setMobileAdminOpen(false);
+      }}
+    >
       <div className="mobile-topbar">
         <button type="button" onClick={() => setMobilePiecesOpen((open) => !open)}>
           <Layers3 size={18} /> Shapes
@@ -769,11 +864,13 @@ function App() {
         </section>
 
         <section className="panel-section controls-grid desktop-library-controls">
-          <div className="section-title">
-            <Box size={18} />
-            <span>Model Transform</span>
-          </div>
-          <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+          <CollapsibleControlGroup
+            title="Model Transform"
+            collapsed={modelTransformCollapsed}
+            onToggle={() => setModelTransformCollapsed((collapsed) => !collapsed)}
+          >
+            <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+          </CollapsibleControlGroup>
         </section>
 
         <section className="panel-section controls-grid desktop-library-controls">
@@ -791,66 +888,88 @@ function App() {
             <Printer size={18} />
             <span>Export</span>
           </div>
-          <label>
-            Page orientation
-            <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
-              <option value="landscape">Landscape</option>
-              <option value="portrait">Portrait</option>
-            </select>
-          </label>
-          <label>
-            Stage BG color
-            <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
-          </label>
-          <label>
-            Edge line color
-            <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
-          </label>
-          <label>
-            Edge thickness
-            <input
-              type="number"
-              min="0"
-              step="0.5"
-              value={renderEdgeThickness}
-              onChange={(event) => setRenderEdgeThickness(event.target.value)}
-            />
-          </label>
-          <label>
-            Edge line style
-            <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
-              <option value="single">Single line</option>
-              <option value="double">Double line</option>
-              <option value="offset">Offset line</option>
-            </select>
-          </label>
-          {renderEdgeMode === 'offset' && (
-            <>
-              <label>
-                Offset count
-                <input
-                  type="number"
-                  min="1"
-                  max="12"
-                  step="1"
-                  value={renderEdgeOffsetCount}
-                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
-                />
-              </label>
-              <label>
-                Offset distance px
-                <input
-                  type="number"
-                  min="0"
-                  max="80"
-                  step="0.5"
-                  value={renderEdgeOffsetDistance}
-                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
-                />
-              </label>
-            </>
-          )}
+          <div className="export-grid">
+            <label>
+              Stage BG color
+              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+            </label>
+            <label>
+              Edge line color
+              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+            </label>
+            <label className="checkbox-field export-checkbox-field">
+              <input
+                type="checkbox"
+                checked={liveShadowsEnabled}
+                onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+              />
+              <span>Live shadows</span>
+            </label>
+            <label>
+              Edge thickness
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={renderEdgeThickness}
+                onChange={(event) => setRenderEdgeThickness(event.target.value)}
+              />
+            </label>
+            <label>
+              Edge line style
+              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+                <option value="single">Single line</option>
+                <option value="double">Double line</option>
+                <option value="offset">Offset line</option>
+              </select>
+            </label>
+            {renderEdgeMode === 'offset' && (
+              <>
+                <label>
+                  Offset count
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    step="1"
+                    value={renderEdgeOffsetCount}
+                    onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Offset distance px
+                  <input
+                    type="number"
+                    min="0"
+                    max="80"
+                    step="0.5"
+                    value={renderEdgeOffsetDistance}
+                    onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            <label>
+              Page orientation
+              <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </label>
+            <label>
+              Export format
+              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                <option value="png">PNG image</option>
+                <option value="pdf">PDF document</option>
+                <option value="json">JSON model</option>
+                <option value="obj">OBJ model</option>
+              </select>
+            </label>
+          </div>
           <div className="action-row">
+            <button onClick={exportSelectedFormat} disabled={!placed.length}>
+              <Download size={16} /> Export
+            </button>
             <button onClick={openPrintPreview} disabled={!placed.length}>
               <Eye size={16} /> Preview
             </button>
@@ -858,24 +977,6 @@ function App() {
               <Printer size={16} /> Print
             </button>
           </div>
-        </section>
-
-        <section className="panel-section action-row desktop-library-controls">
-          <button onClick={() => exportScene('json')} disabled={!placed.length}>
-            <Download size={16} /> JSON
-          </button>
-          <button onClick={() => exportScene('obj')} disabled={!placed.length}>
-            <FileArchive size={16} /> OBJ
-          </button>
-          <button onClick={() => exportScene('png')} disabled={!placed.length}>
-            <Image size={16} /> PNG
-          </button>
-          <button onClick={() => exportScene('pdf')} disabled={!placed.length}>
-            <FileText size={16} /> PDF
-          </button>
-          <button onClick={resetScene} disabled={!placed.length}>
-            <RotateCcw size={16} /> Reset
-          </button>
         </section>
       </aside>
 
@@ -927,11 +1028,13 @@ function App() {
         </section>
 
         <section className="panel-section controls-grid">
-          <div className="section-title">
-            <Box size={18} />
-            <span>Model Transform</span>
-          </div>
-          <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+          <CollapsibleControlGroup
+            title="Model Transform"
+            collapsed={modelTransformCollapsed}
+            onToggle={() => setModelTransformCollapsed((collapsed) => !collapsed)}
+          >
+            <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+          </CollapsibleControlGroup>
         </section>
 
         <section className="panel-section controls-grid">
@@ -949,66 +1052,88 @@ function App() {
             <Printer size={18} />
             <span>Export</span>
           </div>
-          <label>
-            Page orientation
-            <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
-              <option value="landscape">Landscape</option>
-              <option value="portrait">Portrait</option>
-            </select>
-          </label>
-          <label>
-            Stage BG color
-            <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
-          </label>
-          <label>
-            Edge line color
-            <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
-          </label>
-          <label>
-            Edge thickness
-            <input
-              type="number"
-              min="0"
-              step="0.5"
-              value={renderEdgeThickness}
-              onChange={(event) => setRenderEdgeThickness(event.target.value)}
-            />
-          </label>
-          <label>
-            Edge line style
-            <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
-              <option value="single">Single line</option>
-              <option value="double">Double line</option>
-              <option value="offset">Offset line</option>
-            </select>
-          </label>
-          {renderEdgeMode === 'offset' && (
-            <>
-              <label>
-                Offset count
-                <input
-                  type="number"
-                  min="1"
-                  max="12"
-                  step="1"
-                  value={renderEdgeOffsetCount}
-                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
-                />
-              </label>
-              <label>
-                Offset distance px
-                <input
-                  type="number"
-                  min="0"
-                  max="80"
-                  step="0.5"
-                  value={renderEdgeOffsetDistance}
-                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
-                />
-              </label>
-            </>
-          )}
+          <div className="export-grid">
+            <label>
+              Stage BG color
+              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+            </label>
+            <label>
+              Edge line color
+              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+            </label>
+            <label className="checkbox-field export-checkbox-field">
+              <input
+                type="checkbox"
+                checked={liveShadowsEnabled}
+                onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+              />
+              <span>Live shadows</span>
+            </label>
+            <label>
+              Edge thickness
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={renderEdgeThickness}
+                onChange={(event) => setRenderEdgeThickness(event.target.value)}
+              />
+            </label>
+            <label>
+              Edge line style
+              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+                <option value="single">Single line</option>
+                <option value="double">Double line</option>
+                <option value="offset">Offset line</option>
+              </select>
+            </label>
+            {renderEdgeMode === 'offset' && (
+              <>
+                <label>
+                  Offset count
+                  <input
+                    type="number"
+                    min="1"
+                    max="12"
+                    step="1"
+                    value={renderEdgeOffsetCount}
+                    onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Offset distance px
+                  <input
+                    type="number"
+                    min="0"
+                    max="80"
+                    step="0.5"
+                    value={renderEdgeOffsetDistance}
+                    onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                  />
+                </label>
+              </>
+            )}
+            <label>
+              Page orientation
+              <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </label>
+            <label>
+              Export format
+              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                <option value="png">PNG image</option>
+                <option value="pdf">PDF document</option>
+                <option value="json">JSON model</option>
+                <option value="obj">OBJ model</option>
+              </select>
+            </label>
+          </div>
           <div className="action-row">
+            <button onClick={exportSelectedFormat} disabled={!placed.length}>
+              <Download size={16} /> Export
+            </button>
             <button onClick={openPrintPreview} disabled={!placed.length}>
               <Eye size={16} /> Preview
             </button>
@@ -1019,23 +1144,9 @@ function App() {
         </section>
 
         <section className="panel-section action-row">
-          <button onClick={() => exportScene('json')} disabled={!placed.length}>
-            <Download size={16} /> JSON
-          </button>
-          <button onClick={() => exportScene('obj')} disabled={!placed.length}>
-            <FileArchive size={16} /> OBJ
-          </button>
-          <button onClick={() => exportScene('png')} disabled={!placed.length}>
-            <Image size={16} /> PNG
-          </button>
-          <button onClick={() => exportScene('pdf')} disabled={!placed.length}>
-            <FileText size={16} /> PDF
-          </button>
-          <button onClick={resetScene} disabled={!placed.length}>
-            <RotateCcw size={16} /> Reset
-          </button>
           <button
             type="button"
+            data-admin-toggle
             onClick={() => {
               setMobileMenuOpen(false);
               setMobileAdminOpen(true);
@@ -1046,7 +1157,7 @@ function App() {
         </section>
       </aside>
 
-      <main className="stage-wrap">
+      <main className="stage-wrap" onPointerDown={() => setMobileAdminOpen(false)}>
         <div className="stage-toolbar">
           <div>
             <strong>{completed ? 'Puzzle complete' : 'Build stage'}</strong>
@@ -1070,6 +1181,12 @@ function App() {
               ))}
             </div>
             <div className="history-controls">
+              <button type="button" data-admin-toggle aria-label="Open admin panel" title="Admin panel" onClick={() => setMobileAdminOpen(true)}>
+                <Upload size={16} />
+              </button>
+              <button type="button" aria-label="Reset stage" title="Reset stage" onClick={resetScene} disabled={!placed.length}>
+                <RotateCcw size={16} />
+              </button>
               <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
                 <Undo2 size={16} />
               </button>
@@ -1097,6 +1214,7 @@ function App() {
           edgeMode={renderEdgeMode}
           edgeOffsetCount={renderEdgeOffsetCount}
           edgeOffsetDistance={renderEdgeOffsetDistance}
+          liveShadowsEnabled={liveShadowsEnabled}
           modelTransform={modelTransform}
           onSelect={setSelectedId}
           onMove={updatePlaced}
@@ -1151,7 +1269,7 @@ function App() {
         )}
       </main>
 
-      <aside className={`admin-panel ${mobileAdminOpen ? 'open' : ''}`}>
+      <aside className={`admin-panel ${mobileAdminOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
         <div className="section-title">
           <Upload size={18} />
           <span>Admin Panel</span>
@@ -1159,126 +1277,93 @@ function App() {
             <X size={16} />
           </button>
         </div>
-        <form onSubmit={savePiece} className="admin-form">
-          <label>
-            Piece name
-            <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-          </label>
-          <label>
-            Group
-            <input value={draft.group} onChange={(event) => setDraft({ ...draft, group: event.target.value })} placeholder="Default" />
-          </label>
-          <label className="file-import">
-            3D model
-            <input type="file" accept=".obj,.glb,model/obj,model/gltf-binary,text/plain" onChange={importModelFile} />
-            <span>
-              {draft.glbDataUrl
-                ? 'GLB loaded. Import or update to add it to the library.'
-                : draft.glbUrl
-                  ? 'Public GLB linked from the deployed models folder.'
-                : draft.objText
-                  ? 'OBJ loaded. Import or update to add it to the library.'
-                  : 'Choose an .obj or .glb file to create a 3D piece.'}
-            </span>
-          </label>
-          <label>
-            Color
-            <input
-              type="color"
-              value={draft.color}
-              onChange={(event) => setDraft({ ...draft, color: event.target.value })}
-            />
-          </label>
-          {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
-            <label className="checkbox-field">
-              <input
-                type="checkbox"
-                checked={draft.keepAspectRatio !== false}
-                onChange={(event) => setDraft({ ...draft, keepAspectRatio: event.target.checked })}
-              />
-              <span>Keep aspect ratio when height changes</span>
-            </label>
-          )}
-          {(draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx) && (
-            <div className="dimension-readout">
-              <span>Original size</span>
-              <strong>W {formatDimensionLabel(draft.sourceWidthPx)}</strong>
-              <strong>L {formatDimensionLabel(draft.sourceLengthPx)}</strong>
-              <strong>H {formatDimensionLabel(draft.sourceHeightPx)}</strong>
-            </div>
-          )}
-          <div className="dimension-grid">
-            <label>
-              Stage width
-              <input
-                type="number"
-                min="0.01"
-                step="0.001"
-                value={draft.stageWidth}
-                onChange={(event) => updateDraftDimension('stageWidth', event.target.value)}
-              />
-            </label>
-            <label>
-              Stage length
-              <input
-                type="number"
-                min="0.01"
-                step="0.001"
-                value={draft.stageLength}
-                onChange={(event) => updateDraftDimension('stageLength', event.target.value)}
-              />
-            </label>
-            <label>
-              Stage height
-              <input
-                type="number"
-                min="0.01"
-                step="0.001"
-                value={draft.height}
-                onChange={(event) => updateDraftDimension('height', event.target.value)}
-              />
-            </label>
-          </div>
-          <button type="submit">
-            <Save size={16} />
-            {editingId ? 'Update piece' : 'Import piece'}
-          </button>
-        </form>
 
         <div className="admin-list">
           {pieceGroups.map((group) => {
             const collapsed = collapsedAdminGroups.has(group.name);
+            const groupName = normalizePieceGroupName(group.name);
+            const paletteCollapsed = collapsedPaletteGroups.has(groupName);
+            const palettes = groupColorPalettes[groupName] || [];
+            const canSavePalette = group.items.length > 0 && palettes.length < 6;
             return (
               <div className="admin-group" key={group.name}>
-                <button type="button" className="admin-group-toggle" onClick={() => toggleAdminGroup(group.name)}>
-                  <span>{group.name}</span>
-                  <small>{group.items.length}</small>
-                  <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
-                </button>
+                <div className="admin-group-header">
+                  <button type="button" className="admin-group-toggle" onClick={() => toggleAdminGroup(group.name)}>
+                    <span>{group.name}</span>
+                    <small>{group.items.length}</small>
+                    <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
+                  </button>
+                </div>
                 {!collapsed && (
                   <div className="admin-group-items">
-                    {group.items.map((piece) => (
-                      <div className="admin-row" key={piece.id}>
-                        <PieceIcon piece={piece} />
-                        <input
-                          className="admin-color-input"
-                          type="color"
-                          value={piece.color}
-                          aria-label={`Change ${piece.name} color`}
-                          onChange={(event) => updatePieceColor(piece, event.target.value)}
+                    <div className="admin-palette-panel">
+                      <div className="admin-palette-header">
+                        <button type="button" className="admin-palette-toggle" onClick={() => togglePaletteGroup(groupName)}>
+                          <span>Pallet</span>
+                          <small>{palettes.length}/6</small>
+                          <span aria-hidden="true">{paletteCollapsed ? '+' : '-'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-palette-button"
+                          title={canSavePalette ? `Save ${group.name} color palette` : 'Maximum 6 palettes saved'}
+                          disabled={!canSavePalette}
+                          onClick={() => saveGroupColorPalette(group)}
+                        >
+                          <Palette size={14} />
+                          Save
+                        </button>
+                      </div>
+                      {!paletteCollapsed && (
+                        <GroupPaletteList
+                          group={group}
+                          palettes={palettes}
+                          selectedPaletteId={selectedGroupPalettes[groupName]}
+                          onSelect={(paletteId) => {
+                            setSelectedGroupPalettes((current) => ({ ...current, [groupName]: paletteId }));
+                            applyGroupColorPalette(group, paletteId);
+                          }}
+                          onDelete={(paletteId) => deleteGroupColorPalette(groupName, paletteId)}
                         />
-                        <span>
-                          {piece.name}
-                          <small>{normalizePieceGroupName(piece.group)}</small>
-                          {piece.type === 'obj' && <small>OBJ</small>}
-                          {piece.type === 'glb' && <small>GLB</small>}
-                        </span>
-                        <button aria-label={`Edit ${piece.name}`} onClick={() => editPiece(piece)}>
-                          <Edit3 size={15} />
-                        </button>
-                        <button aria-label={`Delete ${piece.name}`} onClick={() => deletePiece(piece.id)}>
-                          <Trash2 size={15} />
-                        </button>
+                      )}
+                    </div>
+                    {group.items.map((piece) => (
+                      <div className="admin-piece" key={piece.id}>
+                        <div className="admin-row">
+                          <PieceIcon piece={piece} />
+                          <input
+                            className="admin-color-input"
+                            type="color"
+                            value={piece.color}
+                            aria-label={`Change ${piece.name} color`}
+                            onChange={(event) => updatePieceColor(piece, event.target.value)}
+                          />
+                          <input
+                            className="admin-height-input"
+                            type="number"
+                            min="0.01"
+                            step="0.001"
+                            value={piece.height}
+                            aria-label={`Change ${piece.name} stage height`}
+                            onChange={(event) => updatePieceHeight(piece, event.target.value)}
+                          />
+                          <span>{piece.name}</span>
+                          <button aria-label={`Edit ${piece.name}`} onClick={() => editPiece(piece)}>
+                            <Edit3 size={15} />
+                          </button>
+                        </div>
+                        {editingId === piece.id && (
+                          <AdminPieceEditor
+                            draft={draft}
+                            onDraftChange={setDraft}
+                            onDimensionChange={updateDraftDimension}
+                            onSubmit={savePiece}
+                            onCancel={() => {
+                              setEditingId(null);
+                              setDraft(emptyDraft());
+                            }}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1288,6 +1373,113 @@ function App() {
           })}
         </div>
       </aside>
+    </div>
+  );
+}
+
+function AdminPieceEditor({ draft, onDraftChange, onDimensionChange, onSubmit, onCancel }) {
+  const hasSourceDimensions = draft.objText || draft.glbDataUrl || draft.glbUrl || draft.sourceHeightPx;
+  return (
+    <form onSubmit={onSubmit} className="admin-form admin-inline-form">
+      <label>
+        Color
+        <input
+          type="color"
+          value={draft.color}
+          onChange={(event) => onDraftChange({ ...draft, color: event.target.value })}
+        />
+      </label>
+      {hasSourceDimensions && (
+        <label className="checkbox-field">
+          <input
+            type="checkbox"
+            checked={draft.keepAspectRatio !== false}
+            onChange={(event) => onDraftChange({ ...draft, keepAspectRatio: event.target.checked })}
+          />
+          <span>Keep aspect ratio when height changes</span>
+        </label>
+      )}
+      {hasSourceDimensions && (
+        <div className="dimension-readout">
+          <span>Original size</span>
+          <strong>W {formatDimensionLabel(draft.sourceWidthPx)}</strong>
+          <strong>L {formatDimensionLabel(draft.sourceLengthPx)}</strong>
+          <strong>H {formatDimensionLabel(draft.sourceHeightPx)}</strong>
+        </div>
+      )}
+      <div className="dimension-grid">
+        <label>
+          Stage width
+          <input
+            type="number"
+            min="0.01"
+            step="0.001"
+            value={draft.stageWidth}
+            onChange={(event) => onDimensionChange('stageWidth', event.target.value)}
+          />
+        </label>
+        <label>
+          Stage length
+          <input
+            type="number"
+            min="0.01"
+            step="0.001"
+            value={draft.stageLength}
+            onChange={(event) => onDimensionChange('stageLength', event.target.value)}
+          />
+        </label>
+        <label>
+          Stage height
+          <input
+            type="number"
+            min="0.01"
+            step="0.001"
+            value={draft.height}
+            onChange={(event) => onDimensionChange('height', event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="action-row">
+        <button type="submit">
+          <Save size={16} /> Update
+        </button>
+        <button type="button" className="secondary-button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function GroupPaletteList({ group, palettes, selectedPaletteId, onSelect, onDelete }) {
+  if (!palettes.length) {
+    return <div className="admin-palette-empty">No saved palettes yet.</div>;
+  }
+  return (
+    <div className="admin-palette-list">
+      {palettes.map((palette) => {
+        const active = selectedPaletteId === palette.id;
+        return (
+          <div className={`admin-palette-row ${active ? 'active' : ''}`} key={palette.id}>
+            <button type="button" className="admin-palette-preview" onClick={() => onSelect(palette.id)}>
+              <strong>{palette.name}</strong>
+              <span className="admin-palette-swatches">
+                {group.items.map((piece) => (
+                  <i key={piece.id} style={{ background: palette.colors[piece.id] || piece.color }} title={piece.name} />
+                ))}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="admin-palette-delete"
+              aria-label={`Delete ${palette.name}`}
+              onClick={() => onDelete(palette.id)}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1317,6 +1509,18 @@ function ModelTransformControls({ modelTransform, onChange }) {
         ))}
       </div>
     </>
+  );
+}
+
+function CollapsibleControlGroup({ title, collapsed, onToggle, children }) {
+  return (
+    <div className="control-group">
+      <button type="button" className="control-group-toggle" onClick={onToggle}>
+        <span>{title}</span>
+        <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
+      </button>
+      {!collapsed && <div className="control-group-items">{children}</div>}
+    </div>
   );
 }
 
@@ -1416,8 +1620,14 @@ function applyLibraryPieceToInstance(piece, instance) {
   };
 }
 
+const PIECE_GEOMETRY_SIGNATURE_CACHE = new WeakMap();
+
 function pieceGeometrySignature(piece) {
-  return JSON.stringify({
+  if (piece && typeof piece === 'object') {
+    const cached = PIECE_GEOMETRY_SIGNATURE_CACHE.get(piece);
+    if (cached) return cached;
+  }
+  const signature = JSON.stringify({
     type: piece.type || 'shape',
     height: Number(piece.height) || 0.18,
     stageWidth: Number(piece.stageWidth) || null,
@@ -1435,6 +1645,8 @@ function pieceGeometrySignature(piece) {
     glbDataUrl: piece.glbDataUrl || '',
     glbUrl: piece.glbUrl || '',
   });
+  if (piece && typeof piece === 'object') PIECE_GEOMETRY_SIGNATURE_CACHE.set(piece, signature);
+  return signature;
 }
 
 function GirihStage({
@@ -1449,6 +1661,7 @@ function GirihStage({
   edgeMode,
   edgeOffsetCount,
   edgeOffsetDistance,
+  liveShadowsEnabled,
   modelTransform,
   onSelect,
   onMove,
@@ -1471,6 +1684,7 @@ function GirihStage({
     edgeMode,
     edgeOffsetCount,
     edgeOffsetDistance,
+    liveShadowsEnabled,
     modelTransform,
     onSelect,
     onMove,
@@ -1481,6 +1695,7 @@ function GirihStage({
     onCameraChange,
   });
   const rendererRef = useRef(null);
+  const stageSyncDirtyRef = useRef(true);
 
   useEffect(() => {
     stateRef.current = {
@@ -1495,6 +1710,7 @@ function GirihStage({
       edgeMode,
       edgeOffsetCount,
       edgeOffsetDistance,
+      liveShadowsEnabled,
       modelTransform,
       onSelect,
       onMove,
@@ -1504,7 +1720,11 @@ function GirihStage({
       onViewBoundsChange,
       onCameraChange,
     };
-  }, [placed, selectedId, material, style, cameraMode, backgroundColor, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, modelTransform, onSelect, onMove, onSettle, onRotate, onContextMenu, onViewBoundsChange, onCameraChange]);
+  });
+
+  useEffect(() => {
+    stageSyncDirtyRef.current = true;
+  }, [placed, selectedId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1518,7 +1738,7 @@ function GirihStage({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setClearColor(initialBackground, 1);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !!stateRef.current.liveShadowsEnabled;
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -1552,7 +1772,7 @@ function GirihStage({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const drag = { id: null, offset: new THREE.Vector3(), startX: 0, startY: 0, active: false, previous: null };
+    const drag = { id: null, offset: new THREE.Vector3(), startX: 0, startY: 0, active: false, previous: null, current: null };
     const meshes = new Map();
     const group = new THREE.Group();
     const selectionOutline = createSelectionOutline();
@@ -1564,8 +1784,8 @@ function GirihStage({
     scene.add(new THREE.HemisphereLight(STAGE_HEMISPHERE_LIGHT.sky, STAGE_HEMISPHERE_LIGHT.ground, STAGE_HEMISPHERE_LIGHT.intensity));
     const light = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
     light.position.set(...STAGE_KEY_LIGHT.position);
-    light.castShadow = true;
-    light.shadow.mapSize.set(2048, 2048);
+    light.castShadow = !!stateRef.current.liveShadowsEnabled;
+    light.shadow.mapSize.set(1024, 1024);
     light.shadow.camera.near = 0.5;
     light.shadow.camera.far = 30;
     light.shadow.camera.left = -12;
@@ -1574,7 +1794,7 @@ function GirihStage({
     light.shadow.camera.bottom = -12;
     scene.add(light);
 
-    const stageFloor = createStageFloor(initialBackground);
+    const stageFloor = createStageFloor(initialBackground, stateRef.current.liveShadowsEnabled);
     scene.add(stageFloor);
     const grid = new THREE.GridHelper(12, 24, '#d0c3a7', '#e5dac6');
     grid.position.y = 0.006;
@@ -1592,6 +1812,7 @@ function GirihStage({
         edgeMode: stageEdgeMode,
         edgeOffsetCount: stageEdgeOffsetCount,
         edgeOffsetDistance: stageEdgeOffsetDistance,
+        liveShadowsEnabled: stageLiveShadowsEnabled,
         modelTransform: stageModelTransform,
       } = stateRef.current;
       const stageRenderSettings = normalizeRenderSettings({
@@ -1620,7 +1841,9 @@ function GirihStage({
           mesh = null;
         }
         if (!mesh) {
-          mesh = createPieceObject(item);
+          mesh = createPieceObject(item, () => {
+            stageSyncDirtyRef.current = true;
+          });
           mesh.userData.id = item.id;
           mesh.userData.renderSignature = renderSignature;
           meshes.set(item.id, mesh);
@@ -1629,8 +1852,8 @@ function GirihStage({
         mesh.position.set(item.x, 0, item.y);
         mesh.rotation.y = -item.rotation;
         mesh.scale.y = styleName === 'pattern' ? 0.35 : 1;
-        applyPieceMaterial(mesh, item, materialName, item.id === selected);
-        updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings);
+        applyPieceMaterial(mesh, item, materialName, item.id === selected, stageLiveShadowsEnabled);
+        updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings, renderSignature);
       });
       updateSelectionOutline(selectionOutline, current.find((item) => item.id === selected));
       applyModelTransform(group, stageModelTransform);
@@ -1728,6 +1951,7 @@ function GirihStage({
       drag.startY = event.clientY;
       drag.active = false;
       drag.previous = current ? { x: current.x, y: current.y, rotation: current.rotation } : null;
+      drag.current = current ? { x: current.x, y: current.y } : null;
       stateRef.current.onSelect(drag.id);
       renderer.domElement.setPointerCapture(event.pointerId);
     }
@@ -1740,17 +1964,26 @@ function GirihStage({
       controls.enabled = false;
       setPointer(event);
       const point = groundPoint().add(drag.offset);
-      stateRef.current.onMove(drag.id, { x: point.x, y: point.z });
+      drag.current = { x: point.x, y: point.z };
+      const mesh = meshes.get(drag.id);
+      if (mesh) mesh.position.set(point.x, 0, point.z);
+      const current = stateRef.current.placed.find((item) => item.id === drag.id);
+      if (current) updateSelectionOutline(selectionOutline, { ...current, x: point.x, y: point.z });
     }
 
     function pointerUp(event) {
       if (!drag.id) return;
       const current = stateRef.current.placed.find((item) => item.id === drag.id);
-      if (current && drag.active) stateRef.current.onSettle(drag.id, { x: current.x, y: current.y, previous: drag.previous });
+      if (current && drag.active) {
+        const nextPosition = drag.current || { x: current.x, y: current.y };
+        stateRef.current.onSettle(drag.id, { x: nextPosition.x, y: nextPosition.y, previous: drag.previous });
+      }
       if (current && !drag.active) stateRef.current.onRotate(drag.id);
+      stageSyncDirtyRef.current = true;
       drag.id = null;
       drag.active = false;
       drag.previous = null;
+      drag.current = null;
       controls.enabled = true;
       renderer.domElement.releasePointerCapture(event.pointerId);
     }
@@ -1783,10 +2016,14 @@ function GirihStage({
 
     let frame;
     function animate() {
-      syncMeshes();
+      if (stageSyncDirtyRef.current && !drag.active) {
+        syncMeshes();
+        stageSyncDirtyRef.current = false;
+      }
       applyStageCameraView(stateRef.current.cameraMode || 'top');
       applyStageBackground(scene, renderer, stateRef.current.backgroundColor);
       applyStageFloorColor(stageFloor, stateRef.current.backgroundColor);
+      applyLiveShadowState(renderer, light, stageFloor, stateRef.current.liveShadowsEnabled);
       controls.update();
       reportViewBounds();
       reportCameraSnapshot();
@@ -1820,7 +2057,7 @@ function applyStageBackground(scene, renderer, backgroundColor) {
   renderer.setClearColor(color, 1);
 }
 
-function createStageFloor(backgroundColor) {
+function createStageFloor(backgroundColor, receiveShadow = false) {
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(80, 80),
     new THREE.MeshStandardMaterial({
@@ -1832,7 +2069,7 @@ function createStageFloor(backgroundColor) {
   floor.name = 'stage-solid-floor';
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.004;
-  floor.receiveShadow = true;
+  floor.receiveShadow = !!receiveShadow;
   return floor;
 }
 
@@ -1842,6 +2079,16 @@ function applyStageFloorColor(floor, backgroundColor) {
   floor.userData.floorColor = color;
   floor.material.color.set(color);
   floor.material.needsUpdate = true;
+}
+
+function applyLiveShadowState(renderer, light, floor, enabled) {
+  const nextEnabled = !!enabled;
+  if (renderer.shadowMap.enabled !== nextEnabled) {
+    renderer.shadowMap.enabled = nextEnabled;
+    renderer.shadowMap.needsUpdate = true;
+  }
+  if (light.castShadow !== nextEnabled) light.castShadow = nextEnabled;
+  if (floor.receiveShadow !== nextEnabled) floor.receiveShadow = nextEnabled;
 }
 
 function updateGlassColorCast(group, placed, materialName, modelTransform = DEFAULT_MODEL_TRANSFORM) {
@@ -2009,11 +2256,11 @@ function glassCastOffset(height) {
   };
 }
 
-function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings) {
+function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings, geometrySignature = pieceGeometrySignature(piece)) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
   const thickness = Math.max(0, Number(renderSettings.edgeThickness) || 0);
   const signature = [
-    pieceGeometrySignature(piece),
+    geometrySignature,
     styleName,
     isGlass ? 'glass' : 'solid',
     renderSettings.edgeColor,
@@ -2244,8 +2491,8 @@ function uniqueSegmentCoordinatePoints(segments) {
   return [...points.values()];
 }
 
-function createPieceObject(piece) {
-  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) return createGlbPieceObject(piece);
+function createPieceObject(piece, onReady) {
+  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) return createGlbPieceObject(piece, onReady);
   if (piece.type === 'obj' && piece.objText) return createObjPieceObject(piece);
   return createShapePieceObject(piece);
 }
@@ -2327,31 +2574,50 @@ function createObjPieceObject(piece) {
   return root;
 }
 
-function createGlbPieceObject(piece) {
+const GLB_SOURCE_MODEL_CACHE = new Map();
+
+function glbSourceCacheKey(piece) {
+  if (piece.glbUrl) return `url:${piece.glbUrl}`;
+  if (piece.glbDataUrl) return `data:${piece.glbDataUrl}`;
+  return `missing:${piece.id || piece.name || 'unknown'}`;
+}
+
+function cachedGlbSourceModel(piece) {
+  const key = glbSourceCacheKey(piece);
+  if (!GLB_SOURCE_MODEL_CACHE.has(key)) {
+    const loader = new GLTFLoader();
+    GLB_SOURCE_MODEL_CACHE.set(
+      key,
+      pieceModelToArrayBuffer(piece).then(
+        (buffer) =>
+          new Promise((resolve, reject) => {
+            loader.parse(buffer, '', (gltf) => resolve(gltf.scene), reject);
+          }),
+      ),
+    );
+  }
+  return GLB_SOURCE_MODEL_CACHE.get(key);
+}
+
+function createGlbPieceObject(piece, onReady) {
   const root = new THREE.Group();
-  const loader = new GLTFLoader();
-  pieceModelToArrayBuffer(piece)
-    .then((buffer) => {
-      loader.parse(
-        buffer,
-        '',
-        (gltf) => {
-          const object = gltf.scene;
-          normalizeImportedObject(object, piece);
-          object.traverse((child) => {
-            if (!child.isMesh) return;
-            child.castShadow = true;
-            child.receiveShadow = true;
-            child.material = new THREE.MeshStandardMaterial({
-              color: piece.color,
-              metalness: 0.08,
-              roughness: 0.42,
-            });
-          });
-          root.add(object);
-        },
-        (error) => console.error('Failed to parse GLB piece', error),
-      );
+  cachedGlbSourceModel(piece)
+    .then((source) => {
+      const object = source.clone(true);
+      normalizeImportedObject(object, piece);
+      object.traverse((child) => {
+        if (!child.isMesh) return;
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.geometry) child.geometry.userData = { ...child.geometry.userData, cachedGlbSource: true };
+        child.material = new THREE.MeshStandardMaterial({
+          color: piece.color,
+          metalness: 0.08,
+          roughness: 0.42,
+        });
+      });
+      root.add(object);
+      onReady?.();
     })
     .catch((error) => console.error('Failed to read GLB piece', error));
   return root;
@@ -2373,20 +2639,22 @@ function normalizeImportedObject(object, piece) {
   object.position.set(-center.x * scaleX, -bounds.min.y * verticalScale, -center.z * scaleZ);
 }
 
-function applyPieceMaterial(object, piece, materialName, selected) {
+function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEnabled = false) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
+  const castsLiveShadow = !!liveShadowsEnabled && !isGlass;
   const signature = [
     piece.color,
     isGlass ? 'glass' : 'plastic',
     selected ? 'selected' : 'normal',
+    castsLiveShadow ? 'live-shadows' : 'no-live-shadows',
   ].join('|');
   if (object.userData.materialSignature === signature) return;
   object.userData.materialSignature = signature;
   object.traverse((child) => {
     if (child.userData?.isStageEdge) return;
     if (!child.isMesh || !child.material) return;
-    child.castShadow = !isGlass;
-    child.receiveShadow = !isGlass;
+    child.castShadow = castsLiveShadow;
+    child.receiveShadow = castsLiveShadow;
     child.material.color.set(piece.color);
     child.material.metalness = isGlass ? 0 : 0.08;
     child.material.roughness = isGlass ? 0.06 : 0.42;
@@ -2415,7 +2683,7 @@ function getPieceRoot(object) {
 
 function disposeObject(object) {
   object.traverse((child) => {
-    child.geometry?.dispose();
+    if (child.geometry && !child.geometry.userData?.cachedGlbSource) child.geometry.dispose();
     if (Array.isArray(child.material)) {
       child.material.forEach((material) => {
         material.map?.dispose();
@@ -3048,14 +3316,53 @@ function usePersistentPieces() {
 
 function mergeDefaultPieces(stored) {
   const keptStored = stored.filter((piece) => !REMOVED_DEFAULT_PIECE_IDS.has(piece.id));
-  const storedIds = new Set(keptStored.map((piece) => piece.id));
-  return [...DEFAULT_PIECES.filter((piece) => !storedIds.has(piece.id)), ...keptStored];
+  const storedById = new Map(keptStored.map((piece) => [piece.id, piece]));
+  const mergedDefaults = DEFAULT_PIECES.map((defaultPiece) => mergeStoredDefaultPiece(defaultPiece, storedById.get(defaultPiece.id)));
+  const importedPieces = keptStored.filter((piece) => !DEFAULT_PIECE_BY_ID.has(piece.id));
+  return [...mergedDefaults, ...importedPieces];
+}
+
+function mergeStoredDefaultPiece(defaultPiece, storedPiece) {
+  if (!storedPiece) return defaultPiece;
+  return {
+    ...storedPiece,
+    name: defaultPiece.name,
+    group: defaultPiece.group,
+    type: defaultPiece.type,
+    glbUrl: defaultPiece.glbUrl,
+    glbDataUrl: defaultPiece.glbDataUrl,
+  };
 }
 
 function readAdminPieceSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_STORAGE_KEY));
     return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+  } catch {
+    return {};
+  }
+}
+
+function readGroupColorPalettes() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(GROUP_COLOR_PALETTES_STORAGE_KEY));
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    return Object.fromEntries(
+      Object.entries(stored).map(([groupName, palettes]) => [
+        normalizePieceGroupName(groupName),
+        Array.isArray(palettes)
+          ? palettes
+              .filter((palette) => palette && typeof palette === 'object' && palette.colors && typeof palette.colors === 'object')
+              .slice(0, 6)
+              .map((palette, index) => ({
+                id: typeof palette.id === 'string' ? palette.id : crypto.randomUUID(),
+                name: typeof palette.name === 'string' ? palette.name.replace(/^Set\s+/i, '') : `${index + 1}`,
+                savedAt: Number(palette.savedAt) || Date.now(),
+                colors: palette.colors,
+              }))
+          : [],
+      ]),
+    );
   } catch {
     return {};
   }
@@ -3091,9 +3398,10 @@ function applyAdminPieceSettings(pieces) {
 
 function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.id]) {
   if (!setting) return piece;
+  const isDefaultPiece = DEFAULT_PIECE_BY_ID.has(piece.id);
   return {
     ...piece,
-    group: normalizePieceGroupName(setting.group ?? piece.group),
+    group: isDefaultPiece ? normalizePieceGroupName(piece.group) : normalizePieceGroupName(setting.group ?? piece.group),
     color: setting.color || piece.color,
     height: Number.isFinite(Number(setting.height)) ? Number(setting.height) : piece.height,
     stageWidth: Number.isFinite(Number(setting.stageWidth)) ? Number(setting.stageWidth) : piece.stageWidth,
@@ -3170,8 +3478,11 @@ function normalizePieceGroupName(group) {
   return normalized || 'Default';
 }
 
-function groupLibraryPieces(pieces) {
+function groupLibraryPieces(pieces, groupNames = []) {
   const groups = new Map();
+  groupNames.forEach((groupName) => {
+    groups.set(normalizePieceGroupName(groupName), []);
+  });
   pieces.forEach((piece) => {
     const groupName = normalizePieceGroupName(piece.group);
     if (!groups.has(groupName)) groups.set(groupName, []);
