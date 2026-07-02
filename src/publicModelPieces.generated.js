@@ -8,6 +8,230 @@ export const PUBLIC_MODEL_GROUPS = [
 
 export const PUBLIC_MODEL_FILES = [
   {
+    "id": "8-morroco-badami",
+    "name": "Badami",
+    "filename": "8 Morroco/Badami.glb",
+    "color": "#2f7d73",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "charsoo",
+    "name": "Charsoo",
+    "filename": "8 Morroco/Charsoo.glb",
+    "color": "#4076b8",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-chenari",
+    "name": "Chenari",
+    "filename": "8 Morroco/Chenari.glb",
+    "color": "#8a6bb8",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "flesh",
+    "name": "Flesh",
+    "filename": "8 Morroco/Flesh.glb",
+    "color": "#b86f3e",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "gavi",
+    "name": "Gavi",
+    "filename": "8 Morroco/Gavi.glb",
+    "color": "#4076b8",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "ghayegh-b",
+    "name": "Ghayegh B",
+    "filename": "8 Morroco/Ghayegh B.glb",
+    "color": "#d58a36",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "ghayegh-s",
+    "name": "Ghayegh S",
+    "filename": "8 Morroco/Ghayegh S.glb",
+    "color": "#526d93",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "gorz",
+    "name": "Gorz",
+    "filename": "8 Morroco/Gorz.glb",
+    "color": "#b86f3e",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "khesht",
+    "name": "Khesht",
+    "filename": "8 Morroco/Khesht.glb",
+    "color": "#4076b8",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-khuneh",
+    "name": "Khuneh",
+    "filename": "8 Morroco/Khuneh.glb",
+    "color": "#b9455a",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "lozi",
+    "name": "Lozi",
+    "filename": "8 Morroco/Lozi.glb",
+    "color": "#b9455a",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "moraba",
+    "name": "Moraba",
+    "filename": "8 Morroco/Moraba.glb",
+    "color": "#b86f3e",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "mosalas",
+    "name": "Mosalas",
+    "filename": "8 Morroco/Mosalas.glb",
+    "color": "#2f7d73",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "nimpa",
+    "name": "Nimpa",
+    "filename": "8 Morroco/Nimpa.glb",
+    "color": "#526d93",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "pabozi-b",
+    "name": "Pabozi B",
+    "filename": "8 Morroco/Pabozi B.glb",
+    "color": "#d58a36",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "pabozi-s",
+    "name": "Pabozi S",
+    "filename": "8 Morroco/Pabozi S.glb",
+    "color": "#526d93",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "potk",
+    "name": "Potk",
+    "filename": "8 Morroco/Potk.glb",
+    "color": "#b9455a",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-setareh",
+    "name": "Setareh",
+    "filename": "8 Morroco/Setareh.glb",
+    "color": "#2e8278",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-shamseh",
+    "name": "Shamseh",
+    "filename": "8 Morroco/Shamseh.glb",
+    "color": "#d58a36",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "shesh",
+    "name": "Shesh",
+    "filename": "8 Morroco/Shesh.glb",
+    "color": "#6e7fbd",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "sormedan",
+    "name": "Sormedan",
+    "filename": "8 Morroco/Sormedan.glb",
+    "color": "#8a6bb8",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-tabl",
+    "name": "Tabl",
+    "filename": "8 Morroco/Tabl.glb",
+    "color": "#9a5845",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "8-morroco-toranj",
+    "name": "Toranj",
+    "filename": "8 Morroco/Toranj.glb",
+    "color": "#6f8d44",
+    "group": "8 Morroco"
+  },
+  {
+    "id": "bazooband-b",
+    "name": "Bazooband B",
+    "filename": "8 Persian/Bazooband B.glb",
+    "color": "#4076b8",
+    "group": "8 Persian"
+  },
+  {
+    "id": "bazooband-s",
+    "name": "Bazooband S",
+    "filename": "8 Persian/Bazooband S.glb",
+    "color": "#2f7d73",
+    "group": "8 Persian"
+  },
+  {
+    "id": "chalipa",
+    "name": "Chalipa",
+    "filename": "8 Persian/Chalipa.glb",
+    "color": "#b86f3e",
+    "group": "8 Persian"
+  },
+  {
+    "id": "8-persian-khuneh",
+    "name": "Khuneh",
+    "filename": "8 Persian/Khuneh.glb",
+    "color": "#4076b8",
+    "group": "8 Persian"
+  },
+  {
+    "id": "moraba-b",
+    "name": "Moraba B",
+    "filename": "8 Persian/Moraba B.glb",
+    "color": "#8a6bb8",
+    "group": "8 Persian"
+  },
+  {
+    "id": "moraba-s",
+    "name": "Moraba S",
+    "filename": "8 Persian/Moraba S.glb",
+    "color": "#b86f3e",
+    "group": "8 Persian"
+  },
+  {
+    "id": "8-persian-shamseh",
+    "name": "Shamseh",
+    "filename": "8 Persian/Shamseh.glb",
+    "color": "#d58a36",
+    "group": "8 Persian"
+  },
+  {
+    "id": "8-persian-tabl",
+    "name": "Tabl",
+    "filename": "8 Persian/Tabl.glb",
+    "color": "#9a5845",
+    "group": "8 Persian"
+  },
+  {
+    "id": "zohreh",
+    "name": "Zohreh",
+    "filename": "8 Persian/Zohreh.glb",
+    "color": "#2f7d73",
+    "group": "8 Persian"
+  },
+  {
     "id": "giveh",
     "name": "Giveh",
     "filename": "10 Kond/Giveh.glb",

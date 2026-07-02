@@ -16,7 +16,6 @@ import {
   Plus,
   Printer,
   Redo2,
-  RotateCcw,
   Save,
   Trash2,
   Undo2,
@@ -31,13 +30,14 @@ const STORAGE_KEY = 'girih.pieces.v1';
 const ADMIN_SETTINGS_STORAGE_KEY = 'girih.pieceAdminSettings.v1';
 const GROUP_COLOR_PALETTES_STORAGE_KEY = 'girih.groupColorPalettes.v1';
 const MODELS_STORAGE_KEY = 'girih.models.v1';
+const MOTIFS_STORAGE_KEY = 'girih.motifs.v1';
 const ANALYSIS_VERSION = 6;
 const SNAP_DISTANCE = 0.45;
 const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
-const EXPORT_MATERIALS = new Set(['glass', 'plastic']);
+const EXPORT_MATERIALS = new Set(['glass', 'plastic', 'paper']);
 const EDGE_LINE_MODES = new Set(['single', 'double', 'offset']);
 const DEFAULT_SCENE_STYLE = 'presentation';
 const STAGE_CAMERA_VIEWS = [
@@ -80,6 +80,14 @@ const STAGE_KEY_LIGHT = {
 const EXPORT_SHADOW_MAP_SIZE = 8192;
 const EXPORT_RENDER_SCALE = 1.5;
 const GLASS_EXPORT_RENDER_SCALE = 0.5;
+const MOBILE_EXPORT_RENDER_SCALE = 1;
+const MOBILE_EXPORT_SHADOW_MAP_SIZE = 2048;
+const MOBILE_EXPORT_MAX_PIXELS = 8_000_000;
+const DESKTOP_EXPORT_MAX_PIXELS = 18_000_000;
+const PAPER_BACKGROUND_COLOR = '#ffffff';
+const PAPER_EDGE_COLOR = '#000000';
+const PAPER_EDGE_THICKNESS = 3;
+const PAPER_STAGE_ORTHO_HEIGHT = 12;
 const MODEL_TRANSFORM_FIELDS = [
   { id: 'scaleX', label: 'Scale X', min: 0.05, step: 0.05 },
   { id: 'scaleY', label: 'Scale Y', min: 0.05, step: 0.05 },
@@ -201,6 +209,7 @@ function encodeModelPath(path) {
 function App() {
   const [pieces, setPieces] = usePersistentPieces();
   const [savedModels, setSavedModels] = usePersistentModels();
+  const [savedMotifs, setSavedMotifs] = usePersistentMotifs();
   const {
     placed,
     commitPlaced,
@@ -211,11 +220,24 @@ function App() {
     canRedo,
   } = useStageHistory([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const [stageGroups, setStageGroups] = useState([]);
+  const [clipboardPieces, setClipboardPieces] = useState([]);
+  const clipboardPiecesRef = useRef([]);
+  const placedRef = useRef(placed);
+  const selectedIdsRef = useRef([]);
   const [material, setMaterial] = useState('plastic');
   const [draft, setDraft] = useState(emptyDraft());
   const [editingId, setEditingId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [modelName, setModelName] = useState('');
+  const [motifName, setMotifName] = useState('');
+  const [selectedMotifId, setSelectedMotifId] = useState('');
+  const [motifRows, setMotifRows] = useState(2);
+  const [motifColumns, setMotifColumns] = useState(3);
+  const [motifGapX, setMotifGapX] = useState(0);
+  const [motifGapY, setMotifGapY] = useState(0);
   const [modelTransform, setModelTransform] = useState(DEFAULT_MODEL_TRANSFORM);
   const [stageCamera, setStageCamera] = useState('top');
   const [exportOrientation, setExportOrientation] = useState('landscape');
@@ -231,19 +253,49 @@ function App() {
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
-  const [collapsedPieceGroups, setCollapsedPieceGroups] = useState(() => new Set());
-  const [collapsedAdminGroups, setCollapsedAdminGroups] = useState(() => new Set());
+  const [collapsedPieceGroups, setCollapsedPieceGroups] = useState(() => new Set(PUBLIC_MODEL_GROUPS.map(normalizePieceGroupName)));
+  const [collapsedAdminGroups, setCollapsedAdminGroups] = useState(() => new Set(PUBLIC_MODEL_GROUPS.map(normalizePieceGroupName)));
   const [collapsedPaletteGroups, setCollapsedPaletteGroups] = useState(() => new Set());
   const [groupColorPalettes, setGroupColorPalettes] = useState(readGroupColorPalettes);
   const [selectedGroupPalettes, setSelectedGroupPalettes] = useState({});
   const [modelTransformCollapsed, setModelTransformCollapsed] = useState(true);
+  const [motifsCollapsed, setMotifsCollapsed] = useState(true);
   const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
   const [stageCameraSnapshot, setStageCameraSnapshot] = useState(null);
   const importSceneInputRef = useRef(null);
 
-  const selected = placed.find((item) => item.id === selectedId);
+  const explicitGroupByPieceId = new Map();
+  stageGroups.forEach((group) => group.ids.forEach((id) => explicitGroupByPieceId.set(id, group.id)));
+  const groupedPlaced = placed.map((item) => ({
+    ...item,
+    groupInstanceId: item.groupInstanceId || explicitGroupByPieceId.get(item.id) || null,
+  }));
+  const selected = groupedPlaced.find((item) => item.id === selectedId);
+  const activeGroupPieces = activeGroupId ? groupedPlaced.filter((item) => item.groupInstanceId === activeGroupId) : [];
+  const rawSelectedPieces = selectedIds.map((id) => groupedPlaced.find((item) => item.id === id)).filter(Boolean);
+  const selectedPieces = activeGroupPieces.length > 1 ? activeGroupPieces : rawSelectedPieces;
+  const selectedGroupId =
+    activeGroupPieces.length > 1
+      ? activeGroupId
+      : selectedPieces.length > 1 && selectedPieces.every((piece) => piece.groupInstanceId && piece.groupInstanceId === selectedPieces[0].groupInstanceId)
+        ? selectedPieces[0].groupInstanceId
+      : null;
+  const selectedGroupPieces = selectedGroupId ? groupedPlaced.filter((item) => item.groupInstanceId === selectedGroupId) : [];
+  const selectedIsWholeGroup = selectedGroupId && selectedGroupPieces.length === selectedPieces.length;
+  const hasClipboardPieces = clipboardPieces.length > 0 || clipboardPiecesRef.current.length > 0;
+  const selectedObjectCount = selectedPieces.length;
+  const groupedObjectCount = Math.max(stageGroups.length, Array.from(
+    groupedPlaced.reduce((groups, item) => {
+      if (!item.groupInstanceId) return groups;
+      groups.set(item.groupInstanceId, (groups.get(item.groupInstanceId) || 0) + 1);
+      return groups;
+    }, new Map()).values(),
+  ).filter((count) => count > 1).length);
   const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
   const pieceGroups = useMemo(() => groupLibraryPieces(pieces, PUBLIC_MODEL_GROUPS), [pieces]);
+  const selectedMotif = savedMotifs.find((motif) => motif.id === selectedMotifId) || savedMotifs[0] || null;
+  const isPaperMaterial = material === 'paper';
+  const inactivePaperExportControlClass = isPaperMaterial ? 'export-disabled-control' : undefined;
 
   function currentRenderSettings() {
     return normalizeRenderSettings({
@@ -259,6 +311,34 @@ function App() {
   function changeMaterial(nextMaterial) {
     const normalized = normalizeMaterialName(nextMaterial);
     setMaterial(normalized);
+    if (normalized === 'paper') setStageCamera('top');
+  }
+
+  function selectPlacedIds(ids) {
+    const nextIds = ids.filter((id, index) => id && ids.indexOf(id) === index && groupedPlaced.some((item) => item.id === id));
+    const nextPieces = nextIds.map((id) => groupedPlaced.find((item) => item.id === id)).filter(Boolean);
+    const nextGroupId =
+      nextPieces.length > 1 && nextPieces.every((piece) => piece.groupInstanceId && piece.groupInstanceId === nextPieces[0].groupInstanceId)
+        ? nextPieces[0].groupInstanceId
+        : null;
+    selectedIdsRef.current = nextIds;
+    setSelectedIds(nextIds);
+    setSelectedId(nextIds[0] || null);
+    setActiveGroupId(nextGroupId);
+  }
+
+  function selectPlaced(id) {
+    if (!id) {
+      selectPlacedIds([]);
+      return;
+    }
+    const piece = groupedPlaced.find((item) => item.id === id);
+    if (!piece) {
+      selectPlacedIds([]);
+      return;
+    }
+    const groupIds = piece.groupInstanceId ? groupedPlaced.filter((item) => item.groupInstanceId === piece.groupInstanceId).map((item) => item.id) : [id];
+    selectPlacedIds(groupIds);
   }
 
   function updateModelTransform(field, value) {
@@ -352,13 +432,28 @@ function App() {
   }
 
   useEffect(() => {
+    placedRef.current = placed;
+    selectedIdsRef.current = selectedIds;
+  }, [placed, selectedIds]);
+
+  useEffect(() => {
+    setStageGroups((groups) =>
+      groups
+        .map((group) => ({ ...group, ids: group.ids.filter((id) => placed.some((item) => item.id === id)) }))
+        .filter((group) => group.ids.length > 1),
+    );
+  }, [placed]);
+
+  useEffect(() => {
     localStorage.setItem(GROUP_COLOR_PALETTES_STORAGE_KEY, JSON.stringify(groupColorPalettes));
   }, [groupColorPalettes]);
 
   useEffect(() => {
     if (selectedId && !placed.some((item) => item.id === selectedId)) setSelectedId(null);
+    setSelectedIds((ids) => ids.filter((id) => placed.some((item) => item.id === id)));
+    if (activeGroupId && !groupedPlaced.some((item) => item.groupInstanceId === activeGroupId)) setActiveGroupId(null);
     if (contextMenu && !placed.some((item) => item.id === contextMenu.id)) setContextMenu(null);
-  }, [placed, selectedId, contextMenu]);
+  }, [placed, selectedId, activeGroupId, contextMenu]);
 
   useEffect(() => {
     pieces.forEach((piece) => {
@@ -432,12 +527,22 @@ function App() {
       if (key === 'y') {
         event.preventDefault();
         redoStage();
+        return;
+      }
+      if (key === 'c') {
+        event.preventDefault();
+        copySelectedPieces();
+        return;
+      }
+      if (key === 'v') {
+        event.preventDefault();
+        pasteClipboardPieces();
       }
     }
 
     window.addEventListener('keydown', handleHistoryShortcut);
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
-  }, [undoStage, redoStage]);
+  }, [undoStage, redoStage, selectedPieces, clipboardPieces]);
 
   function addPiece(piece) {
     commitPlaced((items) => {
@@ -461,11 +566,137 @@ function App() {
   function deletePlaced(id) {
     commitPlaced((items) => items.filter((item) => item.id !== id));
     setSelectedId((current) => (current === id ? null : current));
+    setSelectedIds((ids) => ids.filter((selectedItemId) => selectedItemId !== id));
+    setActiveGroupId((current) => {
+      const deleting = placed.find((item) => item.id === id);
+      return deleting?.groupInstanceId === current ? null : current;
+    });
+    setStageGroups((groups) =>
+      groups
+        .map((group) => ({ ...group, ids: group.ids.filter((itemId) => itemId !== id) }))
+        .filter((group) => group.ids.length > 1),
+    );
     setContextMenu(null);
   }
 
   function recolorPlaced(id, color) {
     commitPlaced((items) => items.map((item) => (item.id === id ? { ...item, color } : item)));
+  }
+
+  function toggleMirrorPlacedVertical(id) {
+    commitPlaced((items) =>
+      items.map((item) =>
+        item.id === id ? { ...item, mirrorVertical: !item.mirrorVertical, snappedTo: null } : item,
+      ),
+    );
+    setContextMenu(null);
+  }
+
+  function groupSelectedPieces() {
+    const currentPlaced = placedRef.current;
+    const currentSelectedIds = selectedIdsRef.current;
+    const renderedSelectedIds = selectedPieces.map((piece) => piece.id);
+    const stateSelectedIds = selectedIds;
+    const sourceIds =
+      currentSelectedIds.length >= 2
+        ? currentSelectedIds
+        : renderedSelectedIds.length >= 2
+          ? renderedSelectedIds
+          : stateSelectedIds;
+    const idsToGroup = sourceIds.filter((id, index, ids) => id && ids.indexOf(id) === index && currentPlaced.some((item) => item.id === id));
+    if (idsToGroup.length < 2) return;
+    const groupInstanceId = `group-${crypto.randomUUID()}`;
+    const idSet = new Set(idsToGroup);
+    const nextPlaced = currentPlaced.map((item) => (idSet.has(item.id) ? { ...item, groupInstanceId, snappedTo: null } : item));
+    placedRef.current = nextPlaced;
+    commitPlaced(() => nextPlaced);
+    replacePlaced(() => nextPlaced);
+    setStageGroups((groups) => [
+      ...groups.filter((group) => !group.ids.some((id) => idSet.has(id))),
+      { id: groupInstanceId, ids: idsToGroup },
+    ]);
+    selectedIdsRef.current = idsToGroup;
+    setSelectedIds(idsToGroup);
+    setSelectedId(idsToGroup[0] || null);
+    setActiveGroupId(groupInstanceId);
+    setContextMenu(null);
+  }
+
+  function ungroupSelectedPieces() {
+    if (!selectedIds.length) return;
+    const groupIds = new Set(selectedPieces.map((piece) => piece.groupInstanceId).filter(Boolean));
+    if (!groupIds.size) return;
+    commitPlaced((items) => items.map((item) => (groupIds.has(item.groupInstanceId) ? { ...item, groupInstanceId: null } : item)));
+    setStageGroups((groups) => groups.filter((group) => !groupIds.has(group.id)));
+    setActiveGroupId(null);
+    setContextMenu(null);
+  }
+
+  function copySelectedPieces() {
+    if (!selectedPieces.length) return;
+    const nextClipboard = selectedPieces.map((piece) => ({ ...piece }));
+    clipboardPiecesRef.current = nextClipboard;
+    setClipboardPieces(nextClipboard);
+    setContextMenu(null);
+  }
+
+  function pasteClipboardPieces() {
+    const sourcePieces = clipboardPiecesRef.current.length ? clipboardPiecesRef.current : clipboardPieces;
+    if (!sourcePieces.length) return;
+    const groupIdMap = new Map();
+    const pastedGroupIds = new Map();
+    const nextSelection = [];
+    const copies = sourcePieces.map((piece) => {
+      const sourceGroupId = piece.groupInstanceId || null;
+      const groupInstanceId = sourceGroupId
+        ? groupIdMap.get(sourceGroupId) || `group-${crypto.randomUUID()}`
+        : null;
+      if (sourceGroupId && !groupIdMap.has(sourceGroupId)) groupIdMap.set(sourceGroupId, groupInstanceId);
+      const id = `${piece.sourceId || piece.id}-${crypto.randomUUID()}`;
+      nextSelection.push(id);
+      if (groupInstanceId) {
+        if (!pastedGroupIds.has(groupInstanceId)) pastedGroupIds.set(groupInstanceId, []);
+        pastedGroupIds.get(groupInstanceId).push(id);
+      }
+      return {
+        ...piece,
+        id,
+        x: (piece.x || 0) + 0.45,
+        y: (piece.y || 0) + 0.45,
+        snappedTo: null,
+        groupInstanceId,
+      };
+    });
+    commitPlaced((items) => [...items, ...copies]);
+    if (pastedGroupIds.size) {
+      setStageGroups((groups) => [
+        ...groups,
+        ...Array.from(pastedGroupIds.entries())
+          .filter(([, ids]) => ids.length > 1)
+          .map(([id, ids]) => ({ id, ids })),
+      ]);
+    }
+    setSelectedIds(nextSelection);
+    setSelectedId(nextSelection[0] || null);
+    setActiveGroupId(groupIdMap.values().next().value || null);
+    setContextMenu(null);
+  }
+
+  function settleSelectedPieces(ids, delta, previousItems = []) {
+    const idSet = new Set(ids);
+    if (!idSet.size) return;
+    commitPlaced(
+      (items) =>
+        items.map((item) =>
+          idSet.has(item.id)
+            ? { ...item, x: (item.x || 0) + delta.x, y: (item.y || 0) + delta.y, snappedTo: null }
+            : item,
+        ),
+      (items) => {
+        const previousById = new Map(previousItems.map((item) => [item.id, item]));
+        return items.map((item) => previousById.get(item.id) || item);
+      },
+    );
   }
 
   function settlePiece(id, transform) {
@@ -475,8 +706,9 @@ function App() {
       const { previous, ...nextTransform } = transform;
       const moved = { ...moving, ...nextTransform, snappedTo: null };
       const others = items.filter((item) => item.id !== id);
-      const snap = findBestSnap(moved, others);
-      const collisionPlacement = snap ? null : findBestCollisionPlacement(moved, others);
+      const collided = closestCollisionTargets(moved, collidingPieces(moved, others));
+      const snap = findBestSnap(moved, others, { collided });
+      const collisionPlacement = snap ? null : findBestCollisionPlacement(moved, others, { collided });
       const fallback = previous ? { ...moving, ...previous, snappedTo: moving.snappedTo || null } : moving;
       const next = snap
         ? { ...moved, ...snap.transform, snappedTo: snap.targetId }
@@ -496,6 +728,28 @@ function App() {
     commitPlaced((items) => {
       const moving = items.find((item) => item.id === id);
       if (!moving) return items;
+      if (moving.groupInstanceId) {
+        const groupItems = items.filter((item) => item.groupInstanceId === moving.groupInstanceId);
+        if (groupItems.length > 1) {
+          const center = groupItems.reduce(
+            (point, item) => ({ x: point.x + (item.x || 0) / groupItems.length, y: point.y + (item.y || 0) / groupItems.length }),
+            { x: 0, y: 0 },
+          );
+          const groupIds = new Set(groupItems.map((item) => item.id));
+          return items.map((item) => {
+            if (!groupIds.has(item.id)) return item;
+            const dx = (item.x || 0) - center.x;
+            const dy = (item.y || 0) - center.y;
+            return {
+              ...item,
+              x: center.x - dy,
+              y: center.y + dx,
+              rotation: normalizeAngle((item.rotation || 0) + Math.PI / 2),
+              snappedTo: null,
+            };
+          });
+        }
+      }
       const others = items.filter((item) => item.id !== id);
       const nextFace = findNextSnappedFace(moving, others);
       if (nextFace) {
@@ -658,13 +912,48 @@ function App() {
   function resetScene() {
     commitPlaced(() => []);
     setSelectedId(null);
+    setSelectedIds([]);
+    setActiveGroupId(null);
+    setStageGroups([]);
     setModelTransform(DEFAULT_MODEL_TRANSFORM);
+  }
+
+  function saveSelectedAsMotif() {
+    if (!selectedPieces.length) return;
+    const name = motifName.trim() || `Motif ${savedMotifs.length + 1}`;
+    const motif = createMotifFromPieces(name, selectedPieces);
+    if (!motif) return;
+    setSavedMotifs((items) => [motif, ...items]);
+    setSelectedMotifId(motif.id);
+    setMotifName('');
+  }
+
+  function tessellateSelectedMotif() {
+    if (!selectedMotif) return;
+    const result = createTessellatedMotifInstances(selectedMotif, {
+      rows: motifRows,
+      columns: motifColumns,
+      gapX: motifGapX,
+      gapY: motifGapY,
+      visibleBounds: stageVisibleBounds,
+    });
+    if (!result.pieces.length) return;
+    commitPlaced((items) => [...items, ...result.pieces]);
+    setStageGroups((groups) => [...groups, ...result.groups]);
+    setSelectedIds(result.selectedIds);
+    setSelectedId(result.selectedIds[0] || null);
+    setActiveGroupId(result.activeGroupId);
+  }
+
+  function deleteMotif(id) {
+    setSavedMotifs((items) => items.filter((motif) => motif.id !== id));
+    setSelectedMotifId((current) => (current === id ? '' : current));
   }
 
   function saveCurrentModel() {
     if (!placed.length) return;
     const name = modelName.trim() || `Girih model ${savedModels.length + 1}`;
-    const model = serializeSceneModel(name, placed, DEFAULT_SCENE_STYLE, material, currentRenderSettings(), modelTransform);
+    const model = serializeSceneModel(name, groupedPlaced, DEFAULT_SCENE_STYLE, material, currentRenderSettings(), modelTransform);
     setSavedModels((items) => [model, ...items]);
     setModelName(name);
   }
@@ -682,12 +971,18 @@ function App() {
     setRenderEdgeOffsetCount(renderSettings.edgeOffsetCount);
     setRenderEdgeOffsetDistance(renderSettings.edgeOffsetDistance);
     setSelectedId(null);
+    setSelectedIds([]);
+    setActiveGroupId(null);
+    setStageGroups([]);
   }
 
   function importSavedModel(model) {
     const incoming = centerScenePieces(rehydrateScenePieces(model));
     commitPlaced((items) => [...items, ...incoming]);
     setSelectedId(null);
+    setSelectedIds([]);
+    setActiveGroupId(null);
+    setStageGroups([]);
   }
 
   function deleteSavedModel(id) {
@@ -709,15 +1004,32 @@ function App() {
 
   async function exportScene(format) {
     const renderSettings = currentRenderSettings();
-    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', placed, DEFAULT_SCENE_STYLE, material, renderSettings, modelTransform);
+    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', groupedPlaced, DEFAULT_SCENE_STYLE, material, renderSettings, modelTransform);
     if (format === 'png') {
-      const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings });
+      const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings, shadowsEnabled: liveShadowsEnabled });
       downloadCanvasPng('girih-model.png', canvas);
       return;
     }
+    if (format === 'png-transparent') {
+      const canvas = renderTransparentTopCanvas(groupedPlaced, { modelTransform });
+      downloadCanvasPng('girih-model-transparent.png', canvas);
+      return;
+    }
     if (format === 'pdf') {
-      const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings });
+      const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings, shadowsEnabled: liveShadowsEnabled });
       downloadPdfFromCanvas('girih-model.pdf', canvas, exportOrientation);
+      return;
+    }
+    if (format === 'svg') {
+      downloadText('girih-model.svg', toSvg(groupedPlaced, { modelTransform }));
+      return;
+    }
+    if (format === 'dxf') {
+      downloadText('girih-model.dxf', toDxf(groupedPlaced, { modelTransform }));
+      return;
+    }
+    if (format === 'stl') {
+      downloadText('girih-model.stl', await toStl(groupedPlaced, { modelTransform }));
       return;
     }
     const text = format === 'json' ? JSON.stringify(payload, null, 2) : toObj(payload);
@@ -726,7 +1038,7 @@ function App() {
 
   async function openPrintPreview() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings() });
+    const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings(), shadowsEnabled: liveShadowsEnabled });
     setPrintPreview({
       imageUrl: canvas.toDataURL('image/png'),
       orientation: exportOrientation,
@@ -736,7 +1048,7 @@ function App() {
 
   async function printCurrentModel() {
     if (!placed.length) return;
-    const canvas = await renderSceneCanvas(placed, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings() });
+    const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings(), shadowsEnabled: liveShadowsEnabled });
     printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${stageCamera}`);
   }
 
@@ -863,6 +1175,62 @@ function App() {
           </div>
         </section>
 
+        <section className="panel-section model-panel desktop-library-controls">
+          <CollapsibleControlGroup title="Motifs" collapsed={motifsCollapsed} onToggle={() => setMotifsCollapsed((collapsed) => !collapsed)}>
+          <label>
+            Motif name
+            <input value={motifName} onChange={(event) => setMotifName(event.target.value)} placeholder="Selected motif" />
+          </label>
+          <div className="action-row">
+            <button onClick={saveSelectedAsMotif} disabled={!selectedPieces.length}>
+              <Save size={16} /> Save selected
+            </button>
+          </div>
+          <label>
+            Saved motif
+            <select value={selectedMotif?.id || ''} onChange={(event) => setSelectedMotifId(event.target.value)} disabled={!savedMotifs.length}>
+              {!savedMotifs.length && <option value="">No motifs saved</option>}
+              {savedMotifs.map((motif) => (
+                <option key={motif.id} value={motif.id}>
+                  {motif.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="controls-grid compact-grid">
+            <label>
+              Columns
+              <input type="number" min="1" max="30" value={motifColumns} onChange={(event) => setMotifColumns(event.target.value)} />
+            </label>
+            <label>
+              Rows
+              <input type="number" min="1" max="30" value={motifRows} onChange={(event) => setMotifRows(event.target.value)} />
+            </label>
+            <label>
+              Gap X
+              <input type="number" min="-10" max="10" step="0.05" value={motifGapX} onChange={(event) => setMotifGapX(event.target.value)} />
+            </label>
+            <label>
+              Gap Y
+              <input type="number" min="-10" max="10" step="0.05" value={motifGapY} onChange={(event) => setMotifGapY(event.target.value)} />
+            </label>
+          </div>
+          <div className="action-row">
+            <button onClick={tessellateSelectedMotif} disabled={!selectedMotif}>
+              <Grid3X3 size={16} /> Tessellate
+            </button>
+            <button onClick={() => selectedMotif && deleteMotif(selectedMotif.id)} disabled={!selectedMotif}>
+              <Trash2 size={16} /> Delete
+            </button>
+          </div>
+          {selectedMotif && (
+            <div className="motif-summary">
+              {selectedMotif.pieces.length} pieces, {selectedMotif.width.toFixed(2)} x {selectedMotif.height.toFixed(2)}
+            </div>
+          )}
+          </CollapsibleControlGroup>
+        </section>
+
         <section className="panel-section controls-grid desktop-library-controls">
           <CollapsibleControlGroup
             title="Model Transform"
@@ -879,6 +1247,7 @@ function App() {
             <select value={material} onChange={(event) => changeMaterial(event.target.value)}>
               <option value="plastic">Plastic</option>
               <option value="glass">Glass</option>
+              <option value="paper">Paper</option>
             </select>
           </label>
         </section>
@@ -889,23 +1258,24 @@ function App() {
             <span>Export</span>
           </div>
           <div className="export-grid">
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Stage BG color
-              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge line color
-              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label className="checkbox-field export-checkbox-field">
+            <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
               <input
                 type="checkbox"
                 checked={liveShadowsEnabled}
                 onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+                disabled={isPaperMaterial}
               />
               <span>Live shadows</span>
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge thickness
               <input
                 type="number"
@@ -913,11 +1283,12 @@ function App() {
                 step="0.5"
                 value={renderEdgeThickness}
                 onChange={(event) => setRenderEdgeThickness(event.target.value)}
+                disabled={isPaperMaterial}
               />
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge line style
-              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)} disabled={isPaperMaterial}>
                 <option value="single">Single line</option>
                 <option value="double">Double line</option>
                 <option value="offset">Offset line</option>
@@ -925,7 +1296,7 @@ function App() {
             </label>
             {renderEdgeMode === 'offset' && (
               <>
-                <label>
+                <label className={inactivePaperExportControlClass}>
                   Offset count
                   <input
                     type="number"
@@ -934,9 +1305,10 @@ function App() {
                     step="1"
                     value={renderEdgeOffsetCount}
                     onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                    disabled={isPaperMaterial}
                   />
                 </label>
-                <label>
+                <label className={inactivePaperExportControlClass}>
                   Offset distance px
                   <input
                     type="number"
@@ -945,6 +1317,7 @@ function App() {
                     step="0.5"
                     value={renderEdgeOffsetDistance}
                     onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                    disabled={isPaperMaterial}
                   />
                 </label>
               </>
@@ -960,6 +1333,10 @@ function App() {
               Export format
               <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
                 <option value="png">PNG image</option>
+                <option value="png-transparent">PNG transparent</option>
+                <option value="svg">SVG vector</option>
+                <option value="dxf">DXF laser/CNC</option>
+                <option value="stl">STL 3D print</option>
                 <option value="pdf">PDF document</option>
                 <option value="json">JSON model</option>
                 <option value="obj">OBJ model</option>
@@ -1043,6 +1420,7 @@ function App() {
             <select value={material} onChange={(event) => changeMaterial(event.target.value)}>
               <option value="plastic">Plastic</option>
               <option value="glass">Glass</option>
+              <option value="paper">Paper</option>
             </select>
           </label>
         </section>
@@ -1053,23 +1431,24 @@ function App() {
             <span>Export</span>
           </div>
           <div className="export-grid">
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Stage BG color
-              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} />
+              <input type="color" value={renderBgColor} onChange={(event) => setRenderBgColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge line color
-              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} />
+              <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label className="checkbox-field export-checkbox-field">
+            <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
               <input
                 type="checkbox"
                 checked={liveShadowsEnabled}
                 onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+                disabled={isPaperMaterial}
               />
               <span>Live shadows</span>
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge thickness
               <input
                 type="number"
@@ -1077,11 +1456,12 @@ function App() {
                 step="0.5"
                 value={renderEdgeThickness}
                 onChange={(event) => setRenderEdgeThickness(event.target.value)}
+                disabled={isPaperMaterial}
               />
             </label>
-            <label>
+            <label className={inactivePaperExportControlClass}>
               Edge line style
-              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)}>
+              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)} disabled={isPaperMaterial}>
                 <option value="single">Single line</option>
                 <option value="double">Double line</option>
                 <option value="offset">Offset line</option>
@@ -1089,7 +1469,7 @@ function App() {
             </label>
             {renderEdgeMode === 'offset' && (
               <>
-                <label>
+                <label className={inactivePaperExportControlClass}>
                   Offset count
                   <input
                     type="number"
@@ -1098,9 +1478,10 @@ function App() {
                     step="1"
                     value={renderEdgeOffsetCount}
                     onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                    disabled={isPaperMaterial}
                   />
                 </label>
-                <label>
+                <label className={inactivePaperExportControlClass}>
                   Offset distance px
                   <input
                     type="number"
@@ -1109,6 +1490,7 @@ function App() {
                     step="0.5"
                     value={renderEdgeOffsetDistance}
                     onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                    disabled={isPaperMaterial}
                   />
                 </label>
               </>
@@ -1124,6 +1506,10 @@ function App() {
               Export format
               <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
                 <option value="png">PNG image</option>
+                <option value="png-transparent">PNG transparent</option>
+                <option value="svg">SVG vector</option>
+                <option value="dxf">DXF laser/CNC</option>
+                <option value="stl">STL 3D print</option>
                 <option value="pdf">PDF document</option>
                 <option value="json">JSON model</option>
                 <option value="obj">OBJ model</option>
@@ -1162,10 +1548,10 @@ function App() {
           <div>
             <strong>{completed ? 'Puzzle complete' : 'Build stage'}</strong>
             <span>
-              {placed.length} pieces, {countSnappedPairs(placed)} snapped pairs
+              {placed.length} pieces, {selectedObjectCount} selected, {groupedObjectCount} groups, {countSnappedPairs(placed)} snapped pairs
             </span>
           </div>
-          <div className="stage-tools">
+          <div className="stage-tools" onPointerDown={(event) => event.stopPropagation()}>
             <div className="stage-view-controls" aria-label="Stage camera view">
               {STAGE_CAMERA_VIEWS.map((view) => (
                 <button
@@ -1184,8 +1570,8 @@ function App() {
               <button type="button" data-admin-toggle aria-label="Open admin panel" title="Admin panel" onClick={() => setMobileAdminOpen(true)}>
                 <Upload size={16} />
               </button>
-              <button type="button" aria-label="Reset stage" title="Reset stage" onClick={resetScene} disabled={!placed.length}>
-                <RotateCcw size={16} />
+              <button type="button" aria-label="Clear whole stage" title="Clear whole stage" onClick={resetScene} disabled={!placed.length}>
+                <Trash2 size={16} />
               </button>
               <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
                 <Undo2 size={16} />
@@ -1194,17 +1580,36 @@ function App() {
                 <Redo2 size={16} />
               </button>
             </div>
-            {selected && (
+            {selectedPieces.length > 0 && (
               <div className="selection-chip">
                 <Box size={16} />
-                {selected.name}
+                {selectedIsWholeGroup ? `Group (${selectedPieces.length})` : selectedPieces.length === 1 ? selectedPieces[0].name : `${selectedPieces.length} selected`}
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={groupSelectedPieces}
+                  disabled={selectedPieces.length < 2 || selectedIsWholeGroup}
+                >
+                  Group
+                </button>
+                <button type="button" onClick={ungroupSelectedPieces} disabled={!selectedPieces.some((piece) => piece.groupInstanceId)}>
+                  Ungroup
+                </button>
+                <button type="button" onClick={copySelectedPieces}>
+                  Copy
+                </button>
+                <button type="button" onClick={pasteClipboardPieces} disabled={!hasClipboardPieces}>
+                  Paste
+                </button>
               </div>
             )}
           </div>
         </div>
         <GirihStage
-          placed={placed}
+          placed={groupedPlaced}
           selectedId={selectedId}
+          selectedIds={selectedIds}
+          activeGroupId={activeGroupId}
           material={material}
           style={DEFAULT_SCENE_STYLE}
           cameraMode={stageCamera}
@@ -1216,9 +1621,11 @@ function App() {
           edgeOffsetDistance={renderEdgeOffsetDistance}
           liveShadowsEnabled={liveShadowsEnabled}
           modelTransform={modelTransform}
-          onSelect={setSelectedId}
+          onSelect={selectPlaced}
+          onSelectionChange={selectPlacedIds}
           onMove={updatePlaced}
           onSettle={settlePiece}
+          onSettleSelection={settleSelectedPieces}
           onRotate={rotatePlaced}
           onContextMenu={setContextMenu}
           onViewBoundsChange={setStageVisibleBounds}
@@ -1230,15 +1637,37 @@ function App() {
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
-            <strong>{placed.find((item) => item.id === contextMenu.id)?.name || 'Piece'}</strong>
+            <strong>{groupedPlaced.find((item) => item.id === contextMenu.id)?.name || 'Piece'}</strong>
             <label>
               Instance color
               <input
                 type="color"
-                value={placed.find((item) => item.id === contextMenu.id)?.color || '#1c7c74'}
+                value={groupedPlaced.find((item) => item.id === contextMenu.id)?.color || '#1c7c74'}
                 onChange={(event) => recolorPlaced(contextMenu.id, event.target.value)}
               />
             </label>
+            <button onClick={() => toggleMirrorPlacedVertical(contextMenu.id)}>
+              {groupedPlaced.find((item) => item.id === contextMenu.id)?.mirrorVertical ? 'Unmirror vertically' : 'Mirror vertically'}
+            </button>
+            <button
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                groupSelectedPieces();
+              }}
+              disabled={selectedPieces.length < 2 || selectedIsWholeGroup}
+            >
+              Group selection
+            </button>
+            <button onClick={ungroupSelectedPieces} disabled={!selectedPieces.some((piece) => piece.groupInstanceId)}>
+              Ungroup
+            </button>
+            <button onClick={copySelectedPieces} disabled={!selectedPieces.length}>
+              Copy selection
+            </button>
+            <button onClick={pasteClipboardPieces} disabled={!hasClipboardPieces}>
+              Paste
+            </button>
             <button onClick={() => deletePlaced(contextMenu.id)}>
               <Trash2 size={15} />
               Delete instance
@@ -1616,6 +2045,8 @@ function applyLibraryPieceToInstance(piece, instance) {
     x: instance.x,
     y: instance.y,
     rotation: instance.rotation,
+    mirrorVertical: !!instance.mirrorVertical,
+    groupInstanceId: instance.groupInstanceId || null,
     snappedTo: instance.snappedTo,
   };
 }
@@ -1652,6 +2083,8 @@ function pieceGeometrySignature(piece) {
 function GirihStage({
   placed,
   selectedId,
+  selectedIds,
+  activeGroupId,
   material,
   style,
   cameraMode,
@@ -1664,17 +2097,22 @@ function GirihStage({
   liveShadowsEnabled,
   modelTransform,
   onSelect,
+  onSelectionChange,
   onMove,
   onSettle,
+  onSettleSelection,
   onRotate,
   onContextMenu,
   onViewBoundsChange,
   onCameraChange,
 }) {
   const mountRef = useRef(null);
+  const [selectionBox, setSelectionBox] = useState(null);
   const stateRef = useRef({
     placed,
     selectedId,
+    selectedIds,
+    activeGroupId,
     material,
     style,
     cameraMode,
@@ -1687,8 +2125,10 @@ function GirihStage({
     liveShadowsEnabled,
     modelTransform,
     onSelect,
+    onSelectionChange,
     onMove,
     onSettle,
+    onSettleSelection,
     onRotate,
     onContextMenu,
     onViewBoundsChange,
@@ -1701,6 +2141,8 @@ function GirihStage({
     stateRef.current = {
       placed,
       selectedId,
+      selectedIds,
+      activeGroupId,
       material,
       style,
       cameraMode,
@@ -1713,8 +2155,10 @@ function GirihStage({
       liveShadowsEnabled,
       modelTransform,
       onSelect,
+      onSelectionChange,
       onMove,
       onSettle,
+      onSettleSelection,
       onRotate,
       onContextMenu,
       onViewBoundsChange,
@@ -1724,7 +2168,7 @@ function GirihStage({
 
   useEffect(() => {
     stageSyncDirtyRef.current = true;
-  }, [placed, selectedId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform]);
+  }, [placed, selectedId, selectedIds, activeGroupId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -1732,7 +2176,21 @@ function GirihStage({
     const initialBackground = normalizeHexColor(stateRef.current.backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor);
     scene.background = new THREE.Color(initialBackground);
 
-    const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
+    const perspectiveCamera = new THREE.PerspectiveCamera(42, mount.clientWidth / mount.clientHeight, 0.1, 100);
+    const paperCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+    let camera = perspectiveCamera;
+
+    function updatePaperCameraProjection() {
+      const aspect = mount.clientWidth / Math.max(mount.clientHeight, 1);
+      const halfHeight = PAPER_STAGE_ORTHO_HEIGHT / 2;
+      const halfWidth = halfHeight * aspect;
+      paperCamera.left = -halfWidth;
+      paperCamera.right = halfWidth;
+      paperCamera.top = halfHeight;
+      paperCamera.bottom = -halfHeight;
+      paperCamera.updateProjectionMatrix();
+    }
+    updatePaperCameraProjection();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1751,9 +2209,12 @@ function GirihStage({
     controls.target.set(0, 0, 0);
     const cameraView = { mode: null };
 
-    function applyStageCameraView(mode, force = false) {
-      if (!force && cameraView.mode === mode) return;
+    function applyStageCameraView(mode, force = false, orthographic = false) {
+      if (!force && cameraView.mode === mode && cameraView.orthographic === orthographic) return;
       cameraView.mode = mode;
+      cameraView.orthographic = orthographic;
+      camera = orthographic ? paperCamera : perspectiveCamera;
+      controls.object = camera;
       const view = getStageCameraView(mode);
       controls.target.set(0, 0, 0);
       camera.up.set(...view.up);
@@ -1762,8 +2223,11 @@ function GirihStage({
       controls.enablePan = true;
       controls.minDistance = view.lockRotate ? 4 : 3;
       controls.maxDistance = view.lockRotate ? 24 : 18;
+      controls.minZoom = 0.35;
+      controls.maxZoom = 6;
       controls.maxPolarAngle = Math.PI;
       camera.lookAt(controls.target);
+      camera.updateProjectionMatrix();
       controls.update();
     }
 
@@ -1772,8 +2236,10 @@ function GirihStage({
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const drag = { id: null, offset: new THREE.Vector3(), startX: 0, startY: 0, active: false, previous: null, current: null };
+    const drag = { id: null, ids: [], offset: new THREE.Vector3(), startPoint: new THREE.Vector3(), startX: 0, startY: 0, active: false, previous: null, previousItems: [], current: null, delta: { x: 0, y: 0 } };
+    const selectionDrag = { active: false, selecting: false, startX: 0, startY: 0, currentX: 0, currentY: 0 };
     const meshes = new Map();
+    const groupHitMeshes = new Map();
     const group = new THREE.Group();
     const selectionOutline = createSelectionOutline();
     const lastViewBounds = { current: null };
@@ -1815,14 +2281,25 @@ function GirihStage({
         liveShadowsEnabled: stageLiveShadowsEnabled,
         modelTransform: stageModelTransform,
       } = stateRef.current;
+      const isPaper = normalizeMaterialName(materialName) === 'paper';
       const stageRenderSettings = normalizeRenderSettings({
-        backgroundColor: stageBackgroundColor,
-        edgeColor: stageEdgeColor,
-        edgeThickness: stageEdgeThickness,
-        edgeMode: stageEdgeMode,
-        edgeOffsetCount: stageEdgeOffsetCount,
-        edgeOffsetDistance: stageEdgeOffsetDistance,
+        backgroundColor: isPaper ? PAPER_BACKGROUND_COLOR : stageBackgroundColor,
+        edgeColor: isPaper ? PAPER_EDGE_COLOR : stageEdgeColor,
+        edgeThickness: isPaper ? PAPER_EDGE_THICKNESS : stageEdgeThickness,
+        edgeMode: isPaper ? 'single' : stageEdgeMode,
+        edgeOffsetCount: isPaper ? DEFAULT_RENDER_SETTINGS.edgeOffsetCount : stageEdgeOffsetCount,
+        edgeOffsetDistance: isPaper ? DEFAULT_RENDER_SETTINGS.edgeOffsetDistance : stageEdgeOffsetDistance,
       });
+      const activeGroup = stateRef.current.activeGroupId || null;
+      const selectedSet = new Set(
+        activeGroup
+          ? current.filter((item) => item.groupInstanceId === activeGroup).map((item) => item.id)
+          : stateRef.current.selectedIds?.length
+            ? stateRef.current.selectedIds
+            : selected
+              ? [selected]
+              : [],
+      );
       const wanted = new Set(current.map((item) => item.id));
       for (const [id, mesh] of meshes) {
         if (!wanted.has(id)) {
@@ -1851,11 +2328,50 @@ function GirihStage({
         }
         mesh.position.set(item.x, 0, item.y);
         mesh.rotation.y = -item.rotation;
-        mesh.scale.y = styleName === 'pattern' ? 0.35 : 1;
-        applyPieceMaterial(mesh, item, materialName, item.id === selected, stageLiveShadowsEnabled);
+        mesh.scale.set(1, styleName === 'pattern' ? 0.35 : 1, item.mirrorVertical ? -1 : 1);
+        applyPieceMaterial(mesh, item, materialName, selectedSet.has(item.id), stageLiveShadowsEnabled);
         updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings, renderSignature);
       });
-      updateSelectionOutline(selectionOutline, current.find((item) => item.id === selected));
+      const pieceGroups = new Map();
+      current.forEach((item) => {
+        if (!item.groupInstanceId) return;
+        if (!pieceGroups.has(item.groupInstanceId)) pieceGroups.set(item.groupInstanceId, []);
+        pieceGroups.get(item.groupInstanceId).push(item);
+      });
+      const wantedGroupHits = new Set(
+        Array.from(pieceGroups.entries())
+          .filter(([, items]) => items.length > 1)
+          .map(([groupId]) => groupId),
+      );
+      for (const [groupId, hitMesh] of groupHitMeshes) {
+        if (!wantedGroupHits.has(groupId)) {
+          group.remove(hitMesh);
+          disposeObject(hitMesh);
+          groupHitMeshes.delete(groupId);
+        }
+      }
+      for (const [groupId, items] of pieceGroups) {
+        if (items.length < 2) continue;
+        const bounds = getPiecesWorldBounds(items);
+        if (!bounds) continue;
+        const signature = `${bounds.minX.toFixed(3)},${bounds.minY.toFixed(3)},${bounds.maxX.toFixed(3)},${bounds.maxY.toFixed(3)}:${activeGroup === groupId ? 'active' : 'idle'}`;
+        let hitMesh = groupHitMeshes.get(groupId);
+        if (hitMesh && hitMesh.userData.renderSignature !== signature) {
+          group.remove(hitMesh);
+          disposeObject(hitMesh);
+          groupHitMeshes.delete(groupId);
+          hitMesh = null;
+        }
+        if (!hitMesh) {
+          hitMesh = createGroupFootprintObject(items, activeGroup === groupId);
+          hitMesh.userData.renderSignature = signature;
+          groupHitMeshes.set(groupId, hitMesh);
+          group.add(hitMesh);
+        }
+        hitMesh.userData.id = items[0].id;
+        hitMesh.userData.groupInstanceId = groupId;
+      }
+      updateSelectionOutline(selectionOutline, current.filter((item) => selectedSet.has(item.id)));
       applyModelTransform(group, stageModelTransform);
     }
 
@@ -1895,6 +2411,67 @@ function GirihStage({
         minY: Math.min(...ys),
         maxY: Math.max(...ys),
       };
+    }
+
+    function selectionBoxFromDrag() {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const left = Math.min(selectionDrag.startX, selectionDrag.currentX) - rect.left;
+      const top = Math.min(selectionDrag.startY, selectionDrag.currentY) - rect.top;
+      const width = Math.abs(selectionDrag.currentX - selectionDrag.startX);
+      const height = Math.abs(selectionDrag.currentY - selectionDrag.startY);
+      return { left, top, width, height };
+    }
+
+    function meshScreenBounds(mesh) {
+      const bounds = new THREE.Box3().setFromObject(mesh);
+      if (bounds.isEmpty()) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const corners = [
+        [bounds.min.x, bounds.min.y, bounds.min.z],
+        [bounds.min.x, bounds.min.y, bounds.max.z],
+        [bounds.min.x, bounds.max.y, bounds.min.z],
+        [bounds.min.x, bounds.max.y, bounds.max.z],
+        [bounds.max.x, bounds.min.y, bounds.min.z],
+        [bounds.max.x, bounds.min.y, bounds.max.z],
+        [bounds.max.x, bounds.max.y, bounds.min.z],
+        [bounds.max.x, bounds.max.y, bounds.max.z],
+      ].map(([x, y, z]) => new THREE.Vector3(x, y, z).project(camera));
+      const xs = corners.map((point) => (point.x * 0.5 + 0.5) * rect.width);
+      const ys = corners.map((point) => (-point.y * 0.5 + 0.5) * rect.height);
+      return {
+        left: Math.min(...xs),
+        right: Math.max(...xs),
+        top: Math.min(...ys),
+        bottom: Math.max(...ys),
+      };
+    }
+
+    function boundsInsideSelection(bounds, box) {
+      if (!bounds) return false;
+      const boxRight = box.left + box.width;
+      const boxBottom = box.top + box.height;
+      return bounds.left >= box.left && bounds.right <= boxRight && bounds.top >= box.top && bounds.bottom <= boxBottom;
+    }
+
+    function selectedIdsInBox(box) {
+      return Array.from(meshes.entries())
+        .filter(([, mesh]) => boundsInsideSelection(meshScreenBounds(mesh), box))
+        .map(([id]) => id);
+    }
+
+    function groupedPiecesAtPoint(point) {
+      const groups = new Map();
+      stateRef.current.placed.forEach((item) => {
+        if (!item.groupInstanceId) return;
+        if (!groups.has(item.groupInstanceId)) groups.set(item.groupInstanceId, []);
+        groups.get(item.groupInstanceId).push(item);
+      });
+      const matches = Array.from(groups.values())
+        .filter((items) => items.length > 1)
+        .map((items) => ({ items, bounds: getPiecesWorldBounds(items) }))
+        .filter(({ bounds }) => bounds && point.x >= bounds.minX && point.x <= bounds.maxX && point.z >= bounds.minY && point.z <= bounds.maxY)
+        .sort((a, b) => (a.bounds.maxX - a.bounds.minX) * (a.bounds.maxY - a.bounds.minY) - (b.bounds.maxX - b.bounds.minX) * (b.bounds.maxY - b.bounds.minY));
+      return matches[0]?.items || null;
     }
 
     function reportViewBounds() {
@@ -1937,26 +2514,78 @@ function GirihStage({
       if (event.button !== 0) return;
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const hits = raycaster.intersectObjects(Array.from(meshes.values()), true);
+      const groupHits = raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true);
+      const hits = groupHits.length ? groupHits : raycaster.intersectObjects(Array.from(meshes.values()), true);
       if (!hits.length) {
-        stateRef.current.onSelect(null);
+        const point = groundPoint();
+        const groupItems = groupedPiecesAtPoint(point);
+        if (groupItems) {
+          const dragIds = groupItems.map((item) => item.id);
+          drag.id = dragIds[0];
+          drag.ids = dragIds;
+          drag.offset.set(0, 0, 0);
+          drag.startPoint.copy(point);
+          drag.startX = event.clientX;
+          drag.startY = event.clientY;
+          drag.active = false;
+          drag.previous = null;
+          drag.previousItems = groupItems.map((item) => ({ ...item }));
+          drag.current = { x: point.x, y: point.z };
+          stateRef.current.onSelect(drag.id);
+          renderer.domElement.setPointerCapture(event.pointerId);
+          return;
+        }
+        const canDragSelect = (stateRef.current.cameraMode || 'top') === 'top' || normalizeMaterialName(stateRef.current.material) === 'paper';
+        if (!canDragSelect) {
+          stateRef.current.onSelect(null);
+          return;
+        }
+        selectionDrag.active = true;
+        selectionDrag.selecting = false;
+        selectionDrag.startX = event.clientX;
+        selectionDrag.startY = event.clientY;
+        selectionDrag.currentX = event.clientX;
+        selectionDrag.currentY = event.clientY;
+        renderer.domElement.setPointerCapture(event.pointerId);
         return;
       }
       const mesh = getPieceRoot(hits[0].object);
       const point = groundPoint();
       const current = stateRef.current.placed.find((item) => item.id === mesh.userData.id);
+      if (!current) return;
+      const currentSelectedIds = stateRef.current.selectedIds || [];
+      const dragIds = current.groupInstanceId
+        ? stateRef.current.placed.filter((item) => item.groupInstanceId === current.groupInstanceId).map((item) => item.id)
+        : currentSelectedIds.includes(current.id) && currentSelectedIds.length > 1
+          ? currentSelectedIds
+          : [current.id];
       drag.id = mesh.userData.id;
-      drag.offset.copy(mesh.position).sub(point);
+      drag.ids = dragIds;
+      if (dragIds.length > 1) drag.offset.set(0, 0, 0);
+      else drag.offset.copy(mesh.position).sub(point);
+      drag.startPoint.copy(point);
       drag.startX = event.clientX;
       drag.startY = event.clientY;
       drag.active = false;
       drag.previous = current ? { x: current.x, y: current.y, rotation: current.rotation } : null;
+      drag.previousItems = stateRef.current.placed.filter((item) => dragIds.includes(item.id)).map((item) => ({ ...item }));
       drag.current = current ? { x: current.x, y: current.y } : null;
       stateRef.current.onSelect(drag.id);
       renderer.domElement.setPointerCapture(event.pointerId);
     }
 
     function pointerMove(event) {
+      if (selectionDrag.active) {
+        selectionDrag.currentX = event.clientX;
+        selectionDrag.currentY = event.clientY;
+        const moved = Math.hypot(selectionDrag.currentX - selectionDrag.startX, selectionDrag.currentY - selectionDrag.startY);
+        if (moved >= 4) {
+          selectionDrag.selecting = true;
+          controls.enabled = false;
+          setSelectionBox(selectionBoxFromDrag());
+        }
+        return;
+      }
       if (!drag.id) return;
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
       if (!drag.active && moved < 4) return;
@@ -1964,26 +2593,52 @@ function GirihStage({
       controls.enabled = false;
       setPointer(event);
       const point = groundPoint().add(drag.offset);
+      const delta = {
+        x: point.x - drag.offset.x - drag.startPoint.x,
+        y: point.z - drag.offset.z - drag.startPoint.z,
+      };
+      drag.delta = delta;
       drag.current = { x: point.x, y: point.z };
-      const mesh = meshes.get(drag.id);
-      if (mesh) mesh.position.set(point.x, 0, point.z);
-      const current = stateRef.current.placed.find((item) => item.id === drag.id);
-      if (current) updateSelectionOutline(selectionOutline, { ...current, x: point.x, y: point.z });
+      const previousById = new Map(drag.previousItems.map((item) => [item.id, item]));
+      drag.ids.forEach((id) => {
+        const previous = previousById.get(id);
+        const mesh = meshes.get(id);
+        if (previous && mesh) mesh.position.set((previous.x || 0) + delta.x, 0, (previous.y || 0) + delta.y);
+      });
+      updateSelectionOutline(selectionOutline, drag.previousItems.map((item) => ({ ...item, x: (item.x || 0) + delta.x, y: (item.y || 0) + delta.y })));
     }
 
     function pointerUp(event) {
+      if (selectionDrag.active) {
+        const box = selectionBoxFromDrag();
+        const ids = selectionDrag.selecting ? selectedIdsInBox(box) : [];
+        stateRef.current.onSelectionChange?.(ids);
+        selectionDrag.active = false;
+        selectionDrag.selecting = false;
+        controls.enabled = true;
+        setSelectionBox(null);
+        renderer.domElement.releasePointerCapture(event.pointerId);
+        return;
+      }
       if (!drag.id) return;
       const current = stateRef.current.placed.find((item) => item.id === drag.id);
       if (current && drag.active) {
-        const nextPosition = drag.current || { x: current.x, y: current.y };
-        stateRef.current.onSettle(drag.id, { x: nextPosition.x, y: nextPosition.y, previous: drag.previous });
+        if (drag.ids.length > 1) {
+          stateRef.current.onSettleSelection?.(drag.ids, drag.delta, drag.previousItems);
+        } else {
+          const nextPosition = drag.current || { x: current.x, y: current.y };
+          stateRef.current.onSettle(drag.id, { x: nextPosition.x, y: nextPosition.y, previous: drag.previous });
+        }
       }
-      if (current && !drag.active) stateRef.current.onRotate(drag.id);
+      if (current && !drag.active && drag.ids.length === 1 && !current.groupInstanceId) stateRef.current.onRotate(drag.id);
       stageSyncDirtyRef.current = true;
       drag.id = null;
+      drag.ids = [];
       drag.active = false;
       drag.previous = null;
+      drag.previousItems = [];
       drag.current = null;
+      drag.delta = { x: 0, y: 0 };
       controls.enabled = true;
       renderer.domElement.releasePointerCapture(event.pointerId);
     }
@@ -1992,7 +2647,8 @@ function GirihStage({
       event.preventDefault();
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const hits = raycaster.intersectObjects(Array.from(meshes.values()), true);
+      const groupHits = raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true);
+      const hits = groupHits.length ? groupHits : raycaster.intersectObjects(Array.from(meshes.values()), true);
       if (!hits.length) {
         stateRef.current.onContextMenu(null);
         return;
@@ -2008,8 +2664,9 @@ function GirihStage({
     renderer.domElement.addEventListener('contextmenu', contextMenu);
 
     function resize() {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
+      perspectiveCamera.aspect = mount.clientWidth / mount.clientHeight;
+      perspectiveCamera.updateProjectionMatrix();
+      updatePaperCameraProjection();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
     }
     window.addEventListener('resize', resize);
@@ -2020,10 +2677,13 @@ function GirihStage({
         syncMeshes();
         stageSyncDirtyRef.current = false;
       }
-      applyStageCameraView(stateRef.current.cameraMode || 'top');
-      applyStageBackground(scene, renderer, stateRef.current.backgroundColor);
-      applyStageFloorColor(stageFloor, stateRef.current.backgroundColor);
-      applyLiveShadowState(renderer, light, stageFloor, stateRef.current.liveShadowsEnabled);
+      const isPaper = normalizeMaterialName(stateRef.current.material) === 'paper';
+      applyStageCameraView(isPaper ? 'top' : stateRef.current.cameraMode || 'top', false, isPaper);
+      const backgroundColor = isPaper ? PAPER_BACKGROUND_COLOR : stateRef.current.backgroundColor;
+      applyStageBackground(scene, renderer, backgroundColor);
+      applyStageFloorColor(stageFloor, backgroundColor);
+      grid.visible = !isPaper;
+      applyLiveShadowState(renderer, light, stageFloor, !isPaper && stateRef.current.liveShadowsEnabled);
       controls.update();
       reportViewBounds();
       reportCameraSnapshot();
@@ -2045,7 +2705,21 @@ function GirihStage({
     };
   }, []);
 
-  return <div className="stage-canvas" ref={mountRef} />;
+  return (
+    <div className="stage-canvas" ref={mountRef}>
+      {selectionBox && (
+        <div
+          className="stage-selection-box"
+          style={{
+            left: selectionBox.left,
+            top: selectionBox.top,
+            width: selectionBox.width,
+            height: selectionBox.height,
+          }}
+        />
+      )}
+    </div>
+  );
 }
 
 function applyStageBackground(scene, renderer, backgroundColor) {
@@ -2257,12 +2931,14 @@ function glassCastOffset(height) {
 }
 
 function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings, geometrySignature = pieceGeometrySignature(piece)) {
-  const isGlass = normalizeMaterialName(materialName) === 'glass';
+  const normalizedMaterial = normalizeMaterialName(materialName);
+  const isGlass = normalizedMaterial === 'glass';
+  const isPaper = normalizedMaterial === 'paper';
   const thickness = Math.max(0, Number(renderSettings.edgeThickness) || 0);
   const signature = [
     geometrySignature,
     styleName,
-    isGlass ? 'glass' : 'solid',
+    isPaper ? 'paper' : isGlass ? 'glass' : 'solid',
     renderSettings.edgeColor,
     thickness,
     renderSettings.edgeMode,
@@ -2277,10 +2953,34 @@ function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSe
   }
   object.userData.stageEdgeSignature = signature;
   if (thickness <= 0) return;
-  const overlay = createStageEdgeOverlay(piece, renderSettings, isGlass);
+  const overlay = isPaper ? createPaperStageEdgeOverlay(piece, renderSettings) : createStageEdgeOverlay(piece, renderSettings, isGlass);
   if (!overlay) return;
   object.userData.stageEdgeOverlay = overlay;
   object.add(overlay);
+}
+
+function createPaperStageEdgeOverlay(piece, renderSettings) {
+  const segments = getExportFootprintSegments(piece).filter(([start, end]) => start && end);
+  if (!segments.length) return null;
+  const thickness = stageEdgeWorldThickness(PAPER_EDGE_THICKNESS);
+  const material = new THREE.MeshBasicMaterial({
+    color: PAPER_EDGE_COLOR,
+    depthTest: true,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const overlay = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, segments.length);
+  overlay.name = 'stage-paper-edge-overlay';
+  overlay.userData.isStageEdge = true;
+  overlay.renderOrder = 9;
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const topY = height + thickness * 0.55;
+  const interiorPoint = segmentInteriorPoint(segments);
+  segments.forEach(([start, end], index) => {
+    setStageEdgeBarMatrix(overlay, index, start, end, topY, thickness, 0, interiorPoint);
+  });
+  overlay.instanceMatrix.needsUpdate = true;
+  return overlay;
 }
 
 function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
@@ -2502,6 +3202,7 @@ function createSelectionOutline() {
   const material = new THREE.LineBasicMaterial({
     color: '#ffbf3f',
     linewidth: 2,
+    depthTest: false,
   });
   const outline = new THREE.LineSegments(geometry, material);
   outline.visible = false;
@@ -2509,16 +3210,132 @@ function createSelectionOutline() {
   return outline;
 }
 
-function updateSelectionOutline(outline, piece) {
-  if (!piece) {
+function getPiecesWorldBounds(pieces) {
+  const selectedPieces = Array.isArray(pieces) ? pieces : pieces ? [pieces] : [];
+  const worldPoints = getPiecesWorldFootprintSegments(selectedPieces).flatMap((segment) => [segment.start, segment.end]);
+  if (!worldPoints.length) return null;
+  return {
+    minX: Math.min(...worldPoints.map((point) => point.x)),
+    maxX: Math.max(...worldPoints.map((point) => point.x)),
+    minY: Math.min(...worldPoints.map((point) => point.y)),
+    maxY: Math.max(...worldPoints.map((point) => point.y)),
+    top: Math.max(...selectedPieces.map((piece) => piece.height || 0)) + 0.1,
+  };
+}
+
+function getPiecesWorldFootprintSegments(pieces) {
+  const selectedPieces = Array.isArray(pieces) ? pieces : pieces ? [pieces] : [];
+  return selectedPieces.flatMap((piece) =>
+    getRealFootprintSegments(piece).map(([start, end]) => ({
+      start: worldFootprintPoint(piece, start),
+      end: worldFootprintPoint(piece, end),
+    })),
+  );
+}
+
+function worldFootprintPoint(piece, point) {
+  const [x, y] = mirrorLocalPointForPiece(piece, point);
+  const [rx, ry] = rotatePoint(x, y, piece.rotation);
+  return { x: rx + piece.x, y: ry + piece.y };
+}
+
+function getOuterWorldFootprintSegments(pieces) {
+  const segments = getPiecesWorldFootprintSegments(pieces);
+  const buckets = new Map();
+  segments.forEach((segment) => {
+    const key = canonicalWorldSegmentKey(segment);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(segment);
+  });
+  return Array.from(buckets.values()).flatMap((matchingSegments) => (matchingSegments.length === 1 ? matchingSegments : []));
+}
+
+function canonicalWorldSegmentKey(segment) {
+  const start = worldPointKey(segment.start);
+  const end = worldPointKey(segment.end);
+  return start < end ? `${start}|${end}` : `${end}|${start}`;
+}
+
+function worldPointKey(point) {
+  return `${point.x.toFixed(4)},${point.y.toFixed(4)}`;
+}
+
+function createGroupFootprintObject(items, active) {
+  const root = new THREE.Group();
+  updateGroupFootprintObject(root, items, active);
+  return root;
+}
+
+function updateGroupFootprintObject(root, items, active) {
+  const bounds = getPiecesWorldBounds(items);
+  if (!bounds) return false;
+  const top = bounds.top + 0.04;
+  const width = Math.max(0.001, bounds.maxX - bounds.minX);
+  const depth = Math.max(0.001, bounds.maxY - bounds.minY);
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  root.children.forEach((child) => disposeObject(child));
+  root.clear();
+  const hitGeometry = new THREE.PlaneGeometry(width, depth);
+  hitGeometry.rotateX(-Math.PI / 2);
+  const hitArea = new THREE.Mesh(
+    hitGeometry,
+    new THREE.MeshBasicMaterial({
+      color: '#ffffff',
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  hitArea.position.set(centerX, top, centerY);
+  hitArea.renderOrder = 4;
+  root.add(hitArea);
+  if (!active) return true;
+  const linePositions = [
+    bounds.minX, top + 0.01, bounds.minY, bounds.maxX, top + 0.01, bounds.minY,
+    bounds.maxX, top + 0.01, bounds.minY, bounds.maxX, top + 0.01, bounds.maxY,
+    bounds.maxX, top + 0.01, bounds.maxY, bounds.minX, top + 0.01, bounds.maxY,
+    bounds.minX, top + 0.01, bounds.maxY, bounds.minX, top + 0.01, bounds.minY,
+  ];
+  const lineGeometry = new THREE.BufferGeometry();
+  lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+  const outline = new THREE.LineSegments(
+    lineGeometry,
+    new THREE.LineBasicMaterial({
+      color: '#ffbf3f',
+      depthTest: false,
+      transparent: true,
+      opacity: 1,
+    }),
+  );
+  outline.renderOrder = 5;
+  root.add(outline);
+  return true;
+}
+
+function updateSelectionOutline(outline, pieces) {
+  const selectedPieces = Array.isArray(pieces) ? pieces : pieces ? [pieces] : [];
+  if (!selectedPieces.length) {
     outline.visible = false;
     return;
   }
-  const positions = getRealFootprintSegments(piece).flatMap(([start, end]) =>
-    [start, end].flatMap(([x, y]) => {
-      const [rx, ry] = rotatePoint(x, y, piece.rotation);
-      return [rx + piece.x, piece.height + 0.08, ry + piece.y];
-    }),
+  const groupId =
+    selectedPieces.length > 1 && selectedPieces.every((piece) => piece.groupInstanceId && piece.groupInstanceId === selectedPieces[0].groupInstanceId)
+      ? selectedPieces[0].groupInstanceId
+      : null;
+  if (groupId) {
+    outline.visible = false;
+    return;
+  }
+  const positions = selectedPieces.flatMap((piece) =>
+    getRealFootprintSegments(piece).flatMap(([start, end]) =>
+      [start, end].flatMap((point) => {
+        const [x, y] = mirrorLocalPointForPiece(piece, point);
+        const [rx, ry] = rotatePoint(x, y, piece.rotation);
+        return [rx + piece.x, piece.height + 0.08, ry + piece.y];
+      }),
+    ),
   );
   outline.geometry.dispose();
   outline.geometry = new THREE.BufferGeometry();
@@ -2640,11 +3457,13 @@ function normalizeImportedObject(object, piece) {
 }
 
 function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEnabled = false) {
-  const isGlass = normalizeMaterialName(materialName) === 'glass';
-  const castsLiveShadow = !!liveShadowsEnabled && !isGlass;
+  const normalizedMaterial = normalizeMaterialName(materialName);
+  const isGlass = normalizedMaterial === 'glass';
+  const isPaper = normalizedMaterial === 'paper';
+  const castsLiveShadow = !!liveShadowsEnabled && !isGlass && !isPaper;
   const signature = [
     piece.color,
-    isGlass ? 'glass' : 'plastic',
+    isPaper ? 'paper' : isGlass ? 'glass' : 'plastic',
     selected ? 'selected' : 'normal',
     castsLiveShadow ? 'live-shadows' : 'no-live-shadows',
   ].join('|');
@@ -2655,9 +3474,9 @@ function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEn
     if (!child.isMesh || !child.material) return;
     child.castShadow = castsLiveShadow;
     child.receiveShadow = castsLiveShadow;
-    child.material.color.set(piece.color);
-    child.material.metalness = isGlass ? 0 : 0.08;
-    child.material.roughness = isGlass ? 0.06 : 0.42;
+    child.material.color.set(isPaper ? PAPER_BACKGROUND_COLOR : piece.color);
+    child.material.metalness = isGlass || isPaper ? 0 : 0.08;
+    child.material.roughness = isPaper ? 0.72 : isGlass ? 0.06 : 0.42;
     child.material.transparent = isGlass;
     child.material.opacity = isGlass ? 0.68 : 1;
     child.material.depthWrite = !isGlass;
@@ -2669,8 +3488,8 @@ function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEn
     if ('ior' in child.material) child.material.ior = isGlass ? 1.48 : 1.5;
     if ('attenuationColor' in child.material) child.material.attenuationColor.set(isGlass ? glassTintColor(piece.color) : '#ffffff');
     if ('attenuationDistance' in child.material) child.material.attenuationDistance = Infinity;
-    child.material.emissive?.set(selected ? '#362000' : '#000000');
-    child.material.emissiveIntensity = selected ? 0.12 : isGlass ? 0.05 : 0;
+    child.material.emissive?.set(isPaper ? PAPER_BACKGROUND_COLOR : selected ? '#362000' : '#000000');
+    child.material.emissiveIntensity = isPaper ? 0.18 : selected ? 0.12 : isGlass ? 0.05 : 0;
     child.material.needsUpdate = true;
   });
 }
@@ -2696,15 +3515,16 @@ function disposeObject(object) {
   });
 }
 
-function findBestSnap(moving, others) {
-  const collided = collidingPieces(moving, others);
+function findBestSnap(moving, others, options = {}) {
+  const collided = options.collided || collidingPieces(moving, others);
   const isColliding = collided.length > 0;
-  const snapTargets = isColliding ? collided : others;
-  const movingEdges = visibleWorldEdges(moving, [moving, ...others]);
+  const snapTargets = isColliding ? collided : nearbySnapTargets(moving, others);
+  const blockerScope = relevantSnapBlockers(moving, others, snapTargets);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope]);
   let best = null;
   snapTargets.forEach((target) => {
     if (moving.sourceId && target.sourceId && moving.sourceId === target.sourceId) return;
-    const targetEdges = visibleWorldEdges(target, others);
+    const targetEdges = visibleWorldEdges(target, blockerScope);
     movingEdges.forEach((movingEdge, movingEdgeIndex) => {
       targetEdges.forEach((targetEdge, targetEdgeIndex) => {
         const angle = normalizeAngle(targetEdge.angle + Math.PI - movingEdge.angle);
@@ -2725,7 +3545,7 @@ function findBestSnap(moving, others) {
           rotation,
         };
         const candidate = { ...moving, ...transform };
-        if (collidesWithAny(candidate, others)) return;
+        if (collidesWithAny(candidate, relevantCollisionTargets(candidate, blockerScope))) return;
         const alignedEdge = worldEdges(candidate)[movingEdge.localIndex ?? movingEdgeIndex];
         const endpointGap = alignedEdge.start.distanceTo(targetMatch.end) + alignedEdge.end.distanceTo(targetMatch.start);
         const contactWeight = isColliding ? 30 : 8;
@@ -2743,15 +3563,17 @@ function findBestSnap(moving, others) {
   return best;
 }
 
-function findBestCollisionPlacement(moving, others) {
-  const collided = collidingPieces(moving, others);
+function findBestCollisionPlacement(moving, others, options = {}) {
+  const collided = options.collided || collidingPieces(moving, others);
   if (!collided.length) return null;
-  const movingEdges = visibleWorldEdges(moving, [moving, ...others]);
+  const snapTargets = closestCollisionTargets(moving, collided);
+  const blockerScope = relevantSnapBlockers(moving, others, snapTargets);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope]);
   let best = null;
 
-  collided.forEach((target) => {
+  snapTargets.forEach((target) => {
     if (moving.sourceId && target.sourceId && moving.sourceId === target.sourceId) return;
-    const targetEdges = visibleWorldEdges(target, others);
+    const targetEdges = visibleWorldEdges(target, blockerScope);
     movingEdges.forEach((movingEdge, movingEdgeIndex) => {
       targetEdges.forEach((targetEdge) => {
         const lengthDelta = Math.abs(movingEdge.length - targetEdge.length);
@@ -2774,7 +3596,7 @@ function findBestCollisionPlacement(moving, others) {
             rotation,
           };
           const candidate = { ...moving, ...transform };
-          if (collidesWithAny(candidate, others)) return;
+          if (collidesWithAny(candidate, relevantCollisionTargets(candidate, blockerScope))) return;
           const alignedEdge = worldEdges(candidate)[movingEdge.localIndex ?? movingEdgeIndex];
           const endpointGap = Math.min(
             alignedEdge.start.distanceTo(targetEdge.end) + alignedEdge.end.distanceTo(targetEdge.start),
@@ -2890,12 +3712,88 @@ function collidesWithAny(piece, others) {
 }
 
 function collidingPieces(piece, others) {
-  const piecePolygon = collisionPolygon(piece);
-  return others.filter((other) => polygonsOverlap(piecePolygon, collisionPolygon(other)));
+  const pieceCollision = collisionInfo(piece);
+  return others.filter((other) => {
+    const otherCollision = collisionInfo(other);
+    if (!boundsOverlap(pieceCollision.bounds, otherCollision.bounds)) return false;
+    return polygonsOverlap(pieceCollision.polygon, otherCollision.polygon);
+  });
+}
+
+const PIECE_COLLISION_INFO_CACHE = new WeakMap();
+const PIECE_WORLD_EDGES_CACHE = new WeakMap();
+
+function collisionInfo(piece) {
+  if (piece && typeof piece === 'object') {
+    const cached = PIECE_COLLISION_INFO_CACHE.get(piece);
+    if (cached) return cached;
+  }
+  const polygon = collisionPolygon(piece);
+  const info = {
+    polygon,
+    bounds: polygonBounds(polygon),
+    center: polygonCenter(polygon),
+  };
+  if (piece && typeof piece === 'object') PIECE_COLLISION_INFO_CACHE.set(piece, info);
+  return info;
+}
+
+function polygonBounds(points) {
+  if (!points.length) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  return points.reduce(
+    (bounds, point) => ({
+      minX: Math.min(bounds.minX, point.x),
+      maxX: Math.max(bounds.maxX, point.x),
+      minY: Math.min(bounds.minY, point.y),
+      maxY: Math.max(bounds.maxY, point.y),
+    }),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  );
+}
+
+function polygonCenter(points) {
+  if (!points.length) return new THREE.Vector2();
+  return points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / points.length);
+}
+
+function boundsOverlap(a, b, padding = 0) {
+  return a.minX <= b.maxX + padding && a.maxX >= b.minX - padding && a.minY <= b.maxY + padding && a.maxY >= b.minY - padding;
+}
+
+function closestCollisionTargets(moving, targets, limit = 2) {
+  if (targets.length <= limit) return targets;
+  const movingCenter = collisionInfo(moving).center;
+  return [...targets]
+    .sort((a, b) => collisionInfo(a).center.distanceToSquared(movingCenter) - collisionInfo(b).center.distanceToSquared(movingCenter))
+    .slice(0, limit);
+}
+
+function nearbySnapTargets(moving, others) {
+  const movingBounds = collisionInfo(moving).bounds;
+  return others.filter((other) => boundsOverlap(movingBounds, collisionInfo(other).bounds, SNAP_DISTANCE + 0.35));
+}
+
+function relevantSnapBlockers(moving, others, targets) {
+  if (!targets.length) return nearbySnapTargets(moving, others);
+  const relevant = new Map();
+  const movingBounds = collisionInfo(moving).bounds;
+  others.forEach((other) => {
+    const otherBounds = collisionInfo(other).bounds;
+    if (boundsOverlap(movingBounds, otherBounds, SNAP_DISTANCE + 0.35) || targets.some((target) => boundsOverlap(collisionInfo(target).bounds, otherBounds, SNAP_DISTANCE + 0.35))) {
+      relevant.set(other.id, other);
+    }
+  });
+  return [...relevant.values()];
+}
+
+function relevantCollisionTargets(candidate, others) {
+  const candidateBounds = collisionInfo(candidate).bounds;
+  return others.filter((other) => boundsOverlap(candidateBounds, collisionInfo(other).bounds, 0.08));
 }
 
 function collisionPolygon(piece) {
-  const points = getLocalCollisionPoints(piece).map(([x, y]) => {
+  const points = getLocalCollisionPoints(piece).map((point) => {
+    const [x, y] = mirrorLocalPointForPiece(piece, point);
     const [rx, ry] = rotatePoint(x, y, piece.rotation);
     return new THREE.Vector2(rx + piece.x, ry + piece.y);
   });
@@ -3111,9 +4009,15 @@ function edgesTouchFaceToFace(edge, candidate) {
 }
 
 function worldEdges(piece) {
-  return getLocalSnapSegments(piece).map(([localStart, localEnd], localIndex) => {
-    const [startX, startY] = rotatePoint(localStart[0], localStart[1], piece.rotation);
-    const [endX, endY] = rotatePoint(localEnd[0], localEnd[1], piece.rotation);
+  if (piece && typeof piece === 'object') {
+    const cached = PIECE_WORLD_EDGES_CACHE.get(piece);
+    if (cached) return cached;
+  }
+  const edges = getLocalSnapSegments(piece).map(([localStart, localEnd], localIndex) => {
+    const mirroredStart = mirrorLocalPointForPiece(piece, localStart);
+    const mirroredEnd = mirrorLocalPointForPiece(piece, localEnd);
+    const [startX, startY] = rotatePoint(mirroredStart[0], mirroredStart[1], piece.rotation);
+    const [endX, endY] = rotatePoint(mirroredEnd[0], mirroredEnd[1], piece.rotation);
     const start = new THREE.Vector2(startX + piece.x, startY + piece.y);
     const end = new THREE.Vector2(endX + piece.x, endY + piece.y);
     const vector = end.clone().sub(start);
@@ -3126,6 +4030,8 @@ function worldEdges(piece) {
       angle: Math.atan2(vector.y, vector.x),
     };
   });
+  if (piece && typeof piece === 'object') PIECE_WORLD_EDGES_CACHE.set(piece, edges);
+  return edges;
 }
 
 function getLocalSnapSegments(piece) {
@@ -3147,6 +4053,10 @@ function scaleLocalPointsForPiece(piece, points) {
 function scaleLocalPointForPiece(piece, [x, y]) {
   const scale = footprintScaleForPiece(piece);
   return [x * scale.x, y * scale.y];
+}
+
+function mirrorLocalPointForPiece(piece, [x, y]) {
+  return [x, piece.mirrorVertical ? -y : y];
 }
 
 function footprintScaleForPiece(piece) {
@@ -3289,6 +4199,84 @@ function getRealFootprintSegments(piece) {
   return getLocalSnapSegments(piece).filter(([start, end]) => start && end);
 }
 
+function createMotifFromPieces(name, pieces) {
+  const sourcePieces = Array.isArray(pieces) ? pieces.filter(Boolean) : [];
+  if (!sourcePieces.length) return null;
+  const bounds = getPiecesWorldBounds(sourcePieces);
+  if (!bounds) return null;
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  return {
+    id: `motif-${crypto.randomUUID()}`,
+    name,
+    savedAt: Date.now(),
+    width: Math.max(0.001, bounds.maxX - bounds.minX),
+    height: Math.max(0.001, bounds.maxY - bounds.minY),
+    pieces: sourcePieces.map((piece) => ({
+      ...piece,
+      id: piece.sourceId || piece.id,
+      x: (piece.x || 0) - centerX,
+      y: (piece.y || 0) - centerY,
+      groupInstanceId: null,
+      snappedTo: null,
+    })),
+  };
+}
+
+function createTessellatedMotifInstances(motif, options = {}) {
+  const rows = clampInteger(options.rows, 1, 30, 1);
+  const columns = clampInteger(options.columns, 1, 30, 1);
+  const gapX = parseFiniteNumber(options.gapX, 0);
+  const gapY = parseFiniteNumber(options.gapY, 0);
+  const width = Math.max(0.001, Number(motif.width) || 1);
+  const height = Math.max(0.001, Number(motif.height) || 1);
+  const stepX = width + gapX;
+  const stepY = height + gapY;
+  const viewCenterX = options.visibleBounds ? (options.visibleBounds.minX + options.visibleBounds.maxX) / 2 : 0;
+  const viewCenterY = options.visibleBounds ? (options.visibleBounds.minY + options.visibleBounds.maxY) / 2 : 0;
+  const startX = viewCenterX - ((columns - 1) * stepX) / 2;
+  const startY = viewCenterY - ((rows - 1) * stepY) / 2;
+  const pieces = [];
+  const groups = [];
+  let activeGroupId = null;
+  let selectedIds = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const groupId = `group-${crypto.randomUUID()}`;
+      if (!activeGroupId) activeGroupId = groupId;
+      const groupIds = [];
+      motif.pieces.forEach((piece) => {
+        const sourceId = piece.sourceId || piece.id;
+        const id = `${sourceId}-${crypto.randomUUID()}`;
+        groupIds.push(id);
+        pieces.push({
+          ...piece,
+          id,
+          sourceId,
+          x: startX + column * stepX + (piece.x || 0),
+          y: startY + row * stepY + (piece.y || 0),
+          groupInstanceId: groupId,
+          snappedTo: null,
+        });
+      });
+      if (!selectedIds.length) selectedIds = groupIds;
+      if (groupIds.length > 1) groups.push({ id: groupId, ids: groupIds });
+    }
+  }
+  return { pieces, groups, selectedIds, activeGroupId };
+}
+
+function clampInteger(value, min, max, fallback) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, number));
+}
+
+function parseFiniteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function usesTargetedRealBoundary(piece) {
   return TARGETED_REAL_BOUNDARY_NAMES.has(slugify(piece.name || piece.id || ''));
 }
@@ -3312,6 +4300,32 @@ function usePersistentPieces() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pieces));
   }, [pieces]);
   return [pieces, setPieces];
+}
+
+function usePersistentMotifs() {
+  const [motifs, setMotifs] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(MOTIFS_STORAGE_KEY));
+      return Array.isArray(stored)
+        ? stored
+            .filter((motif) => motif && typeof motif === 'object' && Array.isArray(motif.pieces))
+            .map((motif) => ({
+              id: typeof motif.id === 'string' ? motif.id : `motif-${crypto.randomUUID()}`,
+              name: typeof motif.name === 'string' ? motif.name : 'Motif',
+              savedAt: Number(motif.savedAt) || Date.now(),
+              width: Math.max(0.001, Number(motif.width) || 1),
+              height: Math.max(0.001, Number(motif.height) || 1),
+              pieces: motif.pieces,
+            }))
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(MOTIFS_STORAGE_KEY, JSON.stringify(motifs));
+  }, [motifs]);
+  return [motifs, setMotifs];
 }
 
 function mergeDefaultPieces(stored) {
@@ -4066,11 +5080,12 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
     material: normalizedMaterial,
     renderSettings: normalizeRenderSettings(renderSettings),
     modelTransform: normalizeModelTransform(modelTransform),
-    pieces: placed.map(({ id, sourceId, name: pieceName, group, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
+    pieces: placed.map(({ id, sourceId, name: pieceName, group, groupInstanceId, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, mirrorVertical, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
       group: normalizePieceGroupName(group),
+      groupInstanceId: groupInstanceId || null,
       type: type || 'shape',
       points,
       snapEdges,
@@ -4086,7 +5101,7 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
       glbDataUrl,
       glbUrl,
       snappedTo,
-      transform: { x, y, rotation, height, stageWidth, stageLength },
+      transform: { x, y, rotation, mirrorVertical: !!mirrorVertical, height, stageWidth, stageLength },
       material: { type: normalizedMaterial, color },
     })),
   };
@@ -4095,6 +5110,7 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
 function rehydrateScenePieces(model) {
   const sourcePieces = Array.isArray(model?.pieces) ? model.pieces : [];
   const idMap = new Map();
+  const groupIdMap = new Map();
   const pieces = sourcePieces
     .map((piece) => {
       const oldId = piece.id || crypto.randomUUID();
@@ -4102,12 +5118,18 @@ function rehydrateScenePieces(model) {
       const materialInfo = piece.material || {};
       const sourceId = piece.sourceId || slugify(piece.name || oldId) || oldId;
       const nextId = `${sourceId}-${crypto.randomUUID()}`;
+      const sourceGroupInstanceId = piece.groupInstanceId || null;
+      const groupInstanceId = sourceGroupInstanceId
+        ? groupIdMap.get(sourceGroupInstanceId) || `group-${crypto.randomUUID()}`
+        : null;
+      if (sourceGroupInstanceId && !groupIdMap.has(sourceGroupInstanceId)) groupIdMap.set(sourceGroupInstanceId, groupInstanceId);
       idMap.set(oldId, nextId);
       return {
         id: nextId,
         sourceId,
         name: piece.name || 'Imported model piece',
         group: normalizePieceGroupName(piece.group),
+        groupInstanceId,
         type: piece.type || 'shape',
         color: materialInfo.color || piece.color || '#1c7c74',
         points: piece.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number)),
@@ -4126,6 +5148,7 @@ function rehydrateScenePieces(model) {
         x: Number(transform.x) || 0,
         y: Number(transform.y) || 0,
         rotation: Number(transform.rotation) || 0,
+        mirrorVertical: !!transform.mirrorVertical,
         height: Number(transform.height || piece.height) || 0.18,
         stageWidth: parseOptionalNumber(transform.stageWidth ?? piece.stageWidth),
         stageLength: parseOptionalNumber(transform.stageLength ?? piece.stageLength),
@@ -4307,14 +5330,91 @@ function sceneBounds(pieces) {
 function worldFootprintPoints(piece) {
   const local = getLocalCollisionPoints(piece);
   if (!local.length) return [[piece.x || 0, piece.y || 0]];
-  return local.map(([x, y]) => {
+  return local.map((point) => {
+    const [x, y] = mirrorLocalPointForPiece(piece, point);
     const [rx, ry] = rotatePoint(x, y, piece.rotation || 0);
     return [rx + (piece.x || 0), ry + (piece.y || 0)];
   });
 }
 
 async function renderSceneCanvas(placed, options = {}) {
+  if (normalizeMaterialName(options.material) === 'paper') return renderPaperSceneCanvas(placed, options);
   return renderIsometricSceneCanvas(placed, options);
+}
+
+async function renderPaperSceneCanvas(placed, options = {}) {
+  const orientation = options.orientation || 'landscape';
+  const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
+  const canvas = document.createElement('canvas');
+  canvas.width = size[0];
+  canvas.height = size[1];
+  const context = canvas.getContext('2d');
+  context.fillStyle = PAPER_BACKGROUND_COLOR;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const transformMatrix = modelTransformMatrix(options.modelTransform);
+  const segments = placed.flatMap((piece) => transformedPaperSegments(piece, transformMatrix));
+  if (!segments.length) return canvas;
+
+  const bounds = segmentBounds(segments);
+  const margin = Math.max(72, PAPER_EDGE_THICKNESS * 8);
+  const width = Math.max(bounds.maxX - bounds.minX, 0.001);
+  const height = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const scale = Math.min((canvas.width - margin * 2) / width, (canvas.height - margin * 2) / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  const offsetX = (canvas.width - drawWidth) / 2;
+  const offsetY = (canvas.height - drawHeight) / 2;
+  const toCanvas = ([x, y]) => [
+    offsetX + (x - bounds.minX) * scale,
+    offsetY + (bounds.maxY - y) * scale,
+  ];
+
+  context.save();
+  context.strokeStyle = PAPER_EDGE_COLOR;
+  context.lineWidth = PAPER_EDGE_THICKNESS;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  segments.forEach(([start, end]) => {
+    const [startX, startY] = toCanvas(start);
+    const [endX, endY] = toCanvas(end);
+    context.beginPath();
+    context.moveTo(startX, startY);
+    context.lineTo(endX, endY);
+    context.stroke();
+  });
+  context.restore();
+  return canvas;
+}
+
+function transformedPaperSegments(piece, transformMatrix) {
+  const rotation = Number(piece.rotation) || 0;
+  return getExportFootprintSegments(piece)
+    .filter(([start, end]) => start && end)
+    .map(([start, end]) => [
+      transformPaperPoint(start, piece, rotation, transformMatrix),
+      transformPaperPoint(end, piece, rotation, transformMatrix),
+    ]);
+}
+
+function transformPaperPoint(point, piece, rotation, transformMatrix) {
+  const [x, y] = mirrorLocalPointForPiece(piece, point);
+  const [rx, ry] = rotatePoint(x, y, rotation);
+  const transformed = new THREE.Vector3(rx + (piece.x || 0), 0, ry + (piece.y || 0)).applyMatrix4(transformMatrix);
+  return [transformed.x, transformed.z];
+}
+
+function segmentBounds(segments) {
+  const points = segments.flat();
+  return points.reduce(
+    (bounds, [x, y]) => ({
+      minX: Math.min(bounds.minX, x),
+      maxX: Math.max(bounds.maxX, x),
+      minY: Math.min(bounds.minY, y),
+      maxY: Math.max(bounds.maxY, y),
+    }),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  );
 }
 
 function projectExportPoint(x, y, z, view) {
@@ -4571,22 +5671,49 @@ function canvasMaterialFill(context, material, color, backgroundColor = DEFAULT_
   return color;
 }
 
+function isConstrainedExportDevice() {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator || {};
+  const touchDevice = nav.maxTouchPoints > 0;
+  const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent || '');
+  const narrowViewport = window.innerWidth <= 820 || window.innerHeight <= 820;
+  return mobileUserAgent || (touchDevice && narrowViewport);
+}
+
+function cappedExportSize(baseSize, requestedScale, maxPixels) {
+  const requestedSize = baseSize.map((value) => Math.round(value * requestedScale));
+  const requestedPixels = requestedSize[0] * requestedSize[1];
+  if (requestedPixels <= maxPixels) return requestedSize;
+  const scale = Math.sqrt(maxPixels / requestedPixels);
+  return requestedSize.map((value) => Math.max(1, Math.floor(value * scale)));
+}
+
 async function renderIsometricSceneCanvas(placed, options = {}) {
   const renderSettings = normalizeRenderSettings(options.renderSettings);
   const exportMaterial = normalizeMaterialName(options.material);
+  const exportShadowsEnabled = exportMaterial === 'plastic' && !!options.shadowsEnabled;
+  const constrainedExport = isConstrainedExportDevice();
   const modelTransform = normalizeModelTransform(options.modelTransform);
   const cameraView = getStageCameraView(options.view);
   const cameraSnapshot = normalizeCameraSnapshot(options.cameraSnapshot);
   const orientation = options.orientation || 'landscape';
   const baseSize = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
-  const renderScale = exportMaterial === 'glass' ? GLASS_EXPORT_RENDER_SCALE : EXPORT_RENDER_SCALE;
-  const size = baseSize.map((value) => Math.round(value * renderScale));
+  const requestedRenderScale = exportMaterial === 'glass'
+    ? GLASS_EXPORT_RENDER_SCALE
+    : constrainedExport
+      ? MOBILE_EXPORT_RENDER_SCALE
+      : EXPORT_RENDER_SCALE;
+  const size = cappedExportSize(
+    baseSize,
+    requestedRenderScale,
+    constrainedExport ? MOBILE_EXPORT_MAX_PIXELS : DESKTOP_EXPORT_MAX_PIXELS,
+  );
   const renderer = new THREE.WebGLRenderer({ antialias: exportMaterial !== 'glass', preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(size[0], size[1], false);
   renderer.setClearColor(renderSettings.backgroundColor, 1);
-  renderer.shadowMap.enabled = exportMaterial !== 'glass';
-  if (exportMaterial !== 'glass') renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = exportShadowsEnabled;
+  if (exportShadowsEnabled) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   if (exportMaterial !== 'glass') {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -4599,7 +5726,7 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   const colorCastGroup = new THREE.Group();
   colorCastGroup.name = 'export-glass-color-cast';
   updateGlassColorCast(colorCastGroup, placed, exportMaterial, modelTransform);
-  const floor = createStageFloor(renderSettings.backgroundColor);
+  const floor = createStageFloor(renderSettings.backgroundColor, exportShadowsEnabled);
   scene.add(floor);
   scene.add(colorCastGroup);
   scene.add(group);
@@ -4612,9 +5739,13 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   scene.add(ambient);
   const key = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
   key.position.set(...STAGE_KEY_LIGHT.position);
-  key.castShadow = exportMaterial !== 'glass';
-  if (exportMaterial !== 'glass') {
-    key.shadow.mapSize.set(EXPORT_SHADOW_MAP_SIZE, EXPORT_SHADOW_MAP_SIZE);
+  key.castShadow = exportShadowsEnabled;
+  if (exportShadowsEnabled) {
+    const shadowMapSize = Math.min(
+      constrainedExport ? MOBILE_EXPORT_SHADOW_MAP_SIZE : EXPORT_SHADOW_MAP_SIZE,
+      renderer.capabilities.maxTextureSize || EXPORT_SHADOW_MAP_SIZE,
+    );
+    key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     key.shadow.bias = -0.00006;
     key.shadow.normalBias = 0.018;
     key.shadow.radius = 2.8;
@@ -4631,8 +5762,8 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
     object.userData.id = piece.id;
     object.position.set(piece.x, 0, piece.y);
     object.rotation.y = -piece.rotation;
-    object.scale.y = 1;
-    applyExportPieceMaterial(object, piece, exportMaterial, renderSettings);
+    object.scale.set(1, 1, piece.mirrorVertical ? -1 : 1);
+    applyExportPieceMaterial(object, piece, exportMaterial, renderSettings, exportShadowsEnabled);
     const edgeOverlay = exportMaterial === 'glass' ? null : createExportEdgeOverlay(piece, renderSettings, false);
     if (edgeOverlay) object.add(edgeOverlay);
     group.add(object);
@@ -4874,8 +6005,10 @@ function worldRenderSegments(piece) {
   const localSegments = getExportFootprintSegments(piece);
   const rotation = Number(piece.rotation) || 0;
   return localSegments.map(([localStart, localEnd]) => {
-    const [startX, startY] = rotatePoint(localStart[0], localStart[1], rotation);
-    const [endX, endY] = rotatePoint(localEnd[0], localEnd[1], rotation);
+    const mirroredStart = mirrorLocalPointForPiece(piece, localStart);
+    const mirroredEnd = mirrorLocalPointForPiece(piece, localEnd);
+    const [startX, startY] = rotatePoint(mirroredStart[0], mirroredStart[1], rotation);
+    const [endX, endY] = rotatePoint(mirroredEnd[0], mirroredEnd[1], rotation);
     return [
       new THREE.Vector2(startX + (piece.x || 0), startY + (piece.y || 0)),
       new THREE.Vector2(endX + (piece.x || 0), endY + (piece.y || 0)),
@@ -4968,13 +6101,13 @@ function createExportFootprintObject(piece) {
   return mesh;
 }
 
-function applyExportPieceMaterial(object, piece, materialName, renderSettings = DEFAULT_RENDER_SETTINGS) {
+function applyExportPieceMaterial(object, piece, materialName, renderSettings = DEFAULT_RENDER_SETTINGS, shadowsEnabled = true) {
   const normalizedMaterialName = normalizeMaterialName(materialName);
   const material = createExportMaterial(piece, normalizedMaterialName, renderSettings);
   object.traverse((child) => {
     if (!child.isMesh) return;
-    child.castShadow = normalizedMaterialName !== 'glass';
-    child.receiveShadow = normalizedMaterialName !== 'glass';
+    child.castShadow = !!shadowsEnabled && normalizedMaterialName !== 'glass' && normalizedMaterialName !== 'paper';
+    child.receiveShadow = !!shadowsEnabled && normalizedMaterialName !== 'glass' && normalizedMaterialName !== 'paper';
     child.material?.dispose?.();
     child.material = material.clone();
   });
@@ -4984,6 +6117,15 @@ function applyExportPieceMaterial(object, piece, materialName, renderSettings = 
 function createExportMaterial(piece, materialName = 'plastic', renderSettings = DEFAULT_RENDER_SETTINGS) {
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
+  if (material === 'paper') {
+    return new THREE.MeshBasicMaterial({
+      color: PAPER_BACKGROUND_COLOR,
+      depthWrite: true,
+      depthTest: true,
+      side: THREE.FrontSide,
+      toneMapped: false,
+    });
+  }
   if (material === 'glass') {
     const tint = glassTintColor(color);
     return new THREE.MeshStandardMaterial({
@@ -5251,6 +6393,223 @@ function downloadText(filename, text) {
   downloadBlob(filename, blob);
 }
 
+function exportTopPolygons(placed, options = {}) {
+  const transformMatrix = modelTransformMatrix(options.modelTransform);
+  return placed
+    .map((piece) => {
+      const points = cleanClosedPoints(getLocalCollisionPoints(piece))
+        .map((point) => transformExportFootprintPoint(point, piece, transformMatrix));
+      if (points.length < 3 || Math.abs(polygonArea2(points)) < 0.000001) return null;
+      return {
+        id: piece.id,
+        name: piece.name || 'Girih piece',
+        color: piece.color || '#1c7c74',
+        height: Math.max(0.02, Number(piece.height) || 0.18),
+        points,
+      };
+    })
+    .filter(Boolean);
+}
+
+function cleanClosedPoints(points = []) {
+  if (points.length < 2) return points;
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (Math.hypot(first[0] - last[0], first[1] - last[1]) < 0.000001) return points.slice(0, -1);
+  return points;
+}
+
+function transformExportFootprintPoint(point, piece, transformMatrix) {
+  const [x, y] = mirrorLocalPointForPiece(piece, point);
+  const [rx, ry] = rotatePoint(x, y, Number(piece.rotation) || 0);
+  const transformed = new THREE.Vector3(rx + (piece.x || 0), 0, ry + (piece.y || 0)).applyMatrix4(transformMatrix);
+  return [transformed.x, transformed.z];
+}
+
+function exportPolygonBounds(polygons) {
+  const points = polygons.flatMap((polygon) => polygon.points);
+  if (!points.length) return { minX: -1, maxX: 1, minY: -1, maxY: 1 };
+  return points.reduce(
+    (bounds, [x, y]) => ({
+      minX: Math.min(bounds.minX, x),
+      maxX: Math.max(bounds.maxX, x),
+      minY: Math.min(bounds.minY, y),
+      maxY: Math.max(bounds.maxY, y),
+    }),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  );
+}
+
+function renderTransparentTopCanvas(placed, options = {}) {
+  const polygons = exportTopPolygons(placed, options);
+  const canvas = document.createElement('canvas');
+  canvas.width = 2400;
+  canvas.height = 2400;
+  const context = canvas.getContext('2d');
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  if (!polygons.length) return canvas;
+
+  const bounds = exportPolygonBounds(polygons);
+  const margin = 96;
+  const width = Math.max(bounds.maxX - bounds.minX, 0.001);
+  const height = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const scale = Math.min((canvas.width - margin * 2) / width, (canvas.height - margin * 2) / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  const offsetX = (canvas.width - drawWidth) / 2;
+  const offsetY = (canvas.height - drawHeight) / 2;
+  const toCanvas = ([x, y]) => [
+    offsetX + (x - bounds.minX) * scale,
+    offsetY + (bounds.maxY - y) * scale,
+  ];
+
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  polygons.forEach((polygon) => {
+    const points = polygon.points.map(toCanvas);
+    context.beginPath();
+    points.forEach(([x, y], index) => {
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.closePath();
+    context.fillStyle = polygon.color;
+    context.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+    context.lineWidth = 2;
+    context.fill();
+    context.stroke();
+  });
+  return canvas;
+}
+
+function toSvg(placed, options = {}) {
+  const polygons = exportTopPolygons(placed, options);
+  const bounds = exportPolygonBounds(polygons);
+  const padding = 0.1;
+  const minX = bounds.minX - padding;
+  const maxY = bounds.maxY + padding;
+  const width = Math.max(bounds.maxX - bounds.minX + padding * 2, 0.1);
+  const height = Math.max(bounds.maxY - bounds.minY + padding * 2, 0.1);
+  const paths = polygons.map((polygon) => {
+    const d = polygon.points
+      .map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${formatMachineNumber(x)} ${formatMachineNumber(-y)}`)
+      .join(' ');
+    return `  <path id="${escapeHtml(polygon.id)}" data-name="${escapeHtml(polygon.name)}" d="${d} Z" fill="none" stroke="#000000" stroke-width="0.02" vector-effect="non-scaling-stroke" />`;
+  });
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${formatMachineNumber(minX)} ${formatMachineNumber(-maxY)} ${formatMachineNumber(width)} ${formatMachineNumber(height)}">`,
+    '  <title>Girih machine export</title>',
+    '  <g id="cut-lines">',
+    ...paths,
+    '  </g>',
+    '</svg>',
+    '',
+  ].join('\n');
+}
+
+function toDxf(placed, options = {}) {
+  const polygons = exportTopPolygons(placed, options);
+  const lines = [
+    '0',
+    'SECTION',
+    '2',
+    'ENTITIES',
+  ];
+  polygons.forEach((polygon) => {
+    lines.push('0', 'LWPOLYLINE', '8', 'CUT', '90', String(polygon.points.length), '70', '1');
+    polygon.points.forEach(([x, y]) => {
+      lines.push('10', formatMachineNumber(x), '20', formatMachineNumber(y));
+    });
+  });
+  lines.push('0', 'ENDSEC', '0', 'EOF', '');
+  return lines.join('\n');
+}
+
+async function toStl(placed, options = {}) {
+  const root = new THREE.Group();
+  applyModelTransform(root, options.modelTransform);
+  const exportObjects = await Promise.all(placed.map(createStlPieceObject));
+  exportObjects.forEach(({ piece, object }) => {
+    const holder = new THREE.Group();
+    holder.position.set(piece.x || 0, 0, piece.y || 0);
+    holder.rotation.y = -(Number(piece.rotation) || 0);
+    holder.scale.set(1, 1, piece.mirrorVertical ? -1 : 1);
+    holder.add(object);
+    root.add(holder);
+  });
+  root.updateMatrixWorld(true);
+
+  const lines = ['solid girih_model'];
+  root.traverse((child) => {
+    if (child.isMesh && child.geometry) appendMeshStlTriangles(lines, child);
+  });
+  lines.push('endsolid girih_model', '');
+  exportObjects.forEach(({ object }) => disposeObject(object));
+  return lines.join('\n');
+}
+
+async function createStlPieceObject(piece) {
+  if (piece.type === 'glb' && (piece.glbDataUrl || piece.glbUrl)) {
+    const source = await cachedGlbSourceModel(piece);
+    const object = source.clone(true);
+    normalizeImportedObject(object, piece);
+    object.traverse((child) => {
+      if (child.isMesh && child.geometry) child.geometry.userData = { ...child.geometry.userData, cachedGlbSource: true };
+    });
+    return { piece, object };
+  }
+  if (piece.type === 'obj' && piece.objText) {
+    return { piece, object: createObjPieceObject(piece) };
+  }
+  return { piece, object: createShapePieceObject(piece) };
+}
+
+function appendMeshStlTriangles(lines, mesh) {
+  const geometry = mesh.geometry;
+  const position = geometry.attributes?.position;
+  if (!position) return;
+  const matrix = mesh.matrixWorld;
+  const flipWinding = matrix.determinant() < 0;
+  const readVertex = (index) => {
+    const point = new THREE.Vector3().fromBufferAttribute(position, index).applyMatrix4(matrix);
+    return [point.x, point.y, point.z];
+  };
+  const appendByIndex = (aIndex, bIndex, cIndex) => {
+    const triangle = [readVertex(aIndex), readVertex(bIndex), readVertex(cIndex)];
+    appendStlTriangle(lines, flipWinding ? [triangle[0], triangle[2], triangle[1]] : triangle);
+  };
+  if (geometry.index) {
+    const index = geometry.index;
+    for (let cursor = 0; cursor < index.count - 2; cursor += 3) {
+      appendByIndex(index.getX(cursor), index.getX(cursor + 1), index.getX(cursor + 2));
+    }
+    return;
+  }
+  for (let cursor = 0; cursor < position.count - 2; cursor += 3) {
+    appendByIndex(cursor, cursor + 1, cursor + 2);
+  }
+}
+
+function appendStlTriangle(lines, triangle) {
+  const normal = triangleNormal(triangle);
+  if (!normal) return;
+  lines.push(`  facet normal ${formatMachineNumber(normal[0])} ${formatMachineNumber(normal[1])} ${formatMachineNumber(normal[2])}`);
+  lines.push('    outer loop');
+  triangle.forEach(([x, y, z]) => {
+    lines.push(`      vertex ${formatMachineNumber(x)} ${formatMachineNumber(y)} ${formatMachineNumber(z)}`);
+  });
+  lines.push('    endloop');
+  lines.push('  endfacet');
+}
+
+function formatMachineNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0';
+  const rounded = Math.round(number * 1000000) / 1000000;
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
 function toObj(scene) {
   const modelTransform = normalizeModelTransform(scene.modelTransform);
   const transformMatrix = modelTransformMatrix(modelTransform);
@@ -5263,8 +6622,9 @@ function toObj(scene) {
   let vertexOffset = 1;
   scene.pieces.forEach((piece) => {
     lines.push(`o ${piece.name.replace(/\s+/g, '_')}_${piece.id}`);
+    const mirrored = !!piece.transform.mirrorVertical;
     piece.points.forEach(([x, y]) => {
-      const [rx, ry] = rotatePoint(x, y, piece.transform.rotation);
+      const [rx, ry] = rotatePoint(x, mirrored ? -y : y, piece.transform.rotation);
       const point = new THREE.Vector3(rx + piece.transform.x, 0, ry + piece.transform.y).applyMatrix4(transformMatrix);
       lines.push(`v ${point.x.toFixed(4)} ${point.y.toFixed(4)} ${point.z.toFixed(4)}`);
     });

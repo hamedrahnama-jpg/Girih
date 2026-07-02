@@ -405,6 +405,17 @@ button:disabled {
   min-width: 0;
 }
 
+.export-grid .export-disabled-control {
+  color: #91887d;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.export-grid .export-disabled-control input,
+.export-grid .export-disabled-control select {
+  cursor: not-allowed;
+}
+
 .export-grid select,
 .export-grid input:not([type='color']) {
   min-width: 0;
@@ -653,6 +664,23 @@ textarea {
   gap: 7px;
   padding: 9px 12px;
   background: rgba(255, 255, 255, 0.88);
+  flex-wrap: wrap;
+  pointer-events: auto;
+}
+
+.selection-chip button {
+  min-height: 28px;
+  border: 1px solid #d8ccba;
+  border-radius: 7px;
+  background: #fffaf1;
+  color: #2d2924;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.selection-chip button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .stage-tools {
@@ -665,6 +693,16 @@ textarea {
 .history-controls {
   gap: 6px;
   pointer-events: auto;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.motif-summary {
+  margin-top: 8px;
+  color: #6f6254;
+  font-size: 12px;
 }
 
 .stage-view-controls {
@@ -796,6 +834,7 @@ textarea {
 }
 
 .stage-canvas {
+  position: relative;
   width: 100%;
   height: 100vh;
   min-height: 620px;
@@ -806,6 +845,15 @@ textarea {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.stage-selection-box {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border: 1px solid #1d7cff;
+  background: rgba(29, 124, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
 
 .admin-form {
