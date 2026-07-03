@@ -10,6 +10,7 @@ import {
   Eye,
   FileText,
   Grid3X3,
+  Image as ImageIcon,
   Layers3,
   Menu,
   Palette,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 import * as THREE from 'three';
 import { PUBLIC_MODEL_FILES, PUBLIC_MODEL_GROUPS } from './publicModelPieces.generated.js';
+import { PUBLIC_TEMPLATE_FILES, PUBLIC_TEMPLATE_GROUPS } from './publicTemplates.generated.js';
 import './styles.css';
 
 const STORAGE_KEY = 'girih.pieces.v1';
@@ -53,8 +55,8 @@ const DEFAULT_RENDER_SETTINGS = {
   edgeColor: '#123f3a',
   edgeThickness: 0,
   edgeMode: 'single',
-  edgeOffsetCount: 3,
-  edgeOffsetDistance: 8,
+  edgeOffsetCount: 2,
+  edgeOffsetDistance: 4,
 };
 const DEFAULT_MODEL_TRANSFORM = {
   scaleX: 1,
@@ -77,6 +79,7 @@ const STAGE_KEY_LIGHT = {
   intensity: 2,
   position: [3, 6, 4],
 };
+const EXPORT_SHADOW_QUALITY_SCALE = 1.3;
 const EXPORT_SHADOW_MAP_SIZE = 8192;
 const EXPORT_RENDER_SCALE = 1.5;
 const GLASS_EXPORT_RENDER_SCALE = 0.5;
@@ -168,9 +171,20 @@ function applyModelTransform(object, transform) {
 }
 
 const PUBLIC_MODEL_PIECES = PUBLIC_MODEL_FILES.map((piece) => publicModelPiece(piece.id, piece.name, piece.filename, piece.color, piece.group));
+const PUBLIC_TEMPLATES = PUBLIC_TEMPLATE_FILES.map((template) => publicTemplate(template.id, template.name, template.filename, template.group));
 
 const DEFAULT_PIECES = [...PUBLIC_MODEL_PIECES];
 const DEFAULT_PIECE_BY_ID = new Map(DEFAULT_PIECES.map((piece) => [piece.id, piece]));
+
+function publicTemplate(id, name, filename, group = 'Default') {
+  return {
+    id,
+    name,
+    filename,
+    group: normalizePieceGroupName(group),
+    src: `/templates/${encodeModelPath(filename)}`,
+  };
+}
 
 function publicModelPiece(id, name, filename, color, group = 'Default') {
   return {
@@ -206,7 +220,30 @@ function encodeModelPath(path) {
     .join('/');
 }
 
+function useMobileViewport() {
+  const readMobile = () => {
+    if (typeof window === 'undefined') return false;
+    const nav = window.navigator || {};
+    const touchDevice = nav.maxTouchPoints > 0;
+    const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent || '');
+    const narrowViewport = window.innerWidth <= 820 || window.innerHeight <= 820;
+    return mobileUserAgent || (touchDevice && narrowViewport);
+  };
+  const [mobile, setMobile] = useState(readMobile);
+  useEffect(() => {
+    const update = () => setMobile(readMobile());
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+  return mobile;
+}
+
 function App() {
+  const isMobileViewport = useMobileViewport();
   const [pieces, setPieces] = usePersistentPieces();
   const [savedModels, setSavedModels] = usePersistentModels();
   const [savedMotifs, setSavedMotifs] = usePersistentMotifs();
@@ -253,6 +290,13 @@ function App() {
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
+  const [templatePanelOpen, setTemplatePanelOpen] = useState(false);
+  const [templateStagePreviewVisible, setTemplateStagePreviewVisible] = useState(false);
+  const [activeTemplateGroup, setActiveTemplateGroup] = useState(() => normalizePieceGroupName(PUBLIC_MODEL_GROUPS[0] || PUBLIC_TEMPLATE_GROUPS[0]));
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templatePreviewView, setTemplatePreviewView] = useState({ scale: 1, x: 0, y: 0 });
+  const [frameMode, setFrameMode] = useState(false);
+  const [framePointIds, setFramePointIds] = useState([]);
   const [collapsedPieceGroups, setCollapsedPieceGroups] = useState(() => new Set(PUBLIC_MODEL_GROUPS.map(normalizePieceGroupName)));
   const [collapsedAdminGroups, setCollapsedAdminGroups] = useState(() => new Set(PUBLIC_MODEL_GROUPS.map(normalizePieceGroupName)));
   const [collapsedPaletteGroups, setCollapsedPaletteGroups] = useState(() => new Set());
@@ -263,6 +307,8 @@ function App() {
   const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
   const [stageCameraSnapshot, setStageCameraSnapshot] = useState(null);
   const importSceneInputRef = useRef(null);
+  const templatePreviewDragRef = useRef(null);
+  const templatePreviewPointersRef = useRef(new Map());
 
   const explicitGroupByPieceId = new Map();
   stageGroups.forEach((group) => group.ids.forEach((id) => explicitGroupByPieceId.set(id, group.id)));
@@ -293,19 +339,50 @@ function App() {
   ).filter((count) => count > 1).length);
   const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
   const pieceGroups = useMemo(() => groupLibraryPieces(pieces, PUBLIC_MODEL_GROUPS), [pieces]);
+  const templates = useMemo(() => PUBLIC_TEMPLATES, []);
+  const templateGroups = useMemo(
+    () => groupTemplateLibrary(templates, [...PUBLIC_MODEL_GROUPS, ...PUBLIC_TEMPLATE_GROUPS]),
+    [templates],
+  );
+  const templateGroupNames = useMemo(
+    () => templateGroups.map((group) => group.name),
+    [templateGroups],
+  );
+  const activeTemplateGroupName = normalizePieceGroupName(activeTemplateGroup || templateGroupNames[0]);
+  const activeTemplateGroupRecord = templateGroups.find((group) => group.name === activeTemplateGroupName) || templateGroups[0] || { name: 'Default', items: [] };
+  const selectedTemplate = templates.find((template) => template.id === selectedTemplateId) || activeTemplateGroupRecord.items[0] || null;
+  const framePoints = useMemo(
+    () =>
+      framePointIds
+        .map((id) => groupedPlaced.find((item) => item.id === id))
+        .filter(Boolean)
+        .map((item) => ({ id: item.id, x: item.x || 0, y: item.y || 0 })),
+    [framePointIds, groupedPlaced],
+  );
   const selectedMotif = savedMotifs.find((motif) => motif.id === selectedMotifId) || savedMotifs[0] || null;
   const isPaperMaterial = material === 'paper';
   const inactivePaperExportControlClass = isPaperMaterial ? 'export-disabled-control' : undefined;
+  const edgeLineEnabled = !isPaperMaterial && Number(renderEdgeThickness) > 0;
 
   function currentRenderSettings() {
     return normalizeRenderSettings({
       backgroundColor: renderBgColor,
       edgeColor: renderEdgeColor,
-      edgeThickness: renderEdgeThickness,
-      edgeMode: renderEdgeMode,
+      edgeThickness: edgeLineEnabled ? renderEdgeThickness : 0,
+      edgeMode: 'offset',
       edgeOffsetCount: renderEdgeOffsetCount,
       edgeOffsetDistance: renderEdgeOffsetDistance,
     });
+  }
+
+  function changeEdgeLineEnabled(enabled) {
+    setRenderEdgeMode('offset');
+    if (enabled) {
+      const currentThickness = Number(renderEdgeThickness);
+      setRenderEdgeThickness(Number.isFinite(currentThickness) && currentThickness > 0 ? renderEdgeThickness : 1);
+      return;
+    }
+    setRenderEdgeThickness(0);
   }
 
   function changeMaterial(nextMaterial) {
@@ -370,6 +447,145 @@ function App() {
       else next.add(groupName);
       return next;
     });
+  }
+
+  function startFrameMode() {
+    setFrameMode(true);
+    setFramePointIds([]);
+    setStageCamera('top');
+    setSelectedIds([]);
+    setSelectedId(null);
+    setActiveGroupId(null);
+    setContextMenu(null);
+  }
+
+  function cancelFrameMode() {
+    setFrameMode(false);
+    setFramePointIds([]);
+  }
+
+  function pickFrameObject(pieceId) {
+    if (!frameMode || !pieceId) return;
+    const currentPlaced = placedRef.current;
+    const picked = currentPlaced.find((item) => item.id === pieceId);
+    if (!picked) return;
+    if (framePointIds.length >= 3 && framePointIds[0] === pieceId) {
+      applyFrameCrop(framePointIds);
+      return;
+    }
+    if (framePointIds.includes(pieceId)) return;
+    setFramePointIds((ids) => [...ids, pieceId]);
+  }
+
+  function applyFrameCrop(ids) {
+    const currentPlaced = placedRef.current;
+    const loopPieces = ids.map((id) => currentPlaced.find((item) => item.id === id)).filter(Boolean);
+    const loop = loopPieces.map((item) => new THREE.Vector2(item.x || 0, item.y || 0));
+    if (loop.length < 3) return;
+    const framed = framePlacedPieces(currentPlaced, loop);
+    commitPlaced(() => framed);
+    placedRef.current = framed;
+    const framedIds = new Set(framed.map((item) => item.id));
+    setSelectedId(null);
+    setSelectedIds([]);
+    setActiveGroupId(null);
+    setStageGroups((groups) =>
+      groups
+        .map((group) => ({ ...group, ids: group.ids.filter((id) => framedIds.has(id)) }))
+        .filter((group) => group.ids.length > 1),
+    );
+    setFrameMode(false);
+    setFramePointIds([]);
+    setContextMenu(null);
+  }
+
+  function openTemplateGroup(groupName) {
+    const normalizedGroupName = normalizePieceGroupName(groupName);
+    setActiveTemplateGroup(normalizedGroupName);
+    setTemplatePanelOpen(true);
+    setTemplateStagePreviewVisible(true);
+    setMobileMenuOpen(false);
+    setMobileAdminOpen(false);
+    if (isMobileViewport) setMobilePiecesOpen(false);
+    const group = templateGroups.find((item) => item.name === normalizedGroupName);
+    setSelectedTemplateId((current) => (group?.items.some((template) => template.id === current) ? current : group?.items[0]?.id || ''));
+  }
+
+  function resetTemplatePreviewView() {
+    setTemplatePreviewView({ scale: 1, x: 0, y: 0 });
+  }
+
+  function clampTemplatePreviewScale(scale) {
+    return Math.min(4, Math.max(1, Number(scale.toFixed(2))));
+  }
+
+  function zoomTemplatePreview(delta) {
+    setTemplatePreviewView((current) => {
+      const scale = clampTemplatePreviewScale(current.scale + delta);
+      return scale === 1 ? { scale, x: 0, y: 0 } : { ...current, scale };
+    });
+  }
+
+  function getPointerDistance(a, b) {
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  }
+
+  function startTemplatePreviewPan(event) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    templatePreviewPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    const pointers = [...templatePreviewPointersRef.current.values()];
+    if (pointers.length >= 2) {
+      templatePreviewDragRef.current = {
+        mode: 'pinch',
+        startDistance: Math.max(1, getPointerDistance(pointers[0], pointers[1])),
+        originScale: templatePreviewView.scale,
+      };
+      return;
+    }
+    if (templatePreviewView.scale <= 1) return;
+    templatePreviewDragRef.current = {
+      mode: 'pan',
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: templatePreviewView.x,
+      originY: templatePreviewView.y,
+    };
+  }
+
+  function panTemplatePreview(event) {
+    if (templatePreviewPointersRef.current.has(event.pointerId)) {
+      templatePreviewPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    }
+    const drag = templatePreviewDragRef.current;
+    if (!drag) return;
+    event.preventDefault();
+    if (drag.mode === 'pinch') {
+      const pointers = [...templatePreviewPointersRef.current.values()];
+      if (pointers.length < 2) return;
+      const distance = Math.max(1, getPointerDistance(pointers[0], pointers[1]));
+      setTemplatePreviewView((current) => {
+        const scale = clampTemplatePreviewScale(drag.originScale * (distance / drag.startDistance));
+        return scale === 1 ? { scale, x: 0, y: 0 } : { ...current, scale };
+      });
+      return;
+    }
+    if (drag.pointerId !== event.pointerId) return;
+    setTemplatePreviewView((current) => ({
+      ...current,
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    }));
+  }
+
+  function endTemplatePreviewPan(event) {
+    templatePreviewPointersRef.current.delete(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const drag = templatePreviewDragRef.current;
+    if (drag?.mode === 'pinch' || drag?.pointerId === event.pointerId) {
+      templatePreviewDragRef.current = null;
+    }
   }
 
   function saveGroupColorPalette(group) {
@@ -447,6 +663,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(GROUP_COLOR_PALETTES_STORAGE_KEY, JSON.stringify(groupColorPalettes));
   }, [groupColorPalettes]);
+
+  useEffect(() => {
+    resetTemplatePreviewView();
+  }, [selectedTemplate?.id]);
 
   useEffect(() => {
     if (selectedId && !placed.some((item) => item.id === selectedId)) setSelectedId(null);
@@ -592,17 +812,8 @@ function App() {
     setContextMenu(null);
   }
 
-  function groupSelectedPieces() {
+  function createGroupFromIds(sourceIds) {
     const currentPlaced = placedRef.current;
-    const currentSelectedIds = selectedIdsRef.current;
-    const renderedSelectedIds = selectedPieces.map((piece) => piece.id);
-    const stateSelectedIds = selectedIds;
-    const sourceIds =
-      currentSelectedIds.length >= 2
-        ? currentSelectedIds
-        : renderedSelectedIds.length >= 2
-          ? renderedSelectedIds
-          : stateSelectedIds;
     const idsToGroup = sourceIds.filter((id, index, ids) => id && ids.indexOf(id) === index && currentPlaced.some((item) => item.id === id));
     if (idsToGroup.length < 2) return;
     const groupInstanceId = `group-${crypto.randomUUID()}`;
@@ -620,6 +831,23 @@ function App() {
     setSelectedId(idsToGroup[0] || null);
     setActiveGroupId(groupInstanceId);
     setContextMenu(null);
+  }
+
+  function groupSelectedPieces() {
+    const currentSelectedIds = selectedIdsRef.current;
+    const renderedSelectedIds = selectedPieces.map((piece) => piece.id);
+    const stateSelectedIds = selectedIds;
+    const sourceIds =
+      currentSelectedIds.length >= 2
+        ? currentSelectedIds
+        : renderedSelectedIds.length >= 2
+          ? renderedSelectedIds
+          : stateSelectedIds;
+    createGroupFromIds(sourceIds);
+  }
+
+  function groupAllStagePieces() {
+    createGroupFromIds(placedRef.current.map((item) => item.id));
   }
 
   function ungroupSelectedPieces() {
@@ -818,9 +1046,9 @@ function App() {
       name: piece.name,
       group: normalizePieceGroupName(piece.group),
       color: piece.color,
-      height: piece.height,
-      stageWidth: pieceStageDimensions(piece).width,
-      stageLength: pieceStageDimensions(piece).length,
+      height: formatDimensionValue(piece.height),
+      stageWidth: formatDimensionValue(pieceStageDimensions(piece).width),
+      stageLength: formatDimensionValue(pieceStageDimensions(piece).length),
       sourceHeightPx: piece.sourceHeightPx ?? '',
       sourceWidthPx: piece.sourceWidthPx ?? '',
       sourceLengthPx: piece.sourceLengthPx ?? '',
@@ -846,9 +1074,9 @@ function App() {
       name: file.name.replace(/\.(obj|glb)$/i, ''),
       group: normalizePieceGroupName(draft.group),
       color: draft.color,
-      height: imported.sourceHeightPx || imported.height,
-      stageWidth: imported.sourceWidthPx || pieceStageDimensions(imported).width,
-      stageLength: imported.sourceLengthPx || pieceStageDimensions(imported).length,
+      height: formatDimensionValue(imported.sourceHeightPx || imported.height),
+      stageWidth: formatDimensionValue(imported.sourceWidthPx || pieceStageDimensions(imported).width),
+      stageLength: formatDimensionValue(imported.sourceLengthPx || pieceStageDimensions(imported).length),
       sourceHeightPx: imported.sourceHeightPx ?? '',
       sourceWidthPx: imported.sourceWidthPx ?? '',
       sourceLengthPx: imported.sourceLengthPx ?? '',
@@ -901,7 +1129,7 @@ function App() {
     commitPlaced((items) =>
       items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
     );
-    setDraft((current) => (editingId === piece.id ? { ...current, height } : current));
+    setDraft((current) => (editingId === piece.id ? { ...current, height: formatDimensionValue(height) } : current));
   }
 
   function deletePiece(id) {
@@ -1024,6 +1252,10 @@ function App() {
       downloadText('girih-model.svg', toSvg(groupedPlaced, { modelTransform }));
       return;
     }
+    if (format === 'eps') {
+      downloadText('girih-model.eps', toEps(groupedPlaced, { modelTransform }));
+      return;
+    }
     if (format === 'dxf') {
       downloadText('girih-model.dxf', toDxf(groupedPlaced, { modelTransform }));
       return;
@@ -1060,9 +1292,17 @@ function App() {
     <div
       className="app-shell"
       onPointerDown={(event) => {
-        if (!mobileAdminOpen) return;
-        if (event.target.closest('.admin-panel') || event.target.closest('[data-admin-toggle]')) return;
+        if (!mobileAdminOpen && !templatePanelOpen) return;
+        if (
+          event.target.closest('.admin-panel') ||
+          event.target.closest('.template-panel') ||
+          event.target.closest('[data-admin-toggle]') ||
+          event.target.closest('[data-template-toggle]')
+        ) {
+          return;
+        }
         setMobileAdminOpen(false);
+        setTemplatePanelOpen(false);
       }}
     >
       <div className="mobile-topbar">
@@ -1074,7 +1314,7 @@ function App() {
         </button>
       </div>
 
-      {(mobileMenuOpen || mobileAdminOpen) && (
+      {(mobileMenuOpen || mobileAdminOpen || templatePanelOpen) && (
         <button
           type="button"
           className="mobile-scrim"
@@ -1082,6 +1322,7 @@ function App() {
           onClick={() => {
             setMobileMenuOpen(false);
             setMobileAdminOpen(false);
+            setTemplatePanelOpen(false);
           }}
         />
       )}
@@ -1108,17 +1349,29 @@ function App() {
               const collapsed = collapsedPieceGroups.has(group.name);
               return (
                 <div className="piece-group" key={group.name}>
-                  <button
-                    type="button"
-                    className="piece-group-toggle"
-                    title={group.name}
-                    aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${group.name} group`}
-                    onClick={() => togglePieceGroup(group.name)}
-                  >
-                    <span>{group.name}</span>
-                    <small>{group.items.length}</small>
-                    <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
-                  </button>
+                  <div className="piece-group-actions">
+                    <button
+                      type="button"
+                      className="piece-group-toggle"
+                      title={group.name}
+                      aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${group.name} group`}
+                      onClick={() => togglePieceGroup(group.name)}
+                    >
+                      <span>{group.name}</span>
+                      <small>{group.items.length}</small>
+                      <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="template-group-button"
+                      title={`Open ${group.name} templates`}
+                      aria-label={`Open ${group.name} templates`}
+                      data-template-toggle
+                      onClick={() => openTemplateGroup(group.name)}
+                    >
+                      <ImageIcon size={15} />
+                    </button>
+                  </div>
                   {!collapsed && (
                     <div className="piece-group-items">
                       {group.items.map((piece) => (
@@ -1266,62 +1519,52 @@ function App() {
               Edge line color
               <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
-              <input
-                type="checkbox"
-                checked={liveShadowsEnabled}
-                onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
-                disabled={isPaperMaterial}
-              />
-              <span>Live shadows</span>
-            </label>
-            <label className={inactivePaperExportControlClass}>
-              Edge thickness
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={renderEdgeThickness}
-                onChange={(event) => setRenderEdgeThickness(event.target.value)}
-                disabled={isPaperMaterial}
-              />
-            </label>
-            <label className={inactivePaperExportControlClass}>
-              Edge line style
-              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)} disabled={isPaperMaterial}>
-                <option value="single">Single line</option>
-                <option value="double">Double line</option>
-                <option value="offset">Offset line</option>
-              </select>
-            </label>
-            {renderEdgeMode === 'offset' && (
-              <>
-                <label className={inactivePaperExportControlClass}>
-                  Offset count
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    step="1"
-                    value={renderEdgeOffsetCount}
-                    onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
-                    disabled={isPaperMaterial}
-                  />
-                </label>
-                <label className={inactivePaperExportControlClass}>
-                  Offset distance px
-                  <input
-                    type="number"
-                    min="0"
-                    max="80"
-                    step="0.5"
-                    value={renderEdgeOffsetDistance}
-                    onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
-                    disabled={isPaperMaterial}
-                  />
-                </label>
-              </>
-            )}
+            <div className="export-checkbox-row">
+              <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
+                <input
+                  type="checkbox"
+                  checked={liveShadowsEnabled}
+                  onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+                  disabled={isPaperMaterial}
+                />
+                <span>Live shadows</span>
+              </label>
+              <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
+                <input
+                  type="checkbox"
+                  checked={edgeLineEnabled}
+                  onChange={(event) => changeEdgeLineEnabled(event.target.checked)}
+                  disabled={isPaperMaterial}
+                />
+                <span>Edge line</span>
+              </label>
+            </div>
+            <div className="export-offset-row">
+              <label className={inactivePaperExportControlClass}>
+                Offset count
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  value={renderEdgeOffsetCount}
+                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                  disabled={isPaperMaterial}
+                />
+              </label>
+              <label className={inactivePaperExportControlClass}>
+                Offset distance px
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  step="0.5"
+                  value={renderEdgeOffsetDistance}
+                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                  disabled={isPaperMaterial}
+                />
+              </label>
+            </div>
             <label>
               Page orientation
               <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
@@ -1335,6 +1578,7 @@ function App() {
                 <option value="png">PNG image</option>
                 <option value="png-transparent">PNG transparent</option>
                 <option value="svg">SVG vector</option>
+                <option value="eps">EPS vector</option>
                 <option value="dxf">DXF laser/CNC</option>
                 <option value="stl">STL 3D print</option>
                 <option value="pdf">PDF document</option>
@@ -1439,62 +1683,52 @@ function App() {
               Edge line color
               <input type="color" value={renderEdgeColor} onChange={(event) => setRenderEdgeColor(event.target.value)} disabled={isPaperMaterial} />
             </label>
-            <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
-              <input
-                type="checkbox"
-                checked={liveShadowsEnabled}
-                onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
-                disabled={isPaperMaterial}
-              />
-              <span>Live shadows</span>
-            </label>
-            <label className={inactivePaperExportControlClass}>
-              Edge thickness
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                value={renderEdgeThickness}
-                onChange={(event) => setRenderEdgeThickness(event.target.value)}
-                disabled={isPaperMaterial}
-              />
-            </label>
-            <label className={inactivePaperExportControlClass}>
-              Edge line style
-              <select value={renderEdgeMode} onChange={(event) => setRenderEdgeMode(event.target.value)} disabled={isPaperMaterial}>
-                <option value="single">Single line</option>
-                <option value="double">Double line</option>
-                <option value="offset">Offset line</option>
-              </select>
-            </label>
-            {renderEdgeMode === 'offset' && (
-              <>
-                <label className={inactivePaperExportControlClass}>
-                  Offset count
-                  <input
-                    type="number"
-                    min="1"
-                    max="12"
-                    step="1"
-                    value={renderEdgeOffsetCount}
-                    onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
-                    disabled={isPaperMaterial}
-                  />
-                </label>
-                <label className={inactivePaperExportControlClass}>
-                  Offset distance px
-                  <input
-                    type="number"
-                    min="0"
-                    max="80"
-                    step="0.5"
-                    value={renderEdgeOffsetDistance}
-                    onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
-                    disabled={isPaperMaterial}
-                  />
-                </label>
-              </>
-            )}
+            <div className="export-checkbox-row">
+              <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
+                <input
+                  type="checkbox"
+                  checked={liveShadowsEnabled}
+                  onChange={(event) => setLiveShadowsEnabled(event.target.checked)}
+                  disabled={isPaperMaterial}
+                />
+                <span>Live shadows</span>
+              </label>
+              <label className={`checkbox-field export-checkbox-field ${inactivePaperExportControlClass || ''}`}>
+                <input
+                  type="checkbox"
+                  checked={edgeLineEnabled}
+                  onChange={(event) => changeEdgeLineEnabled(event.target.checked)}
+                  disabled={isPaperMaterial}
+                />
+                <span>Edge line</span>
+              </label>
+            </div>
+            <div className="export-offset-row">
+              <label className={inactivePaperExportControlClass}>
+                Offset count
+                <input
+                  type="number"
+                  min="1"
+                  max="12"
+                  step="1"
+                  value={renderEdgeOffsetCount}
+                  onChange={(event) => setRenderEdgeOffsetCount(event.target.value)}
+                  disabled={isPaperMaterial}
+                />
+              </label>
+              <label className={inactivePaperExportControlClass}>
+                Offset distance px
+                <input
+                  type="number"
+                  min="0"
+                  max="80"
+                  step="0.5"
+                  value={renderEdgeOffsetDistance}
+                  onChange={(event) => setRenderEdgeOffsetDistance(event.target.value)}
+                  disabled={isPaperMaterial}
+                />
+              </label>
+            </div>
             <label>
               Page orientation
               <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
@@ -1508,6 +1742,7 @@ function App() {
                 <option value="png">PNG image</option>
                 <option value="png-transparent">PNG transparent</option>
                 <option value="svg">SVG vector</option>
+                <option value="eps">EPS vector</option>
                 <option value="dxf">DXF laser/CNC</option>
                 <option value="stl">STL 3D print</option>
                 <option value="pdf">PDF document</option>
@@ -1543,7 +1778,13 @@ function App() {
         </section>
       </aside>
 
-      <main className="stage-wrap" onPointerDown={() => setMobileAdminOpen(false)}>
+      <main
+        className="stage-wrap"
+        onPointerDown={() => {
+          setMobileAdminOpen(false);
+          setTemplatePanelOpen(false);
+        }}
+      >
         <div className="stage-toolbar">
           <div>
             <strong>{completed ? 'Puzzle complete' : 'Build stage'}</strong>
@@ -1567,11 +1808,32 @@ function App() {
               ))}
             </div>
             <div className="history-controls">
+              <button
+                type="button"
+                className="mobile-group-all-button"
+                aria-label="Group all stage items"
+                title="Group all stage items"
+                onClick={groupAllStagePieces}
+                disabled={!isMobileViewport || placed.length < 2}
+              >
+                <Box size={16} />
+                <span>Group all</span>
+              </button>
               <button type="button" data-admin-toggle aria-label="Open admin panel" title="Admin panel" onClick={() => setMobileAdminOpen(true)}>
                 <Upload size={16} />
               </button>
               <button type="button" aria-label="Clear whole stage" title="Clear whole stage" onClick={resetScene} disabled={!placed.length}>
                 <Trash2 size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label={frameMode ? 'Cancel frame tool' : 'Frame model'}
+                title={frameMode ? 'Cancel frame tool' : 'Frame model'}
+                className={frameMode ? 'active' : ''}
+                onClick={frameMode ? cancelFrameMode : startFrameMode}
+                disabled={!placed.length}
+              >
+                <Box size={16} />
               </button>
               <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
                 <Undo2 size={16} />
@@ -1603,6 +1865,15 @@ function App() {
                 </button>
               </div>
             )}
+            {frameMode && (
+              <div className="selection-chip frame-chip">
+                <Box size={16} />
+                Frame: {framePointIds.length} points
+                <button type="button" onClick={cancelFrameMode}>
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <GirihStage
@@ -1616,12 +1887,16 @@ function App() {
           backgroundColor={renderBgColor}
           edgeColor={renderEdgeColor}
           edgeThickness={renderEdgeThickness}
-          edgeMode={renderEdgeMode}
+          edgeMode="offset"
           edgeOffsetCount={renderEdgeOffsetCount}
           edgeOffsetDistance={renderEdgeOffsetDistance}
           liveShadowsEnabled={liveShadowsEnabled}
           modelTransform={modelTransform}
+          mobileViewport={isMobileViewport}
+          frameMode={frameMode}
+          framePoints={framePoints}
           onSelect={selectPlaced}
+          onFramePick={pickFrameObject}
           onSelectionChange={selectPlacedIds}
           onMove={updatePlaced}
           onSettle={settlePiece}
@@ -1631,6 +1906,30 @@ function App() {
           onViewBoundsChange={setStageVisibleBounds}
           onCameraChange={setStageCameraSnapshot}
         />
+        {selectedTemplate && !templatePanelOpen && templateStagePreviewVisible && (
+          <div className="stage-template-preview" data-template-toggle onPointerDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="stage-template-open"
+              onClick={() => setTemplatePanelOpen(true)}
+              aria-label={`Open ${selectedTemplate.name} template`}
+            >
+              <img src={selectedTemplate.src} alt="" />
+              <span>{selectedTemplate.name}</span>
+            </button>
+            <button
+              type="button"
+              className="stage-template-close"
+              aria-label="Hide template preview"
+              onClick={(event) => {
+                event.stopPropagation();
+                setTemplateStagePreviewVisible(false);
+              }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
         {contextMenu && (
           <div
             className="object-menu"
@@ -1697,6 +1996,84 @@ function App() {
           </div>
         )}
       </main>
+
+      <aside className={`template-panel ${templatePanelOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
+        <div className="section-title">
+          <ImageIcon size={18} />
+          <span>Template Library</span>
+          <button type="button" className="mobile-close-button" aria-label="Close template panel" onClick={() => setTemplatePanelOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <label className="template-group-select">
+          Puzzle group
+          <select
+            value={activeTemplateGroupRecord.name}
+            onChange={(event) => {
+              setActiveTemplateGroup(event.target.value);
+              const group = templateGroups.find((item) => item.name === event.target.value);
+              setSelectedTemplateId(group?.items[0]?.id || '');
+              setTemplateStagePreviewVisible(true);
+            }}
+          >
+            {templateGroupNames.map((groupName) => (
+              <option key={groupName} value={groupName}>
+                {groupName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="template-list">
+          {activeTemplateGroupRecord.items.map((template) => (
+            <div className={`template-card ${selectedTemplate?.id === template.id ? 'active' : ''}`} key={template.id}>
+              <button
+                type="button"
+                className="template-thumb"
+                onClick={() => {
+                  setSelectedTemplateId(template.id);
+                  setTemplateStagePreviewVisible(true);
+                }}
+                aria-label={`Open ${template.name} template`}
+              >
+                <span>{template.name}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {selectedTemplate ? (
+          <div className="template-preview">
+            <div
+              className="template-preview-viewport"
+              onPointerDown={startTemplatePreviewPan}
+              onPointerMove={panTemplatePreview}
+              onPointerUp={endTemplatePreviewPan}
+              onPointerCancel={endTemplatePreviewPan}
+              onWheel={(event) => {
+                event.preventDefault();
+                zoomTemplatePreview(event.deltaY < 0 ? 0.2 : -0.2);
+              }}
+            >
+              <img
+                src={selectedTemplate.src}
+                alt={`${selectedTemplate.name} template`}
+                draggable="false"
+                style={{
+                  transform: `translate(${templatePreviewView.x}px, ${templatePreviewView.y}px) scale(${templatePreviewView.scale})`,
+                }}
+              />
+            </div>
+            <div className="template-preview-footer">
+              <strong>{selectedTemplate.name}</strong>
+              <span>{selectedTemplate.group}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="template-empty">No templates assigned to this group yet.</div>
+        )}
+      </aside>
 
       <aside className={`admin-panel ${mobileAdminOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
         <div className="section-title">
@@ -1772,7 +2149,7 @@ function App() {
                             type="number"
                             min="0.01"
                             step="0.001"
-                            value={piece.height}
+                            value={formatDimensionValue(piece.height)}
                             aria-label={`Change ${piece.name} stage height`}
                             onChange={(event) => updatePieceHeight(piece, event.target.value)}
                           />
@@ -2096,7 +2473,11 @@ function GirihStage({
   edgeOffsetDistance,
   liveShadowsEnabled,
   modelTransform,
+  mobileViewport,
+  frameMode,
+  framePoints,
   onSelect,
+  onFramePick,
   onSelectionChange,
   onMove,
   onSettle,
@@ -2124,7 +2505,11 @@ function GirihStage({
     edgeOffsetDistance,
     liveShadowsEnabled,
     modelTransform,
+    mobileViewport,
+    frameMode,
+    framePoints,
     onSelect,
+    onFramePick,
     onSelectionChange,
     onMove,
     onSettle,
@@ -2154,7 +2539,11 @@ function GirihStage({
       edgeOffsetDistance,
       liveShadowsEnabled,
       modelTransform,
+      mobileViewport,
+      frameMode,
+      framePoints,
       onSelect,
+      onFramePick,
       onSelectionChange,
       onMove,
       onSettle,
@@ -2168,7 +2557,7 @@ function GirihStage({
 
   useEffect(() => {
     stageSyncDirtyRef.current = true;
-  }, [placed, selectedId, selectedIds, activeGroupId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform]);
+  }, [placed, selectedId, selectedIds, activeGroupId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform, mobileViewport, frameMode, framePoints]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -2219,11 +2608,11 @@ function GirihStage({
       controls.target.set(0, 0, 0);
       camera.up.set(...view.up);
       camera.position.set(...view.position);
-      controls.enableRotate = !view.lockRotate;
+      controls.enableRotate = (!orthographic && stateRef.current.mobileViewport) || !view.lockRotate;
       controls.enablePan = true;
       controls.minDistance = view.lockRotate ? 4 : 3;
-      controls.maxDistance = view.lockRotate ? 24 : 18;
-      controls.minZoom = 0.35;
+      controls.maxDistance = view.lockRotate ? 80 : 24;
+      controls.minZoom = 0.08;
       controls.maxZoom = 6;
       controls.maxPolarAngle = Math.PI;
       camera.lookAt(controls.target);
@@ -2242,10 +2631,12 @@ function GirihStage({
     const groupHitMeshes = new Map();
     const group = new THREE.Group();
     const selectionOutline = createSelectionOutline();
+    const framePreviewLine = createFramePreviewLine();
     const lastViewBounds = { current: null };
     const lastCameraSnapshot = { current: null };
     scene.add(group);
     group.add(selectionOutline);
+    group.add(framePreviewLine);
 
     scene.add(new THREE.HemisphereLight(STAGE_HEMISPHERE_LIGHT.sky, STAGE_HEMISPHERE_LIGHT.ground, STAGE_HEMISPHERE_LIGHT.intensity));
     const light = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
@@ -2372,6 +2763,7 @@ function GirihStage({
         hitMesh.userData.groupInstanceId = groupId;
       }
       updateSelectionOutline(selectionOutline, current.filter((item) => selectedSet.has(item.id)));
+      updateFramePreviewLine(framePreviewLine, stateRef.current.framePoints || []);
       applyModelTransform(group, stageModelTransform);
     }
 
@@ -2516,6 +2908,12 @@ function GirihStage({
       raycaster.setFromCamera(pointer, camera);
       const groupHits = raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true);
       const hits = groupHits.length ? groupHits : raycaster.intersectObjects(Array.from(meshes.values()), true);
+      if (stateRef.current.frameMode) {
+        if (!hits.length) return;
+        const mesh = getPieceRoot(hits[0].object);
+        stateRef.current.onFramePick?.(mesh.userData.id);
+        return;
+      }
       if (!hits.length) {
         const point = groundPoint();
         const groupItems = groupedPiecesAtPoint(point);
@@ -2535,7 +2933,9 @@ function GirihStage({
           renderer.domElement.setPointerCapture(event.pointerId);
           return;
         }
-        const canDragSelect = (stateRef.current.cameraMode || 'top') === 'top' || normalizeMaterialName(stateRef.current.material) === 'paper';
+        const canDragSelect = !stateRef.current.mobileViewport && (
+          (stateRef.current.cameraMode || 'top') === 'top' || normalizeMaterialName(stateRef.current.material) === 'paper'
+        );
         if (!canDragSelect) {
           stateRef.current.onSelect(null);
           return;
@@ -3210,6 +3610,35 @@ function createSelectionOutline() {
   return outline;
 }
 
+function createFramePreviewLine() {
+  const geometry = new THREE.BufferGeometry();
+  const material = new THREE.LineBasicMaterial({
+    color: '#2f7dff',
+    linewidth: 3,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.visible = false;
+  line.renderOrder = 8;
+  return line;
+}
+
+function updateFramePreviewLine(line, points) {
+  const cleanPoints = Array.isArray(points) ? points.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)) : [];
+  if (cleanPoints.length < 2) {
+    line.visible = false;
+    return;
+  }
+  const top = 1.4;
+  const positions = cleanPoints.flatMap((point) => [point.x, top, point.y]);
+  line.geometry.dispose();
+  line.geometry = new THREE.BufferGeometry();
+  line.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  line.visible = true;
+}
+
 function getPiecesWorldBounds(pieces) {
   const selectedPieces = Array.isArray(pieces) ? pieces : pieces ? [pieces] : [];
   const worldPoints = getPiecesWorldFootprintSegments(selectedPieces).flatMap((segment) => [segment.start, segment.end]);
@@ -3832,6 +4261,167 @@ function polygonsOverlap(a, b) {
   return polygonsShareSameOccupiedArea(a, b);
 }
 
+function framePlacedPieces(pieces, frameLoop) {
+  const loop = normalizeFrameLoop(frameLoop);
+  if (loop.length < 3 || Math.abs(polygonSignedArea(loop)) < 0.000001) return pieces;
+  const loopIsConvex = isConvexPolygon(loop);
+  const frameTriangles = loopIsConvex ? [] : triangulateFrameLoop(loop);
+  return pieces.flatMap((piece) => {
+    const polygon = collisionPolygon(piece);
+    if (polygon.length < 3) return [];
+    const allInside = polygon.every((point) => pointInsideOrOnPolygon(point, loop)) && !polygonBoundaryIntersectsFrame(polygon, loop);
+    if (allInside) return [piece];
+    const clippedPolygons = loopIsConvex
+      ? [clipPolygonToConvexFrame(polygon, loop)]
+      : clipPolygonToFrameTriangles(polygon, frameTriangles);
+    return clippedPolygons
+      .map((clipped) => cleanClippedPolygon(clipped))
+      .filter((clipped) => clipped.length >= 3 && polygonArea(clipped) >= 0.0001)
+      .map((clipped) => createFramedSlicePiece(piece, clipped));
+  });
+}
+
+function normalizeFrameLoop(points) {
+  const clean = points
+    .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+    .map((point) => new THREE.Vector2(point.x, point.y));
+  if (clean.length > 1 && clean[0].distanceTo(clean[clean.length - 1]) < 0.0001) clean.pop();
+  return clean;
+}
+
+function pointInsideOrOnPolygon(point, polygon) {
+  return pointOnPolygonBoundary(point, polygon) || pointInsidePolygon(point, polygon);
+}
+
+function polygonSignedArea(points) {
+  let area = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+  return area * 0.5;
+}
+
+function clipPolygonToConvexFrame(subject, frame) {
+  const orientation = Math.sign(polygonSignedArea(frame)) || 1;
+  let output = subject.map((point) => point.clone());
+  for (let edgeIndex = 0; edgeIndex < frame.length; edgeIndex += 1) {
+    const edgeStart = frame[edgeIndex];
+    const edgeEnd = frame[(edgeIndex + 1) % frame.length];
+    const input = output;
+    output = [];
+    if (!input.length) break;
+    let previous = input[input.length - 1];
+    let previousInside = pointInsideClipEdge(previous, edgeStart, edgeEnd, orientation);
+    input.forEach((current) => {
+      const currentInside = pointInsideClipEdge(current, edgeStart, edgeEnd, orientation);
+      if (currentInside !== previousInside) {
+        const intersection = segmentLineIntersection(previous, current, edgeStart, edgeEnd);
+        if (intersection) output.push(intersection);
+      }
+      if (currentInside) output.push(current.clone());
+      previous = current;
+      previousInside = currentInside;
+    });
+  }
+  return dedupeVectorPoints(output);
+}
+
+function clipPolygonToFrameTriangles(subject, triangles) {
+  if (!triangles.length) return [];
+  return triangles.map((triangle) => clipPolygonToConvexFrame(subject, triangle));
+}
+
+function triangulateFrameLoop(frame) {
+  const contour = polygonSignedArea(frame) < 0 ? [...frame].reverse() : [...frame];
+  const faces = THREE.ShapeUtils.triangulateShape(contour, []);
+  return faces
+    .map((face) => face.map((index) => contour[index]?.clone()).filter(Boolean))
+    .filter((triangle) => triangle.length === 3 && polygonArea(triangle) >= 0.0001);
+}
+
+function cleanClippedPolygon(points) {
+  const clean = dedupeVectorPoints(points);
+  if (clean.length > 1 && clean[0].distanceTo(clean[clean.length - 1]) < 0.0001) clean.pop();
+  return clean;
+}
+
+function polygonBoundaryIntersectsFrame(polygon, frame) {
+  return polygon.some((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    return frame.some((frameStart, frameIndex) =>
+      segmentsIntersectOrTouch(start, end, frameStart, frame[(frameIndex + 1) % frame.length]),
+    );
+  });
+}
+
+function segmentsIntersectOrTouch(a, b, c, d) {
+  if (segmentsProperlyIntersect(a, b, c, d)) return true;
+  return pointOnSegment(a, c, d) || pointOnSegment(b, c, d) || pointOnSegment(c, a, b) || pointOnSegment(d, a, b);
+}
+
+function pointOnSegment(point, start, end) {
+  const epsilon = 0.0001;
+  if (Math.abs(cross2(start, end, point)) > epsilon) return false;
+  return (
+    point.x >= Math.min(start.x, end.x) - epsilon &&
+    point.x <= Math.max(start.x, end.x) + epsilon &&
+    point.y >= Math.min(start.y, end.y) - epsilon &&
+    point.y <= Math.max(start.y, end.y) + epsilon
+  );
+}
+
+function pointInsideClipEdge(point, edgeStart, edgeEnd, orientation) {
+  const cross = cross2(edgeStart, edgeEnd, point);
+  return orientation >= 0 ? cross >= -0.0001 : cross <= 0.0001;
+}
+
+function segmentLineIntersection(start, end, lineStart, lineEnd) {
+  const segment = end.clone().sub(start);
+  const line = lineEnd.clone().sub(lineStart);
+  const denominator = segment.x * line.y - segment.y * line.x;
+  if (Math.abs(denominator) < 0.000001) return null;
+  const diff = lineStart.clone().sub(start);
+  const t = (diff.x * line.y - diff.y * line.x) / denominator;
+  return start.clone().add(segment.multiplyScalar(t));
+}
+
+function dedupeVectorPoints(points) {
+  return points.filter((point, index) => index === 0 || point.distanceTo(points[index - 1]) > 0.0001);
+}
+
+function createFramedSlicePiece(piece, worldPolygon) {
+  const center = polygonCenter(worldPolygon);
+  const localPoints = worldPolygon.map((point) => [Number((point.x - center.x).toFixed(5)), Number((point.y - center.y).toFixed(5))]);
+  return {
+    ...piece,
+    id: `${piece.id}-frame-${crypto.randomUUID()}`,
+    name: `${piece.name} slice`,
+    type: 'shape',
+    objText: '',
+    glbDataUrl: '',
+    glbUrl: '',
+    points: localPoints,
+    snapEdges: polygonToEdges(localPoints),
+    verticalEdges: [],
+    displayEdges: polygonToEdges(localPoints),
+    sourceHeightPx: '',
+    sourceWidthPx: '',
+    sourceLengthPx: '',
+    sourceFootprintScale: '',
+    keepAspectRatio: true,
+    stageWidth: undefined,
+    stageLength: undefined,
+    x: center.x,
+    y: center.y,
+    rotation: 0,
+    mirrorVertical: false,
+    snappedTo: null,
+    groupInstanceId: null,
+  };
+}
+
 function polygonsHavePositiveAreaOverlap(a, b) {
   if (!isConvexPolygon(a) || !isConvexPolygon(b)) {
     return polygonSamplePoints(a).some((point) => pointInsidePolygon(point, b)) || polygonSamplePoints(b).some((point) => pointInsidePolygon(point, a));
@@ -4106,8 +4696,13 @@ function draftStageDimensions(draft) {
   });
 }
 
-function formatDimensionValue(value) {
-  return Number.isFinite(Number(value)) ? Number(Number(value).toFixed(4)) : '';
+function formatDimensionValue(value, decimals = 3) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  const factor = 10 ** decimals;
+  const scaled = number * factor;
+  const truncated = number >= 0 ? Math.floor(scaled + Number.EPSILON) : Math.ceil(scaled - Number.EPSILON);
+  return (truncated / factor).toFixed(decimals);
 }
 
 function formatDimensionLabel(value) {
@@ -4512,6 +5107,10 @@ function groupLibraryPieces(pieces, groupNames = []) {
       if (b.name === 'Default') return 1;
       return a.name.localeCompare(b.name);
     });
+}
+
+function groupTemplateLibrary(templates, groupNames = []) {
+  return groupLibraryPieces(templates, groupNames);
 }
 
 function parsePoints(value) {
@@ -5742,13 +6341,13 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   key.castShadow = exportShadowsEnabled;
   if (exportShadowsEnabled) {
     const shadowMapSize = Math.min(
-      constrainedExport ? MOBILE_EXPORT_SHADOW_MAP_SIZE : EXPORT_SHADOW_MAP_SIZE,
+      Math.round((constrainedExport ? MOBILE_EXPORT_SHADOW_MAP_SIZE : EXPORT_SHADOW_MAP_SIZE) * EXPORT_SHADOW_QUALITY_SCALE),
       renderer.capabilities.maxTextureSize || EXPORT_SHADOW_MAP_SIZE,
     );
     key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     key.shadow.bias = -0.00006;
     key.shadow.normalBias = 0.018;
-    key.shadow.radius = 2.8;
+    key.shadow.radius = 2.2;
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 40;
     key.shadow.camera.left = -16;
@@ -5775,17 +6374,14 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   const sizeVector = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(sizeVector.x, sizeVector.y * 2.3, sizeVector.z, 1);
   const aspect = size[0] / size[1];
-  const camera = new THREE.PerspectiveCamera(cameraSnapshot?.fov || 42, aspect, 0.01, 1000);
-  if (cameraSnapshot) {
+  const useStageCameraSnapshot = options.view !== 'top' && cameraSnapshot;
+  const camera = new THREE.PerspectiveCamera(useStageCameraSnapshot ? cameraSnapshot.fov : 42, aspect, 0.01, 1000);
+  if (useStageCameraSnapshot) {
     camera.up.fromArray(cameraSnapshot.up);
     camera.position.fromArray(cameraSnapshot.position);
     camera.lookAt(new THREE.Vector3().fromArray(cameraSnapshot.target));
   } else {
-    const distance = Math.max((radius * 1.35) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), 6);
-    const viewDirection = new THREE.Vector3(...cameraView.position).normalize().multiplyScalar(distance);
-    camera.up.set(...cameraView.up);
-    camera.position.copy(center).add(viewDirection);
-    camera.lookAt(center);
+    frameExportCameraToBounds(camera, bounds, cameraView, { padding: exportMaterial === 'glass' ? 1.32 : 1.18, minDistance: Math.max(radius, 6) });
   }
   camera.updateProjectionMatrix();
 
@@ -5802,6 +6398,54 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
   disposeObject(group);
   renderer.dispose();
   return canvas;
+}
+
+function frameExportCameraToBounds(camera, bounds, cameraView, options = {}) {
+  const center = bounds.getCenter(new THREE.Vector3());
+  const corners = boxCorners(bounds);
+  const fallbackDirection = new THREE.Vector3(7.2, 6.4, 7.2);
+  const direction = new THREE.Vector3(...(cameraView?.position || fallbackDirection.toArray()));
+  if (direction.lengthSq() < 0.000001) direction.copy(fallbackDirection);
+  direction.normalize();
+  const up = new THREE.Vector3(...(cameraView?.up || [0, 1, 0]));
+  if (Math.abs(up.dot(direction)) > 0.98) up.set(0, 0, -1);
+  const forward = direction.clone().multiplyScalar(-1);
+  const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+  const trueUp = new THREE.Vector3().crossVectors(right, forward).normalize();
+  const projections = corners.map((corner) => {
+    const relative = corner.clone().sub(center);
+    return {
+      x: relative.dot(right),
+      y: relative.dot(trueUp),
+      z: relative.dot(forward),
+    };
+  });
+  const viewWidth = Math.max(...projections.map((point) => point.x)) - Math.min(...projections.map((point) => point.x));
+  const viewHeight = Math.max(...projections.map((point) => point.y)) - Math.min(...projections.map((point) => point.y));
+  const viewDepth = Math.max(...projections.map((point) => point.z)) - Math.min(...projections.map((point) => point.z));
+  const padding = Number(options.padding) || 1.18;
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  const fitHeightDistance = (viewHeight * padding) / (2 * Math.tan(fov / 2));
+  const fitWidthDistance = (viewWidth * padding) / (2 * Math.tan(fov / 2) * camera.aspect);
+  const distance = Math.max(fitHeightDistance, fitWidthDistance, viewDepth + 1, Number(options.minDistance) || 6);
+  camera.up.copy(trueUp);
+  camera.position.copy(center).add(direction.multiplyScalar(distance));
+  camera.near = Math.max(0.01, distance - viewDepth * 3 - 20);
+  camera.far = distance + viewDepth * 3 + 80;
+  camera.lookAt(center);
+}
+
+function boxCorners(bounds) {
+  return [
+    [bounds.min.x, bounds.min.y, bounds.min.z],
+    [bounds.min.x, bounds.min.y, bounds.max.z],
+    [bounds.min.x, bounds.max.y, bounds.min.z],
+    [bounds.min.x, bounds.max.y, bounds.max.z],
+    [bounds.max.x, bounds.min.y, bounds.min.z],
+    [bounds.max.x, bounds.min.y, bounds.max.z],
+    [bounds.max.x, bounds.max.y, bounds.min.z],
+    [bounds.max.x, bounds.max.y, bounds.max.z],
+  ].map(([x, y, z]) => new THREE.Vector3(x, y, z));
 }
 
 function createGlassRenderFloor(center, radius, backgroundColor) {
@@ -6440,16 +7084,62 @@ function exportPolygonBounds(polygons) {
   );
 }
 
+function exportPaperTopSegments(placed, options = {}) {
+  const transformMatrix = modelTransformMatrix(options.modelTransform);
+  const segmentsByKey = new Map();
+  placed.flatMap((piece) => transformedPaperSegments(piece, transformMatrix)).forEach((segment) => {
+    const [start, end] = segment;
+    if (!start || !end || Math.hypot(start[0] - end[0], start[1] - end[1]) < 0.000001) return;
+    const key = machineSegmentKey(segment);
+    if (!segmentsByKey.has(key)) segmentsByKey.set(key, segment);
+  });
+  return [...segmentsByKey.values()];
+}
+
+function exportTopSegmentsFromPolygons(polygons) {
+  const segmentsByKey = new Map();
+  polygons.forEach((polygon) => {
+    polygon.points.forEach((point, index) => {
+      const next = polygon.points[(index + 1) % polygon.points.length];
+      if (!next || Math.hypot(point[0] - next[0], point[1] - next[1]) < 0.000001) return;
+      const segment = [point, next];
+      const key = machineSegmentKey(segment);
+      if (!segmentsByKey.has(key)) segmentsByKey.set(key, segment);
+    });
+  });
+  return [...segmentsByKey.values()];
+}
+
+function exportSegmentBounds(segments) {
+  const points = segments.flat();
+  if (!points.length) return { minX: -1, maxX: 1, minY: -1, maxY: 1 };
+  return points.reduce(
+    (bounds, [x, y]) => ({
+      minX: Math.min(bounds.minX, x),
+      maxX: Math.max(bounds.maxX, x),
+      minY: Math.min(bounds.minY, y),
+      maxY: Math.max(bounds.maxY, y),
+    }),
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  );
+}
+
+function machineSegmentKey([start, end]) {
+  const a = `${Number(start[0]).toFixed(4)},${Number(start[1]).toFixed(4)}`;
+  const b = `${Number(end[0]).toFixed(4)},${Number(end[1]).toFixed(4)}`;
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
 function renderTransparentTopCanvas(placed, options = {}) {
-  const polygons = exportTopPolygons(placed, options);
+  const segments = exportPaperTopSegments(placed, options);
   const canvas = document.createElement('canvas');
   canvas.width = 2400;
   canvas.height = 2400;
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, canvas.width, canvas.height);
-  if (!polygons.length) return canvas;
+  if (!segments.length) return canvas;
 
-  const bounds = exportPolygonBounds(polygons);
+  const bounds = exportSegmentBounds(segments);
   const margin = 96;
   const width = Math.max(bounds.maxX - bounds.minX, 0.001);
   const height = Math.max(bounds.maxY - bounds.minY, 0.001);
@@ -6465,43 +7155,36 @@ function renderTransparentTopCanvas(placed, options = {}) {
 
   context.lineJoin = 'round';
   context.lineCap = 'round';
-  polygons.forEach((polygon) => {
-    const points = polygon.points.map(toCanvas);
+  context.strokeStyle = '#000000';
+  context.lineWidth = 3;
+  segments.forEach(([start, end]) => {
+    const [startX, startY] = toCanvas(start);
+    const [endX, endY] = toCanvas(end);
     context.beginPath();
-    points.forEach(([x, y], index) => {
-      if (index === 0) context.moveTo(x, y);
-      else context.lineTo(x, y);
-    });
-    context.closePath();
-    context.fillStyle = polygon.color;
-    context.strokeStyle = 'rgba(0, 0, 0, 0.28)';
-    context.lineWidth = 2;
-    context.fill();
+    context.moveTo(startX, startY);
+    context.lineTo(endX, endY);
     context.stroke();
   });
   return canvas;
 }
 
 function toSvg(placed, options = {}) {
-  const polygons = exportTopPolygons(placed, options);
-  const bounds = exportPolygonBounds(polygons);
+  const segments = exportPaperTopSegments(placed, options);
+  const bounds = exportSegmentBounds(segments);
   const padding = 0.1;
   const minX = bounds.minX - padding;
   const maxY = bounds.maxY + padding;
   const width = Math.max(bounds.maxX - bounds.minX + padding * 2, 0.1);
   const height = Math.max(bounds.maxY - bounds.minY + padding * 2, 0.1);
-  const paths = polygons.map((polygon) => {
-    const d = polygon.points
-      .map(([x, y], index) => `${index === 0 ? 'M' : 'L'} ${formatMachineNumber(x)} ${formatMachineNumber(-y)}`)
-      .join(' ');
-    return `  <path id="${escapeHtml(polygon.id)}" data-name="${escapeHtml(polygon.name)}" d="${d} Z" fill="none" stroke="#000000" stroke-width="0.02" vector-effect="non-scaling-stroke" />`;
-  });
+  const lines = segments.map(([[startX, startY], [endX, endY]]) =>
+    `  <line x1="${formatMachineNumber(startX)}" y1="${formatMachineNumber(-startY)}" x2="${formatMachineNumber(endX)}" y2="${formatMachineNumber(-endY)}" />`,
+  );
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${formatMachineNumber(minX)} ${formatMachineNumber(-maxY)} ${formatMachineNumber(width)} ${formatMachineNumber(height)}">`,
     '  <title>Girih machine export</title>',
-    '  <g id="cut-lines">',
-    ...paths,
+    '  <g id="cut-lines" fill="none" stroke="#000000" stroke-width="0.02" stroke-linecap="butt" stroke-linejoin="miter" vector-effect="non-scaling-stroke">',
+    ...lines,
     '  </g>',
     '</svg>',
     '',
@@ -6509,20 +7192,63 @@ function toSvg(placed, options = {}) {
 }
 
 function toDxf(placed, options = {}) {
-  const polygons = exportTopPolygons(placed, options);
+  const segments = exportPaperTopSegments(placed, options);
   const lines = [
     '0',
     'SECTION',
     '2',
     'ENTITIES',
   ];
-  polygons.forEach((polygon) => {
-    lines.push('0', 'LWPOLYLINE', '8', 'CUT', '90', String(polygon.points.length), '70', '1');
-    polygon.points.forEach(([x, y]) => {
-      lines.push('10', formatMachineNumber(x), '20', formatMachineNumber(y));
-    });
+  segments.forEach(([[startX, startY], [endX, endY]]) => {
+    lines.push(
+      '0', 'LINE',
+      '8', 'CUT',
+      '10', formatMachineNumber(startX),
+      '20', formatMachineNumber(startY),
+      '30', '0',
+      '11', formatMachineNumber(endX),
+      '21', formatMachineNumber(endY),
+      '31', '0',
+    );
   });
   lines.push('0', 'ENDSEC', '0', 'EOF', '');
+  return lines.join('\n');
+}
+
+function toEps(placed, options = {}) {
+  const segments = exportPaperTopSegments(placed, options);
+  const bounds = exportSegmentBounds(segments);
+  const padding = 12;
+  const sourceWidth = Math.max(bounds.maxX - bounds.minX, 0.001);
+  const sourceHeight = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const scale = Math.min(720 / sourceWidth, 720 / sourceHeight);
+  const width = Math.ceil(sourceWidth * scale + padding * 2);
+  const height = Math.ceil(sourceHeight * scale + padding * 2);
+  const toEpsPoint = ([x, y]) => [
+    padding + (x - bounds.minX) * scale,
+    padding + (bounds.maxY - y) * scale,
+  ];
+  const lines = [
+    '%!PS-Adobe-3.0 EPSF-3.0',
+    `%%BoundingBox: 0 0 ${width} ${height}`,
+    '%%Title: Girih machine export',
+    '%%Creator: Girih',
+    '%%Pages: 1',
+    '%%EndComments',
+    '0 setgray',
+    '1 setlinejoin',
+    '1 setlinecap',
+    '1 setlinewidth',
+  ];
+  segments.forEach(([start, end]) => {
+    const [startX, startY] = toEpsPoint(start);
+    const [endX, endY] = toEpsPoint(end);
+    lines.push('newpath');
+    lines.push(`${formatMachineNumber(startX)} ${formatMachineNumber(startY)} moveto`);
+    lines.push(`${formatMachineNumber(endX)} ${formatMachineNumber(endY)} lineto`);
+    lines.push('stroke');
+  });
+  lines.push('showpage', '%%EOF', '');
   return lines.join('\n');
 }
 

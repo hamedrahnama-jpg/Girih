@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node scripts/generate-public-model-pieces.mjs",
+    "predev": "node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "node scripts/generate-public-model-pieces.mjs",
+    "prebuild": "node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

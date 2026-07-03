@@ -51,7 +51,8 @@ button:disabled {
 }
 
 .library-panel,
-.admin-panel {
+.admin-panel,
+.template-panel {
   background: #fffaf1;
   border-right: 1px solid #d8ccba;
   padding: 20px;
@@ -61,7 +62,8 @@ button:disabled {
   scrollbar-gutter: stable;
 }
 
-.admin-panel {
+.admin-panel,
+.template-panel {
   position: fixed;
   top: 0;
   right: 0;
@@ -74,11 +76,18 @@ button:disabled {
   transition: transform 180ms ease;
 }
 
-.admin-panel.open {
+.template-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-panel.open,
+.template-panel.open {
   transform: translateX(0);
 }
 
-.admin-panel .mobile-close-button {
+.admin-panel .mobile-close-button,
+.template-panel .mobile-close-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -166,8 +175,10 @@ button:disabled {
 
 .piece-card:hover,
 .piece-group-toggle:hover,
+.template-group-button:hover,
 .control-group-toggle:hover,
 .admin-group-toggle:hover,
+.template-thumb:hover,
 .admin-row button:hover,
 .action-row button:hover,
 .admin-palette-button:hover:not(:disabled),
@@ -180,15 +191,22 @@ button:disabled {
   gap: 6px;
 }
 
+.piece-group-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .control-group {
   display: grid;
   gap: 8px;
 }
 
 .piece-group-toggle,
-.control-group-toggle {
+.control-group-toggle,
+.template-group-button {
   display: grid;
-  grid-template-columns: 1fr auto 20px;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -201,8 +219,23 @@ button:disabled {
   text-align: left;
 }
 
+.piece-group-toggle {
+  grid-template-columns: 1fr auto 20px;
+}
+
 .control-group-toggle {
   grid-template-columns: 1fr 20px;
+}
+
+.template-group-button {
+  grid-template-columns: 1fr;
+  place-items: center;
+  width: 38px;
+  min-width: 38px;
+  justify-content: center;
+  background: #ffffff;
+  font-size: 12px;
+  padding: 8px;
 }
 
 .piece-group-toggle small {
@@ -214,6 +247,186 @@ button:disabled {
 .control-group-items {
   display: grid;
   gap: 6px;
+}
+
+.template-group-select {
+  display: grid;
+  gap: 5px;
+  color: #6f6254;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.template-group-select select {
+  width: 100%;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #2d2924;
+  padding: 7px 8px;
+  font: inherit;
+}
+
+.template-preview {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.template-preview-viewport {
+  width: 100%;
+  height: 260px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #eee2d1;
+  cursor: grab;
+  touch-action: none;
+}
+
+.template-preview-viewport:active {
+  cursor: grabbing;
+}
+
+.template-preview-viewport img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: center center;
+  user-select: none;
+  pointer-events: none;
+}
+
+.template-preview-footer {
+  display: grid;
+  gap: 2px;
+}
+
+.template-preview strong {
+  color: #2d2924;
+}
+
+.template-preview span,
+.template-empty {
+  color: #746757;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.template-empty {
+  margin: 12px 0;
+  border: 1px dashed #d8ccba;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.template-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: min(34vh, 320px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.template-card {
+  display: block;
+  border: 1px solid #d8ccba;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0;
+}
+
+.template-card.active {
+  border-color: #2f514c;
+  box-shadow: inset 0 0 0 1px #2f514c;
+}
+
+.template-thumb {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #241e18;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.template-thumb span {
+  font-size: 13px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-template-preview {
+  position: absolute;
+  z-index: 3;
+  top: 86px;
+  right: 16px;
+  display: grid;
+  gap: 5px;
+  width: min(220px, 26vw);
+  border: 1px solid rgba(216, 204, 186, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 250, 241, 0.94);
+  color: #241e18;
+  padding: 7px;
+  box-shadow: 0 12px 32px rgba(36, 30, 24, 0.18);
+  backdrop-filter: blur(10px);
+  text-align: left;
+}
+
+.stage-template-open {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.stage-template-close {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d8ccba;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #241e18;
+  box-shadow: 0 6px 18px rgba(36, 30, 24, 0.2);
+}
+
+.stage-template-close:hover {
+  background: #f3eadc;
+}
+
+.stage-template-preview img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.stage-template-preview span {
+  font-size: 12px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-group {
@@ -403,6 +616,14 @@ button:disabled {
 
 .export-grid label {
   min-width: 0;
+}
+
+.export-checkbox-row,
+.export-offset-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .export-grid .export-disabled-control {
@@ -695,6 +916,10 @@ textarea {
   pointer-events: auto;
 }
 
+.mobile-group-all-button {
+  display: none !important;
+}
+
 .compact-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -745,12 +970,24 @@ textarea {
   backdrop-filter: blur(10px);
 }
 
+.history-controls button.active {
+  background: #2f7dff;
+  border-color: #2f7dff;
+  color: #ffffff;
+}
+
+.frame-chip {
+  border-color: #2f7dff;
+  box-shadow: inset 0 0 0 1px #2f7dff;
+}
+
 .stage-view-controls button:hover,
 .history-controls button:hover:not(:disabled) {
   background: #f3eadc;
 }
 
-.stage-view-controls button.active:hover {
+.stage-view-controls button.active:hover,
+.history-controls button.active:hover {
   background: #274640;
 }
 
@@ -925,6 +1162,10 @@ textarea {
   .admin-panel {
     width: 280px;
   }
+
+  .template-panel {
+    width: 300px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -986,7 +1227,8 @@ textarea {
 
   .library-panel,
   .mobile-menu-panel,
-  .admin-panel {
+  .admin-panel,
+  .template-panel {
     position: fixed;
     top: 0;
     z-index: 40;
@@ -1016,7 +1258,8 @@ textarea {
   }
 
   .mobile-menu-panel,
-  .admin-panel {
+  .admin-panel,
+  .template-panel {
     right: 0;
     width: min(90vw, 340px);
     padding: 58px 16px 18px;
@@ -1025,7 +1268,8 @@ textarea {
   }
 
   .mobile-menu-panel.open,
-  .admin-panel.open {
+  .admin-panel.open,
+  .template-panel.open {
     transform: translateX(0);
   }
 
@@ -1061,6 +1305,11 @@ textarea {
     gap: 5px;
   }
 
+  .library-panel .piece-group-actions {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
   .library-panel .piece-group-toggle {
     min-height: 28px;
     grid-template-columns: 1fr;
@@ -1077,6 +1326,19 @@ textarea {
 
   .library-panel .piece-group-toggle span:last-child {
     text-align: center;
+  }
+
+  .library-panel .template-group-button {
+    min-width: 0;
+    min-height: 28px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    gap: 0;
+    padding: 4px;
+  }
+
+  .library-panel .template-group-button span {
+    display: none;
   }
 
   .library-panel .piece-group-items {
@@ -1172,6 +1434,26 @@ textarea {
     height: 100dvh;
   }
 
+  .stage-template-preview {
+    top: auto;
+    right: 10px;
+    bottom: 14px;
+    width: min(42vw, 180px);
+    padding: 6px;
+  }
+
+  .stage-template-preview span {
+    font-size: 11px;
+  }
+
+  .template-list {
+    max-height: 32dvh;
+  }
+
+  .template-preview-viewport {
+    height: 230px;
+  }
+
   .stage-canvas {
     height: 100dvh;
     min-height: 0;
@@ -1212,6 +1494,17 @@ textarea {
   .history-controls button {
     width: 34px;
     height: 34px;
+  }
+
+  .history-controls .mobile-group-all-button {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: auto;
+    min-width: 92px;
+    padding: 0 9px;
+    font-size: 12px;
   }
 
   .selection-chip {
