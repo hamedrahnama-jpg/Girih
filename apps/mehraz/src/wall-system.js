@@ -47,7 +47,7 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
   sideOffsets: { north: 0, east: 0, south: 0, west: 0 },
   edges: { enabled: false, color: '#79610c', thickness: 2 },
   southOpenings: {
-    door: { enabled: false, width: 1.7, height: 2.1, position: 0 },
+    door: { enabled: true, width: 1.7, height: 2.1, position: 0 },
     window: { enabled: false, width: 1, height: 1, position: 0, sillHeight: 4.5 },
   },
   pointedArch: {
@@ -112,12 +112,12 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
     manualCuts: [],
   },
   northWall: {
-    outwardWidth: 1.5,
+    outwardWidth: 1,
     minHeight: null,
-    archTopExtension: 1,
+    archTopExtension: 0.7,
   },
   northBoundary: {
-    enabled: false,
+    enabled: true,
     inset: 0.2,
     depth: 0.1,
     color: '#79610c',
@@ -210,7 +210,7 @@ export function normalizeWallSystem(value = {}, building = {}) {
     },
     southOpenings: {
       door: {
-        enabled: door.enabled === true,
+        enabled: door.enabled == null ? DEFAULT_WALL_SYSTEM.southOpenings.door.enabled : door.enabled === true,
         width: number(door.width, DEFAULT_WALL_SYSTEM.southOpenings.door.width, 0.3, 12),
         height: number(door.height, 2.1, 0.5, 15),
         position: number(door.position, 0, -20, 20),
@@ -271,12 +271,12 @@ export function normalizeWallSystem(value = {}, building = {}) {
         : [],
     },
     northWall: {
-      outwardWidth: number(northWall.outwardWidth, 1.5, 0, 10),
+      outwardWidth: number(northWall.outwardWidth, DEFAULT_WALL_SYSTEM.northWall.outwardWidth, 0, 10),
       minHeight: northWall.minHeight == null ? null : number(northWall.minHeight, 0, 0, 30),
-      archTopExtension: number(northWall.archTopExtension, 1, 0, 10),
+      archTopExtension: number(northWall.archTopExtension, DEFAULT_WALL_SYSTEM.northWall.archTopExtension, 0, 10),
     },
     northBoundary: {
-      enabled: northBoundary.enabled === true,
+      enabled: northBoundary.enabled == null ? DEFAULT_WALL_SYSTEM.northBoundary.enabled : northBoundary.enabled === true,
       inset: number(northBoundary.inset ?? northBoundary.offset, 0.2, 0.02, 2),
       depth: number(northBoundary.depth, DEFAULT_WALL_SYSTEM.northBoundary.depth, 0, 1),
       color: color(northBoundary.color, DEFAULT_WALL_SYSTEM.northBoundary.color),

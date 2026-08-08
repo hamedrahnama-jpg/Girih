@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWallSystem, DEFAULT_WALL_SYSTEM } from './wall-system.js';
+import { buildWallSystem, DEFAULT_WALL_SYSTEM, normalizeWallSystem } from './wall-system.js';
+
+test('new Mehraz projects use the requested north and south wall defaults', () => {
+  const walls = normalizeWallSystem();
+  assert.equal(walls.northWall.archTopExtension, 0.7);
+  assert.equal(walls.northWall.outwardWidth, 1);
+  assert.equal(walls.northBoundary.enabled, true);
+  assert.equal(walls.southOpenings.door.enabled, true);
+});
 
 test('web covers use structured rib-bound surfaces without artificial centre points', () => {
   const building = {
