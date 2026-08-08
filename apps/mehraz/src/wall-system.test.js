@@ -2,6 +2,34 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { archCourseDistanceAtPoint, buildWallSystem, DEFAULT_WALL_SYSTEM, normalizeWallSystem } from './wall-system.js';
+import { CONSTRUCTION_STEPS, MehrazScene, normalizeBuilding } from './mehraz-scene.js';
+
+function constructionScene() {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = normalizeBuilding();
+  scene.walls = normalizeWallSystem({
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, scene.building);
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystem(scene.building, scene.walls));
+  ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup', 'zoneGroup', 'zoneDecorationGroup']
+    .forEach((key) => { scene[key] = new THREE.Group(); });
+  scene.constructionGuideKey = null;
+  scene.selectedWallSide = null;
+  scene.wallSurfaceHighlight = null;
+  scene.updateWallSurfaceHighlight = () => {};
+  return scene;
+}
+
+function visibleStructuralMeshes(scene, side) {
+  return scene.wallSystemRoot().children.filter((child) => (
+    child.isMesh
+    && child.userData?.wallSide === side
+    && !child.userData?.isBrickFace
+    && !child.userData?.isWallEdgeLine
+    && child.visible
+  ));
+}
 
 test('Ahang brick courses keep physical height while bending symmetrically to the crown', () => {
   const arch = [
@@ -15,6 +43,31 @@ test('Ahang brick courses keep physical height while bending symmetrically to th
   assert.equal(archCourseDistanceAtPoint(2, 4, arch), 0);
   assert.ok(Math.abs(archCourseDistanceAtPoint(0, 6, arch) - Math.sqrt(8)) < 1e-9);
   assert.ok(Math.abs(archCourseDistanceAtPoint(-1, 5, arch) - archCourseDistanceAtPoint(1, 5, arch)) < 1e-9);
+});
+
+test('construction remains cumulative through the guide, south wall, and arch steps', () => {
+  const scene = constructionScene();
+  const stepIndex = (id) => CONSTRUCTION_STEPS.findIndex((step) => step.id === id);
+
+  scene.applyConstructionStep(stepIndex('north-arch-guide'), 1);
+  assert.equal(visibleStructuralMeshes(scene, 'east').length, 1);
+  assert.equal(visibleStructuralMeshes(scene, 'west').length, 1);
+  assert.equal(scene.constructionGuideGroup.children.length, 2);
+  const guides = [...scene.constructionGuideGroup.children];
+  scene.applyConstructionStep(stepIndex('north-arch-guide'), 1);
+  assert.deepEqual(scene.constructionGuideGroup.children, guides, 'static guides should be reused between animation frames');
+
+  scene.applyConstructionStep(stepIndex('south-wall'), 1);
+  assert.equal(visibleStructuralMeshes(scene, 'east').length, 1);
+  assert.equal(visibleStructuralMeshes(scene, 'west').length, 1);
+  assert.equal(visibleStructuralMeshes(scene, 'south').length, 1);
+  assert.equal(scene.constructionGuideGroup.children.length, 2);
+
+  scene.applyConstructionStep(stepIndex('arch-fill'), 1);
+  assert.equal(visibleStructuralMeshes(scene, 'east').length, 1);
+  assert.equal(visibleStructuralMeshes(scene, 'west').length, 1);
+  assert.equal(visibleStructuralMeshes(scene, 'south').length, 1);
+  assert.ok(visibleStructuralMeshes(scene, 'arch').length > 0);
 });
 
 test('new Mehraz projects use the requested north and south wall defaults', () => {

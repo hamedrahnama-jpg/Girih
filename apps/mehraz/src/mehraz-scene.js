@@ -1173,6 +1173,8 @@ export class MehrazScene {
     this.constructionStepIndex = CONSTRUCTION_STEPS.length - 1;
     this.constructionTimer = null;
     this.constructionAnimationFrame = null;
+    this.constructionGuideKey = null;
+    this.constructionTierCache = new WeakMap();
     this.placements = [];
     this.zones = [];
     this.selectedId = null;
@@ -1349,6 +1351,30 @@ export class MehrazScene {
       materials.filter(Boolean).forEach((material) => material.dispose?.());
     });
     this.constructionGuideGroup.clear();
+    this.constructionGuideKey = null;
+  }
+
+  syncConstructionGuides(rank, wallSystem) {
+    const southGuideRank = CONSTRUCTION_STEP_INDEX['south-arch-guide'];
+    const northGuideRank = CONSTRUCTION_STEP_INDEX['north-arch-guide'];
+    const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
+    const guideCount = rank >= southGuideRank && rank <= archFillRank
+      ? (rank >= northGuideRank ? 2 : 1)
+      : 0;
+    let source = null;
+    if (guideCount) {
+      wallSystem?.traverse((child) => {
+        if (!source && child.isMesh && (child.userData?.isPointedArch || child.userData?.wallSide === 'arch')) source = child;
+      });
+    }
+    const guideKey = guideCount && source ? `${guideCount}:${source.uuid}` : 'none';
+    if (this.constructionGuideKey === guideKey) return;
+    this.clearConstructionGuides();
+    if (source) {
+      this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'south'));
+      if (guideCount > 1) this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'north'));
+    }
+    this.constructionGuideKey = guideKey;
   }
 
   makeArchGuideClone(archMesh, end = 'south') {
@@ -1621,25 +1647,27 @@ export class MehrazScene {
     if (!root.visible) return;
     const modules = root.children.filter((child) => child.isObject3D);
     if (!modules.length) return;
-    const tiers = [...new Set(modules.map((module) => {
+    if (!this.constructionTierCache) this.constructionTierCache = new WeakMap();
+    const moduleTier = (module) => {
+      const cachedTier = this.constructionTierCache.get(module);
+      if (Number.isFinite(cachedTier)) return cachedTier;
       const box = new THREE.Box3().setFromObject(module);
-      if (box.isEmpty()) return 0;
-      return Number(((box.min.y + box.max.y) / 2).toFixed(3));
-    }))].sort((a, b) => a - b);
+      const tier = box.isEmpty() ? 0 : Number(((box.min.y + box.max.y) / 2).toFixed(3));
+      this.constructionTierCache.set(module, tier);
+      return tier;
+    };
+    const tiers = [...new Set(modules.map(moduleTier))].sort((a, b) => a - b);
     const visibleTierCount = isCurrentStep
       ? Math.max(0, Math.ceil(Math.max(0, Math.min(1, progress)) * tiers.length))
       : tiers.length;
     const visibleTierSet = new Set(tiers.slice(0, visibleTierCount));
     modules.forEach((module) => {
-      const box = new THREE.Box3().setFromObject(module);
-      const tier = box.isEmpty() ? 0 : Number(((box.min.y + box.max.y) / 2).toFixed(3));
-      module.visible = visibleTierSet.has(tier);
+      module.visible = visibleTierSet.has(moduleTier(module));
     });
   }
 
   applyConstructionStep(stepIndex = CONSTRUCTION_STEPS.length - 1, progress = 1) {
     this.constructionStepIndex = Math.max(0, Math.min(CONSTRUCTION_STEPS.length - 1, Math.round(stepIndex)));
-    this.clearConstructionGuides();
     const stepId = CONSTRUCTION_STEPS[this.constructionStepIndex]?.id || 'complete';
     const rank = this.constructionStepIndex;
     const wallSystem = this.wallSystemRoot();
@@ -1672,7 +1700,8 @@ export class MehrazScene {
         return;
       }
       if (stepId === 'south-wall') {
-        this.applySouthWallConstruction(child, stepProgress, northMetrics);
+        if (side === 'south') this.applySouthWallConstruction(child, stepProgress, northMetrics);
+        else this.applyLowerWallConstruction(child, 1, northMetrics);
       } else if (stepId === 'lower-walls') {
         this.applyLowerWallConstruction(child, stepProgress, northMetrics);
       } else if (stepId === 'north-upper-wall') {
@@ -1707,19 +1736,7 @@ export class MehrazScene {
     this.placementMaskGroup.visible = showEverything;
     this.zoneGroup.visible = showEverything;
     this.zoneDecorationGroup.visible = showEverything || rank >= CONSTRUCTION_STEP_INDEX['decorate-south'];
-    const southGuideRank = CONSTRUCTION_STEP_INDEX['south-arch-guide'];
-    const northGuideRank = CONSTRUCTION_STEP_INDEX['north-arch-guide'];
-    if (rank >= southGuideRank && rank <= archFillRank) {
-      const archMesh = [];
-      wallSystem?.traverse((child) => {
-        if (child.isMesh && (child.userData?.isPointedArch || child.userData?.wallSide === 'arch')) archMesh.push(child);
-      });
-      const source = archMesh[0];
-      if (source) {
-        this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'south'));
-        if (rank >= northGuideRank) this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'north'));
-      }
-    }
+    this.syncConstructionGuides(rank, wallSystem);
     this.constructionGuideGroup.visible = true;
     this.updateWallSurfaceHighlight();
   }
