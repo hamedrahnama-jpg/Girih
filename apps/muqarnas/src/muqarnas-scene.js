@@ -3818,7 +3818,7 @@ export class MuqarnasScene {
       } else if (!this.freeDrag && !this.transform.dragging && !this.assemblyAnimation) {
         fitOrthographicCamera(mainCamera, completeBounds, this.container, this.mainView, 1.28);
       }
-      fitOrthographicCamera(this.overviewCamera, completeBounds, this.overviewContainer, this.overviewView, 1.16);
+      fitOrthographicCamera(this.overviewCamera, moduleBounds, this.overviewContainer, this.overviewView, 1.18);
       this.renderSceneView(this.renderer, mainCamera, this.mainView, true);
       this.renderSceneView(this.overviewRenderer, this.overviewCamera, this.overviewView, false);
       return;

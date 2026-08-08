@@ -1007,13 +1007,13 @@ function App() {
             onPointerCancel={() => { inspectorResizeRef.current = null; }}
           />
           <div className="inspector-fixed">
-          <figure className={`overview-view-card ${overviewView}-view-card`} aria-label={`${overviewView === 'top' ? 'Top' : 'Front'} view of the complete building`}>
-            <div className="overview-view-toolbar" aria-label="Building overview view">
+          <figure className={`overview-view-card ${overviewView}-view-card`} aria-label={`${overviewView === 'top' ? 'Top' : 'Front'} view of the complete Muqarnas model`}>
+            <div className="overview-view-toolbar" aria-label="Muqarnas model overview view">
               <button type="button" className={overviewView === 'top' ? 'active' : ''} onClick={() => { setOverviewView('top'); engineRef.current?.setOverviewView('top'); }}><Grid3X3 size={13} /> Top</button>
               <button type="button" className={overviewView === 'front' ? 'active' : ''} onClick={() => { setOverviewView('front'); engineRef.current?.setOverviewView('front'); }}><Layers3 size={13} /> Front</button>
             </div>
             <div className="overview-viewport" ref={overviewViewportRef} />
-            <figcaption><ViewLabel view={overviewView} /><small>Complete building</small></figcaption>
+            <figcaption><ViewLabel view={overviewView} /><small>Muqarnas model</small></figcaption>
           </figure>
 
           <div className={`level-section inspector-section ${collapsedSections.tiers ? 'collapsed' : ''}`}>
@@ -1036,7 +1036,7 @@ function App() {
                 </article>
               ))}
             </div>
-            <p className="level-help">The active tier receives new modules. Use the larger view above to inspect the complete building from Top or Front.</p>
+            <p className="level-help">The active tier receives new modules. Use the larger view above to inspect the complete Muqarnas model from Top or Front.</p>
             </div>}
           </div>
           </div>
