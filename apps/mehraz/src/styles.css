@@ -107,15 +107,14 @@ button.danger { width: 100%; border-color: #caa7a1; background: #fff8f6; color: 
 
 .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #cfe7f2; }
 .viewport { position: absolute; inset: 0; }
-.mehraz-stage-welcome { pointer-events: none; position: absolute; inset: 0; z-index: 2; display: flex; width: min(430px, 80%); height: fit-content; margin: auto; align-items: center; flex-direction: column; color: #241e18; text-align: center; }
-.mehraz-stage-welcome-mark { display: grid; width: 68px; height: 68px; margin-bottom: 18px; place-items: center; border: 1px solid rgba(69,111,132,.3); border-radius: 50%; background: rgba(255,250,241,.78); color: var(--girih-app-accent, #456f84); backdrop-filter: blur(8px); }
-.mehraz-stage-welcome > span { margin-bottom: 4px; color: #456f84; font-size: 9px; font-weight: 900; letter-spacing: 0; text-transform: uppercase; }
-.mehraz-stage-welcome h2 { max-width: 430px; margin: 4px 0 9px; color: #241e18; font-size: 38px; line-height: 1.15; letter-spacing: 0; }
-.mehraz-stage-welcome p { max-width: 390px; margin: 0; color: #655a4d; font-size: 12px; line-height: 1.6; }
+.mehraz-stage-welcome { pointer-events: none; position: absolute; inset: 0; z-index: 2; display: flex; width: min(500px, calc(100% - 40px)); height: fit-content; margin: auto; align-items: center; flex-direction: column; border: 1px solid rgba(118,96,64,.28); border-radius: 18px; background: rgba(255,250,241,.9); padding: 24px 30px 26px; box-shadow: 0 20px 55px rgba(49,39,27,.2); color: #1f1a15; text-align: center; backdrop-filter: blur(12px); }
+.mehraz-stage-welcome-mark { display: grid; width: 62px; height: 62px; margin-bottom: 14px; place-items: center; border: 1px solid rgba(69,111,132,.38); border-radius: 50%; background: #fffaf1; color: var(--girih-app-accent, #456f84); box-shadow: 0 7px 20px rgba(49,39,27,.12); }
+.mehraz-stage-welcome > span { margin-bottom: 4px; color: #315d55; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.mehraz-stage-welcome h2 { max-width: 440px; margin: 4px 0 10px; color: #1f1a15; font-size: clamp(28px, 4vw, 38px); font-weight: 800; line-height: 1.12; letter-spacing: 0; }
+.mehraz-stage-welcome p { max-width: 400px; margin: 0; color: #4d4338; font-size: 13px; font-weight: 600; line-height: 1.55; }
 .mehraz-canvas { display: block; width: 100%; height: 100%; }
-.stage-overlay { position: absolute; top: 12px; left: 50%; display: flex; align-items: center; gap: 8px; transform: translateX(-50%); border: 1px solid rgba(130,109,76,.25); border-radius: 9px; background: rgba(255,250,241,.91); padding: 6px 8px; box-shadow: 0 8px 25px rgba(41,34,24,.12); backdrop-filter: blur(8px); }
-.stage-overlay > span { display: inline-flex; align-items: center; gap: 5px; color: #675b4c; font-size: 9px; font-weight: 800; white-space: nowrap; }
-.stage-overlay button { min-height: 28px; padding: 5px 7px; }
+.stage-overlay { position: absolute; top: 12px; right: 12px; z-index: 8; display: flex; align-items: center; gap: 5px; border: 1px solid rgba(130,109,76,.25); border-radius: 8px; background: rgba(255,250,241,.93); padding: 4px; box-shadow: 0 8px 25px rgba(41,34,24,.12); backdrop-filter: blur(8px); }
+.stage-overlay button { min-height: 27px; padding: 4px 7px; }
 .stage-overlay button.active { border-color: var(--girih-app-accent, #456f84); background: var(--girih-app-accent, #456f84); color: #fff; }
 .library-reopen { position: absolute; z-index: 8; top: 12px; left: 10px; display: inline-flex; align-items: center; gap: 5px; min-height: 34px; border: 1px solid #c8b89f; border-radius: 0 8px 8px 0; background: rgba(255,250,241,.94); padding: 7px 10px 7px 7px; box-shadow: 0 8px 24px rgba(41,34,24,.14); color: #315d55; font-size: 10px; font-weight: 800; backdrop-filter: blur(8px); }
 
@@ -188,9 +187,10 @@ legend { padding: 0 5px; color: #756651; font-size: 8px; font-weight: 800; text-
 .placement-actions button { width: 100%; }
 .light-preset-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
 .light-preset-grid button { width: 100%; justify-content: center; }
-.transform-tools, .view-tools { display: flex; align-items: center; gap: 3px; border-left: 1px solid #d8ccba; border-right: 1px solid #d8ccba; padding: 0 5px; }
-.transform-tools button { width: 28px; min-height: 28px; padding: 4px; }
-.view-tools button { min-width: 36px; min-height: 28px; padding: 4px 6px; }
+.transform-tools, .view-tools { display: flex; align-items: center; gap: 3px; padding: 0; }
+.view-tools { border-left: 1px solid #d8ccba; padding-left: 5px; }
+.transform-tools button { width: 27px; min-height: 27px; padding: 4px; }
+.view-tools button { min-width: 34px; min-height: 27px; padding: 4px 6px; }
 .transform-tools button.active, .view-tools button.active { border-color: var(--girih-app-accent, #456f84); background: var(--girih-app-accent, #456f84); color: #fff; }
 .repeat-button { width: 100%; margin-top: 9px; }
 .zone-list { display: grid; gap: 5px; max-height: 180px; overflow: auto; }

@@ -2229,9 +2229,6 @@ function App() {
             </div>
           )}
           <div className="stage-overlay">
-            <span><Boxes size={14} /> {placements.length} placements</span>
-            <span><ScanLine size={14} /> {zones.length} zones</span>
-            <span><Save size={14} /> {new Set(placements.map((item) => item.assetVersionId)).size} pinned versions</span>
             <div className="transform-tools">
               <button title="Move selected placement" className={transformMode === 'translate' ? 'active' : ''} onClick={() => setTransformMode('translate')}><Move3d size={14} /></button>
               <button title="Rotate selected placement" className={transformMode === 'rotate' ? 'active' : ''} onClick={() => setTransformMode('rotate')}><RotateCw size={14} /></button>
