@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { CONSTRUCTION_STEPS, moduleTopExtrusionGeometry, normalizePreview, previewWorldBounds } from './mehraz-scene.js';
 
-test('Ahang training starts with two guides, the south wall, then arch courses', () => {
+test('Ahang subsection follows lower walls with two guides, south wall, then arch courses', () => {
   assert.deepEqual(
     CONSTRUCTION_STEPS.slice(0, 6).map((step) => step.id),
-    ['empty', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill', 'lower-walls'],
+    ['empty', 'lower-walls', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill'],
   );
 });
 

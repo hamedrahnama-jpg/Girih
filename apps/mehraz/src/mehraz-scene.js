@@ -32,11 +32,11 @@ const VIDEO_FPS = 30;
 const VIDEO_BITRATE = 20000000;
 export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'empty', title: 'Site / empty stage', detail: 'Start with the ground and layout only.' },
+  { id: 'lower-walls', title: 'Lower vertical walls', detail: 'Raise the north-side, east, and west walls to the arch spring line.' },
   { id: 'south-arch-guide', title: 'South arch guide rib', detail: 'Place a narrow guide segment above the south wall.' },
   { id: 'north-arch-guide', title: 'North arch guide rib', detail: 'Place the matching narrow guide segment above the north wall.' },
   { id: 'south-wall', title: 'South wall below cover', detail: 'Build the vertical south wall up to the arch spring line beneath both guides.' },
   { id: 'arch-fill', title: 'Construct arch brick courses', detail: 'Lay equal-height arch courses from the east and west spring points until they meet at the crown.' },
-  { id: 'lower-walls', title: 'Remaining lower walls', detail: 'Raise the east, west, and north-side walls to the arch spring line.' },
   { id: 'north-upper-wall', title: 'North upper wall', detail: 'Complete the north side walls and north top wall together, layer by layer.' },
   { id: 'muqarnas-tiers', title: 'Muqarnas tiers', detail: 'Place Muqarnas modules tier by tier after the arch structure is complete.' },
   { id: 'decorate-south', title: 'South wall decoration', detail: 'Apply imported bonding or Girih pattern to the south wall after structure is built.' },
@@ -1525,7 +1525,7 @@ export class MehrazScene {
     const side = child.userData?.wallSide;
     if (!child.isObject3D || !side) return;
     const verticalWall = ['east', 'west', 'south', 'north', 'north_sides', 'north_top'].includes(side);
-    if (!verticalWall || side === 'north_top') {
+    if (!verticalWall || side === 'north_top' || side === 'south') {
       child.visible = false;
       return;
     }
@@ -1662,11 +1662,10 @@ export class MehrazScene {
       if (stepId === 'south-wall') {
         this.applySouthWallConstruction(child, stepProgress, northMetrics);
       } else if (stepId === 'lower-walls') {
-        if (side === 'south') this.applySouthWallConstruction(child, 1, northMetrics);
-        else this.applyLowerWallConstruction(child, stepProgress, northMetrics);
+        this.applyLowerWallConstruction(child, stepProgress, northMetrics);
       } else if (stepId === 'north-upper-wall') {
         if (['east', 'west', 'south'].includes(side)) {
-          child.visible = showLowerWalls;
+          child.visible = side === 'south' ? showSouthWall : showLowerWalls;
           if (child.isMesh && child.visible) this.clearConstructionClip(child);
         } else {
           this.applyNorthUpperConstruction(child, stepProgress, northMetrics);
@@ -1682,7 +1681,7 @@ export class MehrazScene {
           } else {
             this.applyNorthUpperConstruction(child, 1, northMetrics);
           }
-        } else if (showLowerWalls) {
+        } else if (showLowerWalls && side !== 'south') {
           this.applyLowerWallConstruction(child, 1, northMetrics);
         } else if (showSouthWall && side === 'south') {
           this.applySouthWallConstruction(child, 1, northMetrics);

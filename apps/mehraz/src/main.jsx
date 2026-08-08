@@ -2563,7 +2563,7 @@ function App() {
             <section className="inspector-section">
               <div className="section-heading"><ClipboardList size={17} /><div><strong>Construction training</strong><small>Step-by-step shell and arch assembly</small></div></div>
               <CollapsiblePanel collapsible={false} title="Animation steps">
-                <p className="zone-hint">Training sequence: two narrow guide arches first, then the south wall beneath them, followed by equal-height brick courses laid from east and west to meet at the crown. Door and window openings stay cut during construction.</p>
+                <p className="zone-hint">After the lower walls, the Ahang section builds the south guide arch, north guide arch, vertical south wall beneath them, then equal-height arch courses from east and west to the crown. Door and window openings stay cut during construction.</p>
                 <div className="field-grid">
                   <NumberField label="Animation duration Â· sec" value={constructionDuration} min={3} max={90} step={1} onChange={setConstructionDuration} />
                   <label><span>Current step</span><select value={constructionStep} onChange={(event) => showConstructionStep(Number(event.target.value))}>{CONSTRUCTION_STEPS.map((step, index) => <option value={index} key={step.id}>{index + 1}. {step.title}</option>)}</select></label>
