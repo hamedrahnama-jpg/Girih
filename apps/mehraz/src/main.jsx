@@ -413,7 +413,7 @@ function App() {
   const [activeProjectVersionId, setActiveProjectVersionId] = useState(null);
   const [selectedProjectVersionId, setSelectedProjectVersionId] = useState('');
   const [rightTab, setRightTab] = useState('building');
-  const [stageView, setStageView] = useState('isometric');
+  const [stageView, setStageView] = useState('front');
   const [collapsedSections, setCollapsedSections] = useState({
     buildingDimensions: true,
     buildingSurfaces: true,
@@ -694,6 +694,11 @@ function App() {
     sceneRef.current?.setStageView(view);
   }
 
+  function showFrontStageView() {
+    setStageView('front');
+    requestAnimationFrame(() => requestAnimationFrame(() => sceneRef.current?.setStageView('front')));
+  }
+
   function projectSnapshot() {
     return JSON.stringify({
       building: buildingRef.current,
@@ -927,6 +932,7 @@ function App() {
       onNightLights: setNightLighting,
     });
     sceneRef.current = scene;
+    scene.setStageView('front');
     return () => {
       scene.dispose();
       sceneRef.current = null;
@@ -1736,10 +1742,9 @@ function App() {
     setActiveProjectVersionId(version?.id || asset?.currentVersion?.id || null);
     setSelectedProjectVersionId(version?.id || asset?.current_version_id || asset?.currentVersion?.id || '');
     setProjectName(asset?.name || 'Imported Mehraz project');
-    setStageView('front');
+    showFrontStageView();
     const versionNumber = version?.version_number || asset?.currentVersion?.version_number;
     setLibraryMessage(asset ? `Opened ${asset.name}${versionNumber ? ` - version ${versionNumber}` : ''}.` : 'Project imported.');
-    requestAnimationFrame(() => requestAnimationFrame(() => sceneRef.current?.setStageView('front')));
   }
 
   function openProject(asset, version = asset?.currentVersion) {
@@ -1797,7 +1802,7 @@ function App() {
     setSelectedProjectVersionId('');
     setProjectName('My Mehraz iwan');
     setLibraryMessage('New architectural project ready.');
-    requestAnimationFrame(() => sceneRef.current?.frameModel());
+    showFrontStageView();
   }
 
   function exportPixels(fullResolution = false) {
