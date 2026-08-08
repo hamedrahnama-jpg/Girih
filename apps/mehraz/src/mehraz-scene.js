@@ -32,10 +32,11 @@ const VIDEO_FPS = 30;
 const VIDEO_BITRATE = 20000000;
 export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'empty', title: 'Site / empty stage', detail: 'Start with the ground and layout only.' },
-  { id: 'lower-walls', title: 'Lower vertical walls', detail: 'Raise north-left, west, south, east, and north-right walls together from the ground to the arch spring line.' },
   { id: 'south-arch-guide', title: 'South arch guide rib', detail: 'Place a narrow guide segment above the south wall.' },
   { id: 'north-arch-guide', title: 'North arch guide rib', detail: 'Place the matching narrow guide segment above the north wall.' },
-  { id: 'arch-fill', title: 'Fill arch depth', detail: 'Fill between both guide ribs to complete the arch volume.' },
+  { id: 'south-wall', title: 'South wall below cover', detail: 'Build the vertical south wall up to the arch spring line beneath both guides.' },
+  { id: 'arch-fill', title: 'Construct arch brick courses', detail: 'Lay equal-height arch courses from the east and west spring points until they meet at the crown.' },
+  { id: 'lower-walls', title: 'Remaining lower walls', detail: 'Raise the east, west, and north-side walls to the arch spring line.' },
   { id: 'north-upper-wall', title: 'North upper wall', detail: 'Complete the north side walls and north top wall together, layer by layer.' },
   { id: 'muqarnas-tiers', title: 'Muqarnas tiers', detail: 'Place Muqarnas modules tier by tier after the arch structure is complete.' },
   { id: 'decorate-south', title: 'South wall decoration', detail: 'Apply imported bonding or Girih pattern to the south wall after structure is built.' },
@@ -1426,6 +1427,46 @@ export class MehrazScene {
     });
   }
 
+  setArchCourseConstructionClip(child, progress, metrics) {
+    const materials = this.prepareConstructionMaterial(child);
+    if (!materials.length) return;
+    child.visible = progress > 0.001;
+    const sampleCount = 96;
+    const points = Array.from({ length: sampleCount + 1 }, (_, index) => {
+      const x = THREE.MathUtils.lerp(metrics.openingLeft, metrics.centerX, index / sampleCount);
+      return new THREE.Vector2(x, wallArchHeightAtX(this.building, this.walls, x) ?? metrics.sideTop);
+    });
+    const cumulative = [0];
+    for (let index = 1; index < points.length; index += 1) {
+      cumulative.push(cumulative[index - 1] + points[index - 1].distanceTo(points[index]));
+    }
+    const totalDistance = cumulative[cumulative.length - 1];
+    const courseHeight = Math.max(0.01, Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01));
+    const courseCount = Math.max(1, Math.ceil(totalDistance / courseHeight));
+    const revealedDistance = Math.min(totalDistance, Math.ceil(THREE.MathUtils.clamp(progress, 0, 1) * courseCount) * courseHeight);
+    let leftLimit = metrics.openingLeft;
+    for (let index = 1; index < cumulative.length; index += 1) {
+      if (cumulative[index] < revealedDistance) continue;
+      const segmentDistance = cumulative[index] - cumulative[index - 1];
+      const blend = segmentDistance > 0.000001
+        ? (revealedDistance - cumulative[index - 1]) / segmentDistance
+        : 0;
+      leftLimit = THREE.MathUtils.lerp(points[index - 1].x, points[index].x, blend);
+      break;
+    }
+    if (revealedDistance >= totalDistance - 0.000001) leftLimit = metrics.centerX;
+    const rightLimit = metrics.centerX * 2 - leftLimit;
+    const planes = [
+      new THREE.Plane(new THREE.Vector3(-1, 0, 0), leftLimit),
+      new THREE.Plane(new THREE.Vector3(1, 0, 0), -rightLimit),
+    ];
+    materials.forEach((material) => {
+      material.clippingPlanes = planes;
+      material.clipIntersection = true;
+      material.needsUpdate = true;
+    });
+  }
+
   clearConstructionClip(child) {
     if (!child.isMesh) return;
     const materials = this.prepareConstructionMaterial(child);
@@ -1490,6 +1531,15 @@ export class MehrazScene {
     }
     const northSidePier = this.isNorthSidePier(child, metrics);
     if (['north', 'north_sides'].includes(side) && !northSidePier) {
+      child.visible = false;
+      return;
+    }
+    child.visible = true;
+    if (child.isMesh) this.setConstructionClip(child, progress, 'y', 0, metrics.sideTop);
+  }
+
+  applySouthWallConstruction(child, progress, metrics) {
+    if (!child.isObject3D || child.userData?.wallSide !== 'south') {
       child.visible = false;
       return;
     }
@@ -1583,9 +1633,14 @@ export class MehrazScene {
     const wallSystem = this.wallSystemRoot();
     const stepProgress = Math.max(0, Math.min(1, progress));
     const northMetrics = this.northOpeningMetrics();
-    const showLowerWalls = rank >= 1;
-    const showArch = rank >= 4;
-    const showNorthUpper = rank >= 5;
+    const southWallRank = CONSTRUCTION_STEP_INDEX['south-wall'];
+    const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
+    const lowerWallsRank = CONSTRUCTION_STEP_INDEX['lower-walls'];
+    const northUpperRank = CONSTRUCTION_STEP_INDEX['north-upper-wall'];
+    const showSouthWall = rank >= southWallRank;
+    const showLowerWalls = rank >= lowerWallsRank;
+    const showArch = rank >= archFillRank;
+    const showNorthUpper = rank >= northUpperRank;
     const showEverything = rank >= CONSTRUCTION_STEP_INDEX.complete;
     wallSystem?.traverse((child) => {
       if (!child.isObject3D) return;
@@ -1597,19 +1652,18 @@ export class MehrazScene {
       const isArch = child.userData?.isPointedArch || side === 'arch' || side === 'south_arch' || child.userData?.isSouthArchCap;
       if (isArch) {
         child.visible = showArch || showEverything;
-        if (child.isMesh && child.userData?.isSouthArchCap && stepId === 'arch-fill') {
-          const box = new THREE.Box3().setFromObject(child);
-          this.setConstructionClip(child, stepProgress, 'y', Math.max(0, box.min.y), box.max.y);
-        } else if (child.isMesh && (stepId === 'arch-fill' || (showEverything && stepProgress < 1))) {
-          const box = new THREE.Box3().setFromObject(child);
-          this.setConstructionClip(child, stepId === 'arch-fill' ? stepProgress : 1, 'z', box.max.z, box.min.z);
+        if (child.isMesh && stepId === 'arch-fill') {
+          this.setArchCourseConstructionClip(child, stepProgress, northMetrics);
         } else if (child.isMesh && child.visible) {
           this.clearConstructionClip(child);
         }
         return;
       }
-      if (stepId === 'lower-walls') {
-        this.applyLowerWallConstruction(child, stepProgress, northMetrics);
+      if (stepId === 'south-wall') {
+        this.applySouthWallConstruction(child, stepProgress, northMetrics);
+      } else if (stepId === 'lower-walls') {
+        if (side === 'south') this.applySouthWallConstruction(child, 1, northMetrics);
+        else this.applyLowerWallConstruction(child, stepProgress, northMetrics);
       } else if (stepId === 'north-upper-wall') {
         if (['east', 'west', 'south'].includes(side)) {
           child.visible = showLowerWalls;
@@ -1630,6 +1684,8 @@ export class MehrazScene {
           }
         } else if (showLowerWalls) {
           this.applyLowerWallConstruction(child, 1, northMetrics);
+        } else if (showSouthWall && side === 'south') {
+          this.applySouthWallConstruction(child, 1, northMetrics);
         } else {
           child.visible = false;
         }
@@ -1640,7 +1696,9 @@ export class MehrazScene {
     this.placementMaskGroup.visible = showEverything;
     this.zoneGroup.visible = showEverything;
     this.zoneDecorationGroup.visible = showEverything || rank >= CONSTRUCTION_STEP_INDEX['decorate-south'];
-    if (rank >= 2 && rank <= 4) {
+    const southGuideRank = CONSTRUCTION_STEP_INDEX['south-arch-guide'];
+    const northGuideRank = CONSTRUCTION_STEP_INDEX['north-arch-guide'];
+    if (rank >= southGuideRank && rank <= archFillRank) {
       const archMesh = [];
       wallSystem?.traverse((child) => {
         if (child.isMesh && (child.userData?.isPointedArch || child.userData?.wallSide === 'arch')) archMesh.push(child);
@@ -1648,7 +1706,7 @@ export class MehrazScene {
       const source = archMesh[0];
       if (source) {
         this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'south'));
-        if (rank >= 3) this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'north'));
+        if (rank >= northGuideRank) this.constructionGuideGroup.add(this.makeArchGuideClone(source, 'north'));
       }
     }
     this.constructionGuideGroup.visible = true;
@@ -1672,7 +1730,7 @@ export class MehrazScene {
         const easedProgress = rawProgress < 0.5
           ? 2 * rawProgress * rawProgress
           : 1 - ((-2 * rawProgress + 2) ** 2) / 2;
-        const buildProgress = ['lower-walls', 'arch-fill', 'north-upper-wall', 'muqarnas-tiers', 'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides', 'decorate-north-top', 'decorate-arch', 'complete'].includes(stepId)
+        const buildProgress = ['south-wall', 'arch-fill', 'lower-walls', 'north-upper-wall', 'muqarnas-tiers', 'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides', 'decorate-north-top', 'decorate-arch', 'complete'].includes(stepId)
           ? easedProgress
           : 1;
         this.applyConstructionStep(index, buildProgress);

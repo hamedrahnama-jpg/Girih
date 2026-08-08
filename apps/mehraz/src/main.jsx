@@ -446,6 +446,7 @@ function App() {
   const [constructionStep, setConstructionStep] = useState(CONSTRUCTION_STEPS.length - 1);
   const [constructionDuration, setConstructionDuration] = useState(15);
   const [constructionPlaying, setConstructionPlaying] = useState(false);
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPreview, setExportPreview] = useState('');
   const [exportBusy, setExportBusy] = useState(false);
@@ -2085,7 +2086,7 @@ function App() {
   if (!user) return <main className="app-auth-gate girih-theme-mehraz"><img src="https://girihstudio.com/landing/brand/girih-logo-color.png" alt="" /><girih-app-icon app="mehraz"></girih-app-icon><small>Mehraz App</small><h1>Sign in to continue</h1><p>Use one Girih Studio account across every design app. Mehraz is currently free.</p><button className="primary" onClick={connectAccount}><LogIn size={16} /> Sign in</button></main>;
 
   return (
-    <div className="mehraz-app girih-theme-mehraz">
+    <div className="mehraz-app girih-theme-mehraz" onPointerDownCapture={() => setWelcomeDismissed(true)} onKeyDownCapture={() => setWelcomeDismissed(true)}>
       <header className="app-header girih-product-header">
         <div className="brand-group girih-header-start">
           <a href="https://girihstudio.com" className="home-link"><img src="https://girihstudio.com/landing/brand/girih-logo-color.png" alt="" /><span>Girih Studio</span></a>
@@ -2220,7 +2221,7 @@ function App() {
       <main className="workspace no-library">
         <section className="stage">
           <div ref={viewportRef} className="viewport" />
-          {!mehrazHasProjectWork && (
+          {!welcomeDismissed && !mehrazHasProjectWork && (
             <div className="mehraz-stage-welcome" aria-hidden="true">
               <div className="mehraz-stage-welcome-mark"><Building2 size={34} /></div>
               <span>Architectural composition</span>
@@ -2562,7 +2563,7 @@ function App() {
             <section className="inspector-section">
               <div className="section-heading"><ClipboardList size={17} /><div><strong>Construction training</strong><small>Step-by-step shell and arch assembly</small></div></div>
               <CollapsiblePanel collapsible={false} title="Animation steps">
-                <p className="zone-hint">Training sequence: vertical walls first, then two narrow arch guide ribs, then the full arch fill. South door and window openings stay cut during construction.</p>
+                <p className="zone-hint">Training sequence: two narrow guide arches first, then the south wall beneath them, followed by equal-height brick courses laid from east and west to meet at the crown. Door and window openings stay cut during construction.</p>
                 <div className="field-grid">
                   <NumberField label="Animation duration Â· sec" value={constructionDuration} min={3} max={90} step={1} onChange={setConstructionDuration} />
                   <label><span>Current step</span><select value={constructionStep} onChange={(event) => showConstructionStep(Number(event.target.value))}>{CONSTRUCTION_STEPS.map((step, index) => <option value={index} key={step.id}>{index + 1}. {step.title}</option>)}</select></label>

@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { moduleTopExtrusionGeometry, normalizePreview, previewWorldBounds } from './mehraz-scene.js';
+import { CONSTRUCTION_STEPS, moduleTopExtrusionGeometry, normalizePreview, previewWorldBounds } from './mehraz-scene.js';
+
+test('Ahang training starts with two guides, the south wall, then arch courses', () => {
+  assert.deepEqual(
+    CONSTRUCTION_STEPS.slice(0, 6).map((step) => step.id),
+    ['empty', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill', 'lower-walls'],
+  );
+});
 
 test('Muqarnas infill extrudes the module top exactly to the arch without overlap', () => {
   const module = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1));
