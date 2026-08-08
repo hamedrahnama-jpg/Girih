@@ -3816,7 +3816,7 @@ export class MuqarnasScene {
         mainCamera.aspect = Math.max(0.2, this.container.clientWidth / Math.max(1, this.container.clientHeight));
         mainCamera.updateProjectionMatrix();
       } else if (!this.freeDrag && !this.transform.dragging && !this.assemblyAnimation) {
-        fitOrthographicCamera(mainCamera, moduleBounds, this.container, this.mainView, 1.28);
+        fitOrthographicCamera(mainCamera, completeBounds, this.container, this.mainView, 1.28);
       }
       fitOrthographicCamera(this.overviewCamera, completeBounds, this.overviewContainer, this.overviewView, 1.16);
       this.renderSceneView(this.renderer, mainCamera, this.mainView, true);
@@ -3860,7 +3860,7 @@ export class MuqarnasScene {
       } else if (!isManipulating) {
         fitOrthographicCamera(
           camera,
-          isMain && view === 'perspective' ? completeBounds : moduleBounds,
+          isMain ? completeBounds : moduleBounds,
           container,
           view,
           isMain ? 1.28 : 1.08,
@@ -3884,22 +3884,17 @@ export class MuqarnasScene {
       miniWallOutlines: this.miniWallOutlineGroup.visible,
       sliceGuides: this.sliceGuideGroup.visible,
     };
-    const isFocusedDesignView = isMain && (view === 'front' || view === 'top');
     const nightGuideState = [];
     this.nightLightGroup.traverse((child) => {
       if (!child.userData.isNightLightGuide) return;
       nightGuideState.push([child, child.visible]);
       child.visible = isMain && this.nightLightGuidesVisible;
     });
-    if (isMain && view === 'front') this.archModuleInfillGroup.visible = false;
     const showMiniWallOutlines = !isMain && (view === 'front' || view === 'top') && this.wallGroup.visible;
     if (showMiniWallOutlines) {
       this.syncMiniWallOutlines();
       this.wallGroup.visible = false;
       this.miniWallOutlineGroup.visible = true;
-    } else if (isFocusedDesignView) {
-      this.wallGroup.visible = false;
-      this.miniWallOutlineGroup.visible = false;
     } else {
       this.miniWallOutlineGroup.visible = false;
     }
@@ -3910,11 +3905,11 @@ export class MuqarnasScene {
       this.connectorGroup.visible = false;
     }
     this.sliceGuideGroup.visible = isMain && view === 'top' && helperState.sliceGuides;
-    if (view === 'front') camera.layers.enable(2);
+    if (view === 'front' && !isMain) camera.layers.enable(2);
     else camera.layers.disable(2);
 
     const swaps = [];
-    const hideOrthographicModuleEdges = view === 'top' || (view === 'front' && !isMain);
+    const hideOrthographicModuleEdges = !isMain && (view === 'top' || view === 'front');
     if (hideOrthographicModuleEdges) {
       this.instances.forEach((root) => root.traverse((child) => {
         if (!child.userData.isEdgeOverlay) return;
@@ -3923,51 +3918,47 @@ export class MuqarnasScene {
       }));
     }
     if (view === 'front') {
-      this.syncFrontGeometryOutlines();
+      if (!isMain) this.syncFrontGeometryOutlines();
       this.frontOutlineGroup.visible = !isMain;
-      this.instances.forEach((root) => {
-        const isActiveTier = root.userData.levelId === this.activeLevelId;
-        const levelMaterial = this.frontLevelMaterials.get(root.userData.levelId) || this.frontLevelMaterials.values().next().value;
-        root.traverse((child) => {
-          if (!child.isMesh || child.userData.isEdgeOverlay) return;
-          if (isMain) {
-            if (!isActiveTier) return;
+      if (!isMain) {
+        this.instances.forEach((root) => {
+          const levelMaterial = this.frontLevelMaterials.get(root.userData.levelId) || this.frontLevelMaterials.values().next().value;
+          root.traverse((child) => {
+            if (!child.isMesh || child.userData.isEdgeOverlay) return;
             swaps.push([child, child.material, child.visible, child.renderOrder]);
-            child.material = this.frontFocusMaterial;
-            child.renderOrder = 1;
-            return;
-          }
-          swaps.push([child, child.material, child.visible, child.renderOrder]);
-          child.visible = root.visible;
-          if (!root.visible) return;
-          child.material = levelMaterial;
-          child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+            child.visible = root.visible;
+            if (!root.visible) return;
+            child.material = levelMaterial;
+            child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+          });
         });
-      });
+      }
     } else if (view === 'top') {
-      this.syncTopFootprintOutlines();
-      this.topOutlineGroup.visible = true;
-      let activeIndex = 0;
-      this.instances.forEach((root) => {
-        const isActiveTier = root.userData.levelId === this.activeLevelId;
-        const activeMaterial = this.topTierMaterials[activeIndex % this.topTierMaterials.length];
-        if (isActiveTier) activeIndex += 1;
-        root.traverse((child) => {
-          if (!child.isMesh) return;
-          if (child.userData.isEdgeOverlay) {
-            if (!hideOrthographicModuleEdges) {
-              swaps.push([child, child.material, child.visible, child.renderOrder]);
-              child.visible = isActiveTier;
+      this.topOutlineGroup.visible = !isMain;
+      if (!isMain) {
+        this.syncTopFootprintOutlines();
+        let activeIndex = 0;
+        this.instances.forEach((root) => {
+          const isActiveTier = root.userData.levelId === this.activeLevelId;
+          const activeMaterial = this.topTierMaterials[activeIndex % this.topTierMaterials.length];
+          if (isActiveTier) activeIndex += 1;
+          root.traverse((child) => {
+            if (!child.isMesh) return;
+            if (child.userData.isEdgeOverlay) {
+              if (!hideOrthographicModuleEdges) {
+                swaps.push([child, child.material, child.visible, child.renderOrder]);
+                child.visible = isActiveTier;
+              }
+              return;
             }
-            return;
-          }
-          swaps.push([child, child.material, child.visible, child.renderOrder]);
-          child.visible = root.visible;
-          if (!root.visible) return;
-          child.material = activeMaterial;
-          child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+            swaps.push([child, child.material, child.visible, child.renderOrder]);
+            child.visible = root.visible;
+            if (!root.visible) return;
+            child.material = activeMaterial;
+            child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+          });
         });
-      });
+      }
     }
 
     setLineMaterialResolution(this.edgeMaterial, renderer);
