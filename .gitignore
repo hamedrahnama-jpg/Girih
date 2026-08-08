@@ -2,3 +2,10 @@ node_modules
 dist
 .env
 .vercel
+
+# Local browser/test diagnostics and generated scratch output.
+.tmp-*
+
+# Empty files accidentally created by shell commands.
+/vite
+/muqarnas-app@0.1.0
