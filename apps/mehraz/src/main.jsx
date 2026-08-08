@@ -365,6 +365,7 @@ function App() {
   const buildingRef = useRef(null);
   const wallsRef = useRef(null);
   const inspectorRef = useRef(null);
+  const constructionStepListRef = useRef(null);
   const wallSettingsRef = useRef(null);
   const wallNorthSidesRef = useRef(null);
   const wallNorthTopRef = useRef(null);
@@ -681,12 +682,24 @@ function App() {
     sceneRef.current?.playConstructionSequence(
       constructionDuration,
       (index) => setConstructionStep(index),
-      () => setConstructionPlaying(false),
+      () => {
+        const completeStep = CONSTRUCTION_STEPS.length - 1;
+        sceneRef.current?.showCompleteConstruction();
+        setConstructionStep(completeStep);
+        setConstructionPlaying(false);
+      },
     );
   }
 
   function stopConstructionSteps() {
     sceneRef.current?.stopConstructionSequence();
+    setConstructionPlaying(false);
+  }
+
+  function showCompleteConstruction() {
+    const completeStep = CONSTRUCTION_STEPS.length - 1;
+    sceneRef.current?.showCompleteConstruction();
+    setConstructionStep(completeStep);
     setConstructionPlaying(false);
   }
 
@@ -766,6 +779,12 @@ function App() {
 
   const canUndo = historyVersion >= 0 && historyRef.current.past.length > 0;
   const canRedo = historyVersion >= 0 && historyRef.current.future.length > 0;
+
+  useEffect(() => {
+    if (!constructionPlaying) return;
+    const activeStep = constructionStepListRef.current?.querySelector(`[data-construction-step="${constructionStep}"]`);
+    activeStep?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [constructionPlaying, constructionStep]);
 
   useEffect(() => {
     const next = projectSnapshot();
@@ -2568,14 +2587,16 @@ function App() {
                   <NumberField label="Animation duration Â· sec" value={constructionDuration} min={3} max={90} step={1} onChange={setConstructionDuration} />
                   <label><span>Current step</span><select value={constructionStep} onChange={(event) => showConstructionStep(Number(event.target.value))}>{CONSTRUCTION_STEPS.map((step, index) => <option value={index} key={step.id}>{index + 1}. {step.title}</option>)}</select></label>
                 </div>
-                <div className="placement-actions">
+                <div className="placement-actions construction-actions">
                   <button className="primary" onClick={playConstructionSteps} disabled={constructionPlaying}><Plus size={14} /> Play animation</button>
                   <button onClick={stopConstructionSteps} disabled={!constructionPlaying}>Stop</button>
+                  <button onClick={showCompleteConstruction}>Show complete model</button>
                 </div>
-                <div className="construction-step-list">
+                <div ref={constructionStepListRef} className="construction-step-list">
                   {CONSTRUCTION_STEPS.map((step, index) => (
                     <button
                       key={step.id}
+                      data-construction-step={index}
                       className={index === constructionStep ? 'active' : ''}
                       onClick={() => showConstructionStep(index)}
                     >

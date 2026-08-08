@@ -219,9 +219,12 @@ legend { padding: 0 5px; color: #756651; font-size: 8px; font-weight: 800; text-
 .construction-step-list { display: grid; gap: 6px; }
 .construction-step-list > button { display: grid; grid-template-columns: 24px minmax(0, 1fr); justify-content: stretch; width: 100%; padding: 8px; text-align: left; }
 .construction-step-list > button > span { display: inline-grid; width: 20px; height: 20px; place-items: center; border-radius: 999px; background: #efe4d2; color: #315d55; font-size: 9px; font-weight: 900; }
+.construction-step-list > button > div { display: grid; min-width: 0; gap: 2px; }
 .construction-step-list > button.active { border-color: var(--girih-app-accent, #456f84); background: var(--girih-app-accent-soft, #e8f0f4); }
 .construction-step-list strong { overflow: hidden; color: #342c24; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .construction-step-list small { color: #817361; font-size: 8px; line-height: 1.3; }
+.construction-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.construction-actions button { min-width: 0; padding-inline: 6px; }
 .schedule-table-wrap { overflow: auto; border: 1px solid #ded2c1; border-radius: 7px; background: #fff; }
 .schedule-table { width: 100%; border-collapse: collapse; font-size: 7px; white-space: nowrap; }
 .schedule-table th { background: #315d55; padding: 7px 6px; color: #fff; text-align: left; text-transform: uppercase; }

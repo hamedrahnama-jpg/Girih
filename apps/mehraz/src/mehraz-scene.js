@@ -1566,6 +1566,11 @@ export class MehrazScene {
   }
 
   applyConstructionDecoration(child, stepId, rank, progress) {
+    if (stepId === 'complete') {
+      child.visible = true;
+      if (child.isMesh) this.clearConstructionClip(child);
+      return;
+    }
     const decorationStepId = WALL_DECORATION_STEP[child.userData?.wallSide];
     const decorationRank = CONSTRUCTION_STEP_INDEX[decorationStepId];
     if (!Number.isFinite(decorationRank)) {
@@ -1584,6 +1589,13 @@ export class MehrazScene {
     this.placementGroup.children.forEach((root) => {
       if (root.userData?.assetType === 'muqarnas_assembly') {
         this.applyMuqarnasConstruction(root, stepId, rank, progress);
+        return;
+      }
+      if (stepId === 'complete') {
+        root.visible = true;
+        root.traverse((child) => {
+          if (child.isMesh) this.clearConstructionClip(child);
+        });
         return;
       }
       const decorationStepId = SURFACE_DECORATION_STEP[root.userData?.surfaceId];
@@ -1758,6 +1770,12 @@ export class MehrazScene {
     this.constructionTimer = null;
     if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
     this.constructionAnimationFrame = null;
+    this.restoreConstructionMaterials();
+  }
+
+  showCompleteConstruction() {
+    this.stopConstructionSequence();
+    this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
     this.restoreConstructionMaterials();
   }
 
