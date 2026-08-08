@@ -571,6 +571,60 @@ function applyWorldAlignedBrickUvs(geometry) {
   return geometry;
 }
 
+export function archCourseDistanceAtPoint(x, y, archPoints) {
+  if (!Array.isArray(archPoints) || archPoints.length < 2) return 0;
+  const segmentLengths = [];
+  const cumulative = [0];
+  for (let index = 0; index < archPoints.length - 1; index += 1) {
+    const length = archPoints[index].distanceTo(archPoints[index + 1]);
+    segmentLengths.push(length);
+    cumulative.push(cumulative[index] + length);
+  }
+  const totalLength = cumulative[cumulative.length - 1];
+  let nearestDistanceSquared = Infinity;
+  let nearestCourseDistance = 0;
+  for (let index = 0; index < segmentLengths.length; index += 1) {
+    const start = archPoints[index];
+    const end = archPoints[index + 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const progress = lengthSquared > 0.00000001
+      ? THREE.MathUtils.clamp(((x - start.x) * dx + (y - start.y) * dy) / lengthSquared, 0, 1)
+      : 0;
+    const projectedX = start.x + dx * progress;
+    const projectedY = start.y + dy * progress;
+    const distanceSquared = (projectedX - x) ** 2 + (projectedY - y) ** 2;
+    if (distanceSquared >= nearestDistanceSquared) continue;
+    nearestDistanceSquared = distanceSquared;
+    const alongCurve = cumulative[index] + segmentLengths[index] * progress;
+    nearestCourseDistance = Math.min(alongCurve, totalLength - alongCurve);
+  }
+  return nearestCourseDistance;
+}
+
+function applyBentArchBrickUvs(geometry, archPoints, springHeight) {
+  const positions = geometry.getAttribute('position');
+  const normals = geometry.getAttribute('normal');
+  const uvs = geometry.getAttribute('uv');
+  if (!positions || !normals || !uvs || !archPoints?.length) return geometry;
+  for (let index = 0; index < positions.count; index += 1) {
+    const x = positions.getX(index);
+    const y = positions.getY(index);
+    const z = positions.getZ(index);
+    const courseDistance = archCourseDistanceAtPoint(x, y, archPoints);
+    const facesVaultDepth = Math.abs(normals.getZ(index)) < 0.8;
+    uvs.setXY(
+      index,
+      facesVaultDepth ? z : Math.hypot(x - archPoints[0].x, y - archPoints[0].y),
+      springHeight + courseDistance,
+    );
+  }
+  uvs.needsUpdate = true;
+  geometry.userData.archBrickMapping = 'constant-height-bent-courses';
+  return geometry;
+}
+
 function applyWallContinuationBrickUvs(geometry, supportSide) {
   const positions = geometry.getAttribute('position');
   const uvs = geometry.getAttribute('uv');
@@ -3172,10 +3226,11 @@ export function buildWallSystem(building, value = {}) {
     const geometry = new THREE.ExtrudeGeometry(shape, { depth: archDepth, steps: 1, bevelEnabled: false, curveSegments: 48 });
     geometry.translate(0, 0, northZ);
     geometry.computeVertexNormals();
-    applyWorldAlignedBrickUvs(geometry);
+    applyBentArchBrickUvs(geometry, archPoints, sideTop);
     const mesh = new THREE.Mesh(geometry, wallMaterial(walls, 'south', archHalfSpan * 2 + band * 2, archApex + band, true, bondPhase.south));
     mesh.userData.wallSide = 'arch';
     mesh.userData.isPointedArch = true;
+    mesh.userData.archBrickMapping = 'constant-height-bent-courses';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);

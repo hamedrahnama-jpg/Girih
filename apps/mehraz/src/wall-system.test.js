@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWallSystem, DEFAULT_WALL_SYSTEM, normalizeWallSystem } from './wall-system.js';
+import * as THREE from 'three';
+import { archCourseDistanceAtPoint, buildWallSystem, DEFAULT_WALL_SYSTEM, normalizeWallSystem } from './wall-system.js';
+
+test('Ahang brick courses keep physical height while bending symmetrically to the crown', () => {
+  const arch = [
+    new THREE.Vector2(-2, 4),
+    new THREE.Vector2(-1, 5),
+    new THREE.Vector2(0, 6),
+    new THREE.Vector2(1, 5),
+    new THREE.Vector2(2, 4),
+  ];
+  assert.equal(archCourseDistanceAtPoint(-2, 4, arch), 0);
+  assert.equal(archCourseDistanceAtPoint(2, 4, arch), 0);
+  assert.ok(Math.abs(archCourseDistanceAtPoint(0, 6, arch) - Math.sqrt(8)) < 1e-9);
+  assert.ok(Math.abs(archCourseDistanceAtPoint(-1, 5, arch) - archCourseDistanceAtPoint(1, 5, arch)) < 1e-9);
+});
 
 test('new Mehraz projects use the requested north and south wall defaults', () => {
   const walls = normalizeWallSystem();
