@@ -970,8 +970,9 @@ function App() {
             ><Scissors size={17} /></button>
             <i />
             <button className="stage-center-button" onClick={() => engineRef.current?.centerModelOnStage()} title="Move the complete model to the center of the stage"><Focus size={17} /><span>Center</span></button>
-            <button onClick={() => engineRef.current?.setView('top')} title="Top view">Top</button>
-            <button onClick={() => engineRef.current?.setView('front')} title="Front view">Front</button>
+            <button className={viewLayout.main === 'perspective' ? 'active' : ''} onClick={() => engineRef.current?.setView('perspective')} title="Isometric view">Iso</button>
+            <button className={viewLayout.main === 'top' ? 'active' : ''} onClick={() => engineRef.current?.setView('top')} title="Top view">Top</button>
+            <button className={viewLayout.main === 'front' ? 'active' : ''} onClick={() => engineRef.current?.setView('front')} title="Front view">Front</button>
             <button className={walkView.enabled ? 'active' : ''} onClick={() => engineRef.current?.setWalkEnabled(!walkView.enabled)} title="First-person walk view"><Eye size={15} /> Walk</button>
           </div>
           <div className="viewport" ref={viewportRef} />
