@@ -96,6 +96,7 @@ export class MuqarnasScene {
     this.instances = new Map();
     this.selected = null;
     this.selectedRoots = [];
+    this.moduleClipboard = { items: [], pasteCount: 0 };
     this.mode = 'translate';
     this.freeDrag = null;
     this.miniDrag = null;
@@ -615,6 +616,8 @@ export class MuqarnasScene {
       }
       if (commandKey && key === 'z') { event.preventDefault(); event.shiftKey ? this.redo() : this.undo(); }
       else if (commandKey && key === 'y') { event.preventDefault(); this.redo(); }
+      else if (commandKey && key === 'c') { event.preventDefault(); this.copySelected(); }
+      else if (commandKey && key === 'v') { event.preventDefault(); this.pasteCopied(); }
       else if (key === 'escape' && this.mode === 'slice') { event.preventDefault(); this.cancelSliceDraft(); }
       else if (key === 'w') this.setMode('translate');
       else if (event.key.toLowerCase() === 'e') this.setMode('rotate');
@@ -3104,6 +3107,52 @@ export class MuqarnasScene {
     this.recordHistory('Duplicate modules');
   }
 
+  copySelected() {
+    if (!this.selectedRoots.length) {
+      this.callbacks.onStatus?.('Select one or more modules before copying.');
+      return;
+    }
+    this.moduleClipboard = {
+      items: this.selectedRoots.map((root) => ({
+        libraryId: root.userData.libraryId,
+        levelId: root.userData.levelId,
+        slicePlanes: normalizeSlicePlanes(root.userData.slicePlanes),
+        transform: serializeTransform(root),
+      })),
+      pasteCount: 0,
+    };
+    const tierCount = new Set(this.moduleClipboard.items.map((item) => item.levelId)).size;
+    this.callbacks.onStatus?.(`${this.moduleClipboard.items.length} module${this.moduleClipboard.items.length === 1 ? '' : 's'} copied${tierCount > 1 ? ` across ${tierCount} tiers` : ''}.`);
+  }
+
+  pasteCopied() {
+    if (!this.moduleClipboard.items.length) {
+      this.callbacks.onStatus?.('Copy one or more modules before pasting.');
+      return;
+    }
+    this.prepareHistoryChange();
+    this.moduleClipboard.pasteCount += 1;
+    const offset = Math.max(this.snap.gridSize, 0.2) * this.moduleClipboard.pasteCount;
+    const groupId = this.moduleClipboard.items.length > 1 ? crypto.randomUUID() : null;
+    const copies = this.moduleClipboard.items.map((item) => {
+      const transform = structuredClone(item.transform);
+      transform.position[0] += offset;
+      transform.position[2] += offset;
+      return this.addInstance(item.libraryId, transform, {
+        levelId: item.levelId,
+        groupId,
+        slicePlanes: item.slicePlanes,
+        recordHistory: false,
+      });
+    }).filter(Boolean);
+    copies.forEach((root) => ensureModuleEdgeOverlays(root, this.edgeMaterial, this.edgeSettings.verticalLines));
+    this.selectRoots(copies, copies[0] || null, false);
+    this.constrainRootsToGround(copies);
+    this.recordHistory('Paste modules');
+    const tierCount = new Set(copies.map((root) => root.userData.levelId)).size;
+    this.callbacks.onStatus?.(`${copies.length} module${copies.length === 1 ? '' : 's'} pasted${tierCount > 1 ? ` together across ${tierCount} tiers` : ''}.`);
+  }
+
   deleteSelected() {
     if (!this.selected) return;
     this.prepareHistoryChange();
@@ -3827,7 +3876,13 @@ export class MuqarnasScene {
         mainCamera.aspect = Math.max(0.2, this.container.clientWidth / Math.max(1, this.container.clientHeight));
         mainCamera.updateProjectionMatrix();
       } else if (!this.freeDrag && !this.transform.dragging && !this.assemblyAnimation) {
-        fitOrthographicCamera(mainCamera, completeBounds, this.container, this.mainView, 1.28);
+        fitOrthographicCamera(
+          mainCamera,
+          this.mainView === 'top' ? moduleBounds : completeBounds,
+          this.container,
+          this.mainView,
+          1.28,
+        );
       }
       fitOrthographicCamera(this.overviewCamera, moduleBounds, this.overviewContainer, this.overviewView, 1.18);
       this.renderSceneView(this.renderer, mainCamera, this.mainView, true);
@@ -3871,7 +3926,7 @@ export class MuqarnasScene {
       } else if (!isManipulating) {
         fitOrthographicCamera(
           camera,
-          isMain ? completeBounds : moduleBounds,
+          isMain && view !== 'top' ? completeBounds : moduleBounds,
           container,
           view,
           isMain ? 1.28 : 1.08,
@@ -3901,8 +3956,8 @@ export class MuqarnasScene {
       nightGuideState.push([child, child.visible]);
       child.visible = isMain && this.nightLightGuidesVisible;
     });
-    const showMiniWallOutlines = !isMain && (view === 'front' || view === 'top') && this.wallGroup.visible;
-    if (showMiniWallOutlines) {
+    const showTechnicalWallOutlines = (!isMain || view === 'top') && (view === 'front' || view === 'top') && this.wallGroup.visible;
+    if (showTechnicalWallOutlines) {
       this.syncMiniWallOutlines();
       this.wallGroup.visible = false;
       this.miniWallOutlineGroup.visible = true;
@@ -3920,7 +3975,7 @@ export class MuqarnasScene {
     else camera.layers.disable(2);
 
     const swaps = [];
-    const hideOrthographicModuleEdges = !isMain && (view === 'top' || view === 'front');
+    const hideOrthographicModuleEdges = view === 'top' || (!isMain && view === 'front');
     if (hideOrthographicModuleEdges) {
       this.instances.forEach((root) => root.traverse((child) => {
         if (!child.userData.isEdgeOverlay) return;
@@ -3948,35 +4003,33 @@ export class MuqarnasScene {
         });
       }
     } else if (view === 'top') {
-      this.topOutlineGroup.visible = !isMain;
-      if (!isMain) {
-        this.syncTopFootprintOutlines();
-        let activeIndex = 0;
-        this.instances.forEach((root) => {
-          const isActiveTier = root.userData.levelId === this.activeLevelId;
-          const tierMaterial = isActiveTier
-            ? this.topTierMaterials[activeIndex % this.topTierMaterials.length]
-            : this.tierPreviewInactiveMaterial;
-          if (isActiveTier) activeIndex += 1;
-          root.traverse((child) => {
-            if (!child.isMesh) return;
-            if (child.userData.isEdgeOverlay) {
-              if (!hideOrthographicModuleEdges) {
-                swaps.push([child, child.material, child.visible, child.renderOrder]);
-                child.visible = isActiveTier;
-              }
-              return;
+      this.topOutlineGroup.visible = true;
+      this.syncTopFootprintOutlines();
+      let activeIndex = 0;
+      this.instances.forEach((root) => {
+        const isActiveTier = root.userData.levelId === this.activeLevelId;
+        const tierMaterial = isActiveTier
+          ? this.topTierMaterials[activeIndex % this.topTierMaterials.length]
+          : this.tierPreviewInactiveMaterial;
+        if (isActiveTier) activeIndex += 1;
+        root.traverse((child) => {
+          if (!child.isMesh) return;
+          if (child.userData.isEdgeOverlay) {
+            if (!hideOrthographicModuleEdges) {
+              swaps.push([child, child.material, child.visible, child.renderOrder]);
+              child.visible = isActiveTier;
             }
-            swaps.push([child, child.material, child.visible, child.renderOrder]);
-            child.visible = root.visible;
-            if (!root.visible) return;
-            child.material = tierMaterial;
-            child.renderOrder = isActiveTier
-              ? 120
-              : 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
-          });
+            return;
+          }
+          swaps.push([child, child.material, child.visible, child.renderOrder]);
+          child.visible = root.visible;
+          if (!root.visible) return;
+          child.material = tierMaterial;
+          child.renderOrder = isActiveTier
+            ? 120
+            : 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
         });
-      }
+      });
     }
 
     setLineMaterialResolution(this.edgeMaterial, renderer);

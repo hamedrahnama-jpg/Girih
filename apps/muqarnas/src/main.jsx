@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Box,
   Boxes,
+  ClipboardPaste,
   Copy,
   Download,
   Eye,
@@ -1051,7 +1052,8 @@ function App() {
           {selected ? (
             <>
               <div className="action-row">
-                <button className="button" onClick={() => engineRef.current?.duplicateSelected()}><Copy size={15} /> Duplicate</button>
+                <button className="button" title="Copy selection (Ctrl/Cmd+C)" onClick={() => engineRef.current?.copySelected()}><Copy size={15} /> Copy</button>
+                <button className="button" title="Paste copied modules (Ctrl/Cmd+V)" onClick={() => engineRef.current?.pasteCopied()}><ClipboardPaste size={15} /> Paste</button>
                 <button className="icon-button danger" title="Delete" onClick={() => engineRef.current?.deleteSelected()}><Trash2 size={16} /></button>
               </div>
               <div className="mirror-row">
