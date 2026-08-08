@@ -146,6 +146,14 @@ test('roof thickness and bearing remain independent from embed tolerance', () =>
   assert.deepEqual(bearingVectorForSupportSides(['west', 'north'], 0.206), { x: -0.206, z: -0.206 });
 });
 
+test('hidden Karbandi seating adjustments default to zero', () => {
+  const options = normalizeKarbandiWebOptions();
+  assert.equal(options.wallBearingDepth, 0);
+  assert.equal(options.wallEmbedTolerance, 0);
+  assert.equal(options.ribEmbedTolerance, 0);
+  assert.equal(options.seatingOffset, 0);
+});
+
 test('saved web options normalize on load and wall-height regeneration changes springing geometry', () => {
   const saved = normalizeKarbandiWebOptions({ supportBoundaryMode: 'selected-walls', selectedWallSides: ['east'], springingTangent: 'custom-angle', springingAngle: 32 });
   assert.equal(saved.springingAngle, 32);

@@ -20,6 +20,11 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
       enabled: true,
       coverEnabled: true,
       coverFinish: 'bricks',
+      web: {
+        ...DEFAULT_WALL_SYSTEM.karbandi.web,
+        wallEmbedTolerance: 0.005,
+        ribEmbedTolerance: 0.003,
+      },
     },
   };
   const group = buildWallSystem(building, walls);

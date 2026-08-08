@@ -2394,41 +2394,18 @@ function App() {
               </div>}
               {activeCoverType === 'karbandi' && <div className="cover-settings" role="tabpanel">
                 <div className="cover-settings-heading"><strong>Karbandi settings</strong><small>Rotating rib-vault cover</small></div>
-                <div className="field-grid">
-                  <label><span>Rib color</span><input type="color" value={walls.karbandi?.ribColor ?? walls.color} onChange={(event) => updateWallGroup('karbandi', { ribColor: event.target.value })} /></label>
+                <fieldset><legend>Roof</legend>
+                  <label className="check-field"><input type="checkbox" checked={walls.karbandi?.coverEnabled === true} disabled={walls.karbandi?.enabled !== true} onChange={(event) => updateWallGroup('karbandi', { coverEnabled: event.target.checked })} /><span>Cover Karbandi roof</span></label>
+                  <div className="field-grid">
                   <label><span>Roof finish</span><select value={walls.karbandi?.coverFinish ?? 'bricks'} onChange={(event) => updateWallGroup('karbandi', { coverFinish: event.target.value })}><option value="bricks">Bricks</option><option value="solid">Gypsum · solid color</option></select></label>
                   {walls.karbandi?.coverFinish === 'solid' && <label><span>Gypsum color</span><input type="color" value={walls.karbandi?.coverColor ?? '#eee8dc'} onChange={(event) => updateWallGroup('karbandi', { coverColor: event.target.value })} /></label>}
-                </div>
-                <label className="check-field"><input type="checkbox" checked={walls.karbandi?.coverEnabled === true} disabled={walls.karbandi?.enabled !== true} onChange={(event) => updateWallGroup('karbandi', { coverEnabled: event.target.checked })} /><span>Cover Karbandi roof</span></label>
-                <p className="zone-hint">The web topology combines finite-width rib seating curves with the wall-head springing boundary. Perimeter bays therefore remain valid when ribs alone do not form a closed cycle.</p>
-                <fieldset><legend>Web support boundary</legend>
-                  <label><span>Support boundary mode</span><select value={walls.karbandi?.web?.supportBoundaryMode || 'automatic-walls'} onChange={(event) => updateKarbandiWeb({ supportBoundaryMode: event.target.value })}>
-                    <option value="automatic-walls">Automatic from supporting walls</option>
-                    <option value="selected-walls">Select supporting walls</option>
-                    <option value="existing-curve">Select existing springing curve</option>
-                    <option value="manual">Draw springing boundary manually</option>
-                  </select></label>
-                  {walls.karbandi?.web?.supportBoundaryMode === 'selected-walls' && <div className="field-grid">{['north', 'east', 'south', 'west'].map((side) => <label className="check-field" key={side}><input type="checkbox" checked={walls.karbandi.web.selectedWallSides.includes(side)} onChange={(event) => updateKarbandiWeb({ selectedWallSides: event.target.checked ? [...walls.karbandi.web.selectedWallSides, side] : walls.karbandi.web.selectedWallSides.filter((item) => item !== side) })} /><span>{side[0].toUpperCase() + side.slice(1)} wall</span></label>)}</div>}
-                  {['existing-curve', 'manual'].includes(walls.karbandi?.web?.supportBoundaryMode) && !((walls.karbandi.web.supportBoundaryMode === 'existing-curve' ? walls.karbandi.web.existingSpringingCurve : walls.karbandi.web.manualSpringingBoundary)?.length > 2) && <p className="zone-hint">No springing curve is stored yet. Select or draw a piecewise-closed 3D boundary before generating perimeter cells.</p>}
-                  <div className="field-grid">
-                    <label><span>Soffit termination</span><select value={walls.karbandi?.web?.soffitTermination || 'inner-edge'} onChange={(event) => updateKarbandiWeb({ soffitTermination: event.target.value })}><option value="inner-edge">Inner wall-top edge</option><option value="wall-centre">Wall centre</option><option value="custom-offset">Custom offset</option></select></label>
-                    {walls.karbandi?.web?.soffitTermination === 'custom-offset' && <NumberField label="Soffit custom offset · m" value={walls.karbandi.web.soffitCustomOffset} min={-5} max={5} step={0.01} onChange={(soffitCustomOffset) => updateKarbandiWeb({ soffitCustomOffset })} />}
-                    <label><span>Springing tangent</span><select value={walls.karbandi?.web?.springingTangent || 'infer'} onChange={(event) => updateKarbandiWeb({ springingTangent: event.target.value })}><option value="infer">Infer from adjacent ribs</option><option value="average">Average adjacent rib tangents</option><option value="custom-angle">Custom angle</option><option value="position-only">Position only</option></select></label>
-                    {walls.karbandi?.web?.springingTangent === 'custom-angle' && <NumberField label="Springing angle · degrees" value={walls.karbandi.web.springingAngle} min={-89} max={89} step={1} onChange={(springingAngle) => updateKarbandiWeb({ springingAngle })} />}
-                     <NumberField label="Roof thickness · m" value={walls.karbandi?.web?.roofThickness ?? 0.1} min={0.01} max={2} step={0.01} onChange={(roofThickness) => updateKarbandiWeb({ roofThickness })} />
-                     {walls.karbandi?.coverFinish === 'bricks' && <label><span>Roof infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor ?? '#b9824f'} onChange={(event) => updateKarbandiWeb({ infillBrickColor: event.target.value })} /></label>}
-                     {walls.karbandi?.coverFinish === 'bricks' && <label><span>Alternate infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor2 ?? '#9f663b'} onChange={(event) => updateKarbandiWeb({ infillBrickColor2: event.target.value })} /></label>}
-                     {walls.karbandi?.coverFinish === 'bricks' && <NumberField label="Roof infill brick height · m" value={walls.karbandi?.web?.infillBrickHeight ?? 0.06} min={0.01} max={0.5} step={0.005} onChange={(infillBrickHeight) => updateKarbandiWeb({ infillBrickHeight })} />}
-                    <NumberField label="Wall bearing depth · m" value={walls.karbandi?.web?.wallBearingDepth ?? 0.15} min={0} max={5} step={0.01} onChange={(wallBearingDepth) => updateKarbandiWeb({ wallBearingDepth })} />
-                    <NumberField label="Wall embed tolerance · m" value={walls.karbandi?.web?.wallEmbedTolerance ?? 0.005} min={0} max={0.1} step={0.001} onChange={(wallEmbedTolerance) => updateKarbandiWeb({ wallEmbedTolerance })} />
-                    <NumberField label="Rib embed tolerance · m" value={walls.karbandi?.web?.ribEmbedTolerance ?? 0.003} min={0} max={0.1} step={0.001} onChange={(ribEmbedTolerance) => updateKarbandiWeb({ ribEmbedTolerance })} />
-                    <NumberField label="Fallback seating offset · m" value={walls.karbandi?.web?.seatingOffset ?? 0} min={-1} max={1} step={0.005} onChange={(seatingOffset) => updateKarbandiWeb({ seatingOffset })} />
-                    <label><span>Corner seat mode</span><select value={walls.karbandi?.web?.cornerSeatMode || 'rib-profile'} onChange={(event) => updateKarbandiWeb({ cornerSeatMode: event.target.value })}><option value="rib-profile">From actual rib profile</option><option value="chamfer">Automatic chamfer</option><option value="radius">Automatic radius</option><option value="custom-curve">Custom corner curve</option></select></label>
-                    {walls.karbandi?.web?.cornerSeatMode === 'radius' && <NumberField label="Corner radius · m" value={walls.karbandi.web.cornerRadius} min={0.001} max={2} step={0.01} onChange={(cornerRadius) => updateKarbandiWeb({ cornerRadius })} />}
+                    <NumberField label="Roof thickness · m" value={walls.karbandi?.web?.roofThickness ?? 0.1} min={0.01} max={2} step={0.01} onChange={(roofThickness) => updateKarbandiWeb({ roofThickness })} />
+                    {walls.karbandi?.coverFinish === 'bricks' && <label><span>Roof infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor ?? '#b9824f'} onChange={(event) => updateKarbandiWeb({ infillBrickColor: event.target.value })} /></label>}
+                    {walls.karbandi?.coverFinish === 'bricks' && <label><span>Alternate infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor2 ?? '#9f663b'} onChange={(event) => updateKarbandiWeb({ infillBrickColor2: event.target.value })} /></label>}
+                    {walls.karbandi?.coverFinish === 'bricks' && <NumberField label="Roof infill brick height · m" value={walls.karbandi?.web?.infillBrickHeight ?? 0.06} min={0.01} max={0.5} step={0.005} onChange={(infillBrickHeight) => updateKarbandiWeb({ infillBrickHeight })} />}
                   </div>
-                  <label className="check-field"><input type="checkbox" checked={walls.karbandi?.web?.allowUnsupportedFreeEdge === true} onChange={(event) => updateKarbandiWeb({ allowUnsupportedFreeEdge: event.target.checked })} /><span>Allow unsupported free edge</span></label>
-                  {!!walls.openSides.length && !walls.karbandi?.web?.allowUnsupportedFreeEdge && <p className="zone-hint">This cell has an unsupported perimeter edge. Select a wall, edge arch, beam, or springing boundary.</p>}
                 </fieldset>
+                <fieldset><legend>Ribs</legend>
                 <p className="zone-hint">Design one reference rib, then Mehraz rotates it around the midpoint of the north wall exterior face. When Karbandi is active, portal clipping is always applied at the north wall interior face and the exterior faces of the other three walls, trimming each clipped leg back to its first rib intersection. The cyan outline appears only while the reference rib is selected.</p>
                 <div className="placement-actions">
                   <button type="button" className={walls.karbandi?.cutMode ? 'primary' : ''} onClick={() => updateWallGroup('karbandi', { cutMode: !walls.karbandi?.cutMode })}>{walls.karbandi?.cutMode ? 'Manual clip on' : 'Manual clip'}</button>
@@ -2436,6 +2413,7 @@ function App() {
                 </div>
                 <p className="zone-hint">In cut mode, click a Karbandi leg segment in the stage. Mehraz trims it to the first physical rib intersection—or to the next intersection when portal clipping already made the first cut. Current cuts: {walls.karbandi?.manualCuts?.length || 0}</p>
                 <div className="field-grid">
+                  <label><span>Rib color</span><input type="color" value={walls.karbandi?.ribColor ?? walls.color} onChange={(event) => updateWallGroup('karbandi', { ribColor: event.target.value })} /></label>
                   <NumberField label="Rib count" value={walls.karbandi?.ribCount ?? DEFAULT_WALL_SYSTEM.karbandi.ribCount} min={2} max={64} step={1} onChange={(ribCount) => updateWallGroup('karbandi', { ribCount })} />
                   <NumberField label="Rotation offset · degrees" value={walls.karbandi?.rotationOffset ?? DEFAULT_WALL_SYSTEM.karbandi.rotationOffset} min={-360} max={360} step={1} onChange={(rotationOffset) => updateWallGroup('karbandi', { rotationOffset })} />
                   <NumberField label="Reference rib span · m" value={walls.karbandi?.span ?? DEFAULT_WALL_SYSTEM.karbandi.span} min={0.2} max={40} step={0.05} onChange={(span) => updateWallGroup('karbandi', { span })} />
@@ -2449,6 +2427,7 @@ function App() {
                   <NumberField label="Reference move Z · m" value={walls.karbandi?.referenceZ ?? DEFAULT_WALL_SYSTEM.karbandi.referenceZ} min={-40} max={40} step={0.05} onChange={(referenceZ) => updateWallGroup('karbandi', { referenceZ })} />
                   <NumberField label="Reference rotation · degrees" value={walls.karbandi?.referenceRotation ?? DEFAULT_WALL_SYSTEM.karbandi.referenceRotation} min={-360} max={360} step={1} onChange={(referenceRotation) => updateWallGroup('karbandi', { referenceRotation })} />
                 </div>
+                </fieldset>
                 <fieldset><legend>Whole Karbandi transform</legend><div className="field-grid">
                   <NumberField label="Move X · m" value={walls.karbandi?.groupX ?? DEFAULT_WALL_SYSTEM.karbandi.groupX} min={-40} max={40} step={0.05} onChange={(groupX) => updateWallGroup('karbandi', { groupX })} />
                   <NumberField label="Move Y · m" value={walls.karbandi?.groupY ?? DEFAULT_WALL_SYSTEM.karbandi.groupY} min={-40} max={40} step={0.05} onChange={(groupY) => updateWallGroup('karbandi', { groupY })} />
