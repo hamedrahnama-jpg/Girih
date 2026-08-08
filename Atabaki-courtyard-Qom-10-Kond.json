@@ -1,0 +1,5331 @@
+{
+  "id": "model-atabaki-courtyard-qom-10-kond",
+  "app": "Girih",
+  "kind": "girih-model",
+  "version": 2,
+  "name": "Atabaki courtyard, Qom - 10 Kond study",
+  "exportedAt": "2026-07-12T09:17:32.276Z",
+  "style": "presentation",
+  "material": "plastic",
+  "renderSettings": {
+    "backgroundColor": "#000000",
+    "edgeColor": "#000000",
+    "edgeThickness": 1,
+    "edgeMode": "single",
+    "edgeOffsetCount": 1,
+    "edgeOffsetDistance": 0
+  },
+  "modelTransform": {
+    "scaleX": 1,
+    "scaleY": 1,
+    "scaleZ": 1,
+    "rotationX": 0,
+    "rotationY": 0,
+    "rotationZ": 0,
+    "positionX": 0,
+    "positionY": 0,
+    "positionZ": 0
+  },
+  "sources": [
+    {
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "name": "Shamseh Kond",
+      "group": "10 Kond",
+      "type": "glb",
+      "isFrameSlice": false,
+      "points": [
+        [
+          -1.1,
+          0
+        ],
+        [
+          -0.891,
+          -0.646
+        ],
+        [
+          -0.341,
+          -1.046
+        ],
+        [
+          0.341,
+          -1.046
+        ],
+        [
+          0.891,
+          -0.646
+        ],
+        [
+          1.1,
+          0
+        ],
+        [
+          0.891,
+          0.646
+        ],
+        [
+          0.341,
+          1.046
+        ],
+        [
+          -0.341,
+          1.046
+        ],
+        [
+          -0.891,
+          0.646
+        ]
+      ],
+      "snapEdges": [
+        [
+          [
+            -1.1,
+            0
+          ],
+          [
+            -0.891,
+            -0.646
+          ]
+        ],
+        [
+          [
+            -0.891,
+            -0.646
+          ],
+          [
+            -0.341,
+            -1.046
+          ]
+        ],
+        [
+          [
+            -0.341,
+            -1.046
+          ],
+          [
+            0.341,
+            -1.046
+          ]
+        ],
+        [
+          [
+            0.341,
+            -1.046
+          ],
+          [
+            0.891,
+            -0.646
+          ]
+        ],
+        [
+          [
+            0.891,
+            -0.646
+          ],
+          [
+            1.1,
+            0
+          ]
+        ],
+        [
+          [
+            1.1,
+            0
+          ],
+          [
+            0.891,
+            0.646
+          ]
+        ],
+        [
+          [
+            0.891,
+            0.646
+          ],
+          [
+            0.341,
+            1.046
+          ]
+        ],
+        [
+          [
+            0.341,
+            1.046
+          ],
+          [
+            -0.341,
+            1.046
+          ]
+        ],
+        [
+          [
+            -0.341,
+            1.046
+          ],
+          [
+            -0.891,
+            0.646
+          ]
+        ],
+        [
+          [
+            -0.891,
+            0.646
+          ],
+          [
+            -1.1,
+            0
+          ]
+        ]
+      ],
+      "verticalEdges": [],
+      "displayEdges": [
+        [
+          [
+            -1.1,
+            0
+          ],
+          [
+            -0.891,
+            -0.646
+          ]
+        ],
+        [
+          [
+            -0.891,
+            -0.646
+          ],
+          [
+            -0.341,
+            -1.046
+          ]
+        ],
+        [
+          [
+            -0.341,
+            -1.046
+          ],
+          [
+            0.341,
+            -1.046
+          ]
+        ],
+        [
+          [
+            0.341,
+            -1.046
+          ],
+          [
+            0.891,
+            -0.646
+          ]
+        ],
+        [
+          [
+            0.891,
+            -0.646
+          ],
+          [
+            1.1,
+            0
+          ]
+        ],
+        [
+          [
+            1.1,
+            0
+          ],
+          [
+            0.891,
+            0.646
+          ]
+        ],
+        [
+          [
+            0.891,
+            0.646
+          ],
+          [
+            0.341,
+            1.046
+          ]
+        ],
+        [
+          [
+            0.341,
+            1.046
+          ],
+          [
+            -0.341,
+            1.046
+          ]
+        ],
+        [
+          [
+            -0.341,
+            1.046
+          ],
+          [
+            -0.891,
+            0.646
+          ]
+        ],
+        [
+          [
+            -0.891,
+            0.646
+          ],
+          [
+            -1.1,
+            0
+          ]
+        ]
+      ],
+      "sourceHeightPx": 0.4,
+      "sourceWidthPx": 4.546,
+      "sourceLengthPx": 4.324,
+      "sourceFootprintScale": 0.48394192696876376,
+      "keepAspectRatio": true,
+      "analysisVersion": 7,
+      "glbUrl": "/models/10%20Kond/Shamseh%20Kond.glb"
+    },
+    {
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "name": "Toranj Kond",
+      "group": "10 Kond",
+      "type": "glb",
+      "isFrameSlice": false,
+      "points": [
+        [
+          -1.1,
+          -0.578
+        ],
+        [
+          0,
+          -0.936
+        ],
+        [
+          1.1,
+          -0.578
+        ],
+        [
+          0,
+          0.936
+        ]
+      ],
+      "snapEdges": [
+        [
+          [
+            -1.1,
+            -0.578
+          ],
+          [
+            0,
+            -0.936
+          ]
+        ],
+        [
+          [
+            0,
+            -0.936
+          ],
+          [
+            1.1,
+            -0.578
+          ]
+        ],
+        [
+          [
+            1.1,
+            -0.578
+          ],
+          [
+            0,
+            0.936
+          ]
+        ],
+        [
+          [
+            0,
+            0.936
+          ],
+          [
+            -1.1,
+            -0.578
+          ]
+        ]
+      ],
+      "verticalEdges": [],
+      "displayEdges": [
+        [
+          [
+            -1.1,
+            -0.578
+          ],
+          [
+            0,
+            -0.936
+          ]
+        ],
+        [
+          [
+            0,
+            -0.936
+          ],
+          [
+            1.1,
+            -0.578
+          ]
+        ],
+        [
+          [
+            1.1,
+            -0.578
+          ],
+          [
+            0,
+            0.936
+          ]
+        ],
+        [
+          [
+            0,
+            0.936
+          ],
+          [
+            -1.1,
+            -0.578
+          ]
+        ]
+      ],
+      "sourceHeightPx": 0.4,
+      "sourceWidthPx": 1.405,
+      "sourceLengthPx": 1.195,
+      "sourceFootprintScale": 1.5658362989323844,
+      "keepAspectRatio": true,
+      "analysisVersion": 7,
+      "glbUrl": "/models/10%20Kond/Toranj%20Kond.glb"
+    },
+    {
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "name": "Loz",
+      "group": "10 Kond",
+      "type": "glb",
+      "isFrameSlice": false,
+      "points": [
+        [
+          -0.799,
+          0
+        ],
+        [
+          0,
+          -1.1
+        ],
+        [
+          0.799,
+          0
+        ],
+        [
+          0,
+          1.1
+        ]
+      ],
+      "snapEdges": [
+        [
+          [
+            -0.799,
+            0
+          ],
+          [
+            0,
+            -1.1
+          ]
+        ],
+        [
+          [
+            0,
+            -1.1
+          ],
+          [
+            0.799,
+            0
+          ]
+        ],
+        [
+          [
+            0.799,
+            0
+          ],
+          [
+            0,
+            1.1
+          ]
+        ],
+        [
+          [
+            0,
+            1.1
+          ],
+          [
+            -0.799,
+            0
+          ]
+        ]
+      ],
+      "verticalEdges": [],
+      "displayEdges": [
+        [
+          [
+            -0.799,
+            0
+          ],
+          [
+            0,
+            -1.1
+          ]
+        ],
+        [
+          [
+            0,
+            -1.1
+          ],
+          [
+            0.799,
+            0
+          ]
+        ],
+        [
+          [
+            0.799,
+            0
+          ],
+          [
+            0,
+            1.1
+          ]
+        ],
+        [
+          [
+            0,
+            1.1
+          ],
+          [
+            -0.799,
+            0
+          ]
+        ]
+      ],
+      "sourceHeightPx": 0.4,
+      "sourceWidthPx": 1.256,
+      "sourceLengthPx": 1.729,
+      "sourceFootprintScale": 1.2724117987275883,
+      "keepAspectRatio": true,
+      "analysisVersion": 7,
+      "glbUrl": "/models/10%20Kond/Loz.glb"
+    }
+  ],
+  "pieces": [
+    {
+      "id": "atabaki-001",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -1.44,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-002",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -1.1,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-003",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": -1.164934,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-004",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": -1.334934,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-005",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": -1.545066,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-006",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": -1.715066,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-007",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -1.78,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-008",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": -1.715066,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-009",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": -1.545066,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-010",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": -1.334934,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-011",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": -1.164934,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-012",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -1.44,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-013",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -1.15,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-014",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": -1.205385,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-015",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": -1.350385,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-016",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": -1.529615,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-017",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": -1.674615,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-018",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -1.73,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-019",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": -1.674615,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-020",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": -1.529615,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-021",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": -1.350385,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-022",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": -1.205385,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-023",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.085229,
+        "y": -1.322693,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-024",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.137903,
+        "y": -1.484807,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-025",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -1.585,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-026",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.137903,
+        "y": -1.484807,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-027",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.085229,
+        "y": -1.322693,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-028",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -1.44,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-029",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -1.1,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-030",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": -1.164934,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-031",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": -1.334934,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-032",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": -1.545066,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-033",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": -1.715066,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-034",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -1.78,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-035",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": -1.715066,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-036",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": -1.545066,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-037",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": -1.334934,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-038",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": -1.164934,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-039",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -0.72,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-040",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -0.43,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-041",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.649542,
+        "y": -0.485385,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-042",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.544194,
+        "y": -0.630385,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-043",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.544194,
+        "y": -0.809615,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-044",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.649542,
+        "y": -0.954615,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-045",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -1.01,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-046",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.990458,
+        "y": -0.954615,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-047",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.095806,
+        "y": -0.809615,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-048",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.095806,
+        "y": -0.630385,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-049",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.990458,
+        "y": -0.485385,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-050",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.734771,
+        "y": -0.602693,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-051",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.682097,
+        "y": -0.764807,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-052",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -0.865,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-053",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.957903,
+        "y": -0.764807,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-054",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.905229,
+        "y": -0.602693,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-055",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -0.72,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-056",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -0.38,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-057",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.199847,
+        "y": -0.444934,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-058",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.323359,
+        "y": -0.614934,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-059",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.323359,
+        "y": -0.825066,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-060",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.199847,
+        "y": -0.995066,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-061",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -1.06,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-062",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.199847,
+        "y": -0.995066,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-063",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.323359,
+        "y": -0.825066,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-064",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.323359,
+        "y": -0.614934,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-065",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.199847,
+        "y": -0.444934,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-066",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -0.72,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-067",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -0.43,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-068",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.990458,
+        "y": -0.485385,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-069",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.095806,
+        "y": -0.630385,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-070",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.095806,
+        "y": -0.809615,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-071",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.990458,
+        "y": -0.954615,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-072",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -1.01,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-073",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.649542,
+        "y": -0.954615,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-074",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.544194,
+        "y": -0.809615,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-075",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.544194,
+        "y": -0.630385,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-076",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.649542,
+        "y": -0.485385,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-077",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.905229,
+        "y": -0.602693,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-078",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.957903,
+        "y": -0.764807,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-079",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -0.865,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-080",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.682097,
+        "y": -0.764807,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-081",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.734771,
+        "y": -0.602693,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-082",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 0,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-083",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 0.34,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-084",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": 0.275066,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-085",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": 0.105066,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-086",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": -0.105066,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-087",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": -0.275066,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-088",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": -0.34,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-089",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": -0.275066,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-090",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": -0.105066,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-091",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": 0.105066,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-092",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": 0.275066,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-093",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-094",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 0.29,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-095",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": 0.234615,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-096",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": 0.089615,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-097",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": -0.089615,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-098",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": -0.234615,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-099",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -0.29,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-100",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": -0.234615,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-101",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": -0.089615,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-102",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": 0.089615,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-103",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": 0.234615,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-104",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.085229,
+        "y": 0.117307,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-105",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.137903,
+        "y": -0.044807,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-106",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": -0.145,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-107",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.137903,
+        "y": -0.044807,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-108",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.085229,
+        "y": 0.117307,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-109",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 0,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-110",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 0.34,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-111",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": 0.275066,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-112",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": 0.105066,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-113",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": -0.105066,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-114",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": -0.275066,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-115",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": -0.34,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-116",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": -0.275066,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-117",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": -0.105066,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-118",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": 0.105066,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-119",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": 0.275066,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-120",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 0.72,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-121",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 1.01,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-122",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.649542,
+        "y": 0.954615,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-123",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.544194,
+        "y": 0.809615,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-124",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.544194,
+        "y": 0.630385,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-125",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.649542,
+        "y": 0.485385,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-126",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 0.43,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-127",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.990458,
+        "y": 0.485385,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-128",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.095806,
+        "y": 0.630385,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-129",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.095806,
+        "y": 0.809615,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-130",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.990458,
+        "y": 0.954615,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-131",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.734771,
+        "y": 0.837307,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-132",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.682097,
+        "y": 0.675193,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-133",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 0.575,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-134",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.957903,
+        "y": 0.675193,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-135",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.905229,
+        "y": 0.837307,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-136",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 0.72,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-137",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 1.06,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-138",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.199847,
+        "y": 0.995066,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-139",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.323359,
+        "y": 0.825066,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-140",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.323359,
+        "y": 0.614934,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-141",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.199847,
+        "y": 0.444934,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-142",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 0.38,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-143",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.199847,
+        "y": 0.444934,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-144",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.323359,
+        "y": 0.614934,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-145",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.323359,
+        "y": 0.825066,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-146",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.199847,
+        "y": 0.995066,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-147",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 0.72,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-148",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 1.01,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-149",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.990458,
+        "y": 0.954615,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-150",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.095806,
+        "y": 0.809615,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-151",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.095806,
+        "y": 0.630385,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-152",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.990458,
+        "y": 0.485385,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-153",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 0.43,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-154",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.649542,
+        "y": 0.485385,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-155",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.544194,
+        "y": 0.630385,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-156",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.544194,
+        "y": 0.809615,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-157",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.649542,
+        "y": 0.954615,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-158",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.905229,
+        "y": 0.837307,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-159",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.957903,
+        "y": 0.675193,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-160",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 0.575,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-161",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.682097,
+        "y": 0.675193,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-162",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.734771,
+        "y": 0.837307,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-163",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 1.44,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-164",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 1.78,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-165",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": 1.715066,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-166",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": 1.545066,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-167",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.496641,
+        "y": 1.334934,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-168",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.620153,
+        "y": 1.164934,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-169",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.82,
+        "y": 1.1,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-170",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": 1.164934,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-171",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": 1.334934,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-172",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.143359,
+        "y": 1.545066,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-173",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -1.019847,
+        "y": 1.715066,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-174",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 1.44,
+        "rotation": 0.314159,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.195
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-175",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 1.73,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-176",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": 1.674615,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-177",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": 1.529615,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-178",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.275806,
+        "y": 1.350385,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-179",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.170458,
+        "y": 1.205385,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-180",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 1.15,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-181",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": 1.205385,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-182",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": 1.350385,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-183",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.275806,
+        "y": 1.529615,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-184",
+      "sourceKey": "loz",
+      "sourceId": "loz",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.170458,
+        "y": 1.674615,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.176,
+        "stageLength": 0.242
+      },
+      "material": {
+        "color": "#e8c8a8"
+      }
+    },
+    {
+      "id": "atabaki-185",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.085229,
+        "y": 1.557307,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-186",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.137903,
+        "y": 1.395193,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-187",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0,
+        "y": 1.295,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-188",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.137903,
+        "y": 1.395193,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-189",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": -0.085229,
+        "y": 1.557307,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.14,
+        "stageLength": 0.119
+      },
+      "material": {
+        "color": "#301018"
+      }
+    },
+    {
+      "id": "atabaki-190",
+      "sourceKey": "shamseh-kond",
+      "sourceId": "shamseh-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 1.44,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.39,
+        "stageLength": 0.371
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-191",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 1.78,
+        "rotation": 0,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-192",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": 1.715066,
+        "rotation": -0.628319,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-193",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": 1.545066,
+        "rotation": -1.256637,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-194",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.143359,
+        "y": 1.334934,
+        "rotation": -1.884956,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-195",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 1.019847,
+        "y": 1.164934,
+        "rotation": -2.513274,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-196",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.82,
+        "y": 1.1,
+        "rotation": -3.141593,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-197",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": 1.164934,
+        "rotation": -3.769911,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-198",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": 1.334934,
+        "rotation": -4.39823,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-199",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.496641,
+        "y": 1.545066,
+        "rotation": -5.026548,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    },
+    {
+      "id": "atabaki-200",
+      "sourceKey": "toranj-kond",
+      "sourceId": "toranj-kond",
+      "groupInstanceId": null,
+      "snappedTo": null,
+      "transform": {
+        "x": 0.620153,
+        "y": 1.715066,
+        "rotation": -5.654867,
+        "elevation": 0,
+        "tiltX": 0,
+        "tiltZ": 0,
+        "mirrorHorizontal": false,
+        "mirrorVertical": false,
+        "hidden": false,
+        "height": 0.08,
+        "stageWidth": 0.205,
+        "stageLength": 0.174
+      },
+      "material": {
+        "color": "#3878b8"
+      }
+    }
+  ]
+}

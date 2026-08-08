@@ -1,0 +1,23 @@
+{
+  "name": "mehraz-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test src/*.test.js",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^0.468.0",
+    "mp4-muxer": "^5.2.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.178.0",
+    "vite": "^7.0.0"
+  }
+}

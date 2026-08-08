@@ -4,19 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
+    "predev": "node scripts/publish-girih-design.mjs && node scripts/publish-asset-contracts.mjs && node scripts/publish-library-migration.mjs && node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
+    "prebuild": "node scripts/publish-girih-design.mjs && node scripts/publish-asset-contracts.mjs && node scripts/publish-library-migration.mjs && node scripts/generate-public-model-pieces.mjs && node scripts/generate-public-templates.mjs",
     "build": "vite build",
+    "test:asset-contracts": "node packages/asset-contracts/test.mjs",
+    "test:library-migration": "node scripts/validate-library-migration.mjs",
+    "test:library-client": "node packages/library-client/test.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
+    "lucide-react": "^0.468.0",
+    "mp4-muxer": "^5.2.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "stripe": "^22.3.0",
     "three": "^0.178.0",
-    "lucide-react": "^0.468.0"
-  },
-  "devDependencies": {}
+    "vite": "^7.0.0"
+  }
 }

@@ -2,54 +2,185 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { SSRPass } from 'three/examples/jsm/postprocessing/SSRPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ArrayBufferTarget, Muxer } from 'mp4-muxer';
 import {
+  Activity,
+  ArrowRight,
+  BarChart3,
   Box,
+  Clock3,
   Download,
-  Edit3,
-  Eye,
-  FileText,
+  EyeOff,
+  FolderOpen,
+  Frame,
   Grid3X3,
+  GraduationCap,
   Image as ImageIcon,
   Layers3,
+  Magnet,
   Menu,
+  Minus,
+  Moon,
   Palette,
   Plus,
+  Play,
   Printer,
   Redo2,
   Save,
+  Search,
+  Settings2,
+  ShoppingBag,
+  Store,
+  Sun,
   Trash2,
   Undo2,
   Upload,
+  User,
+  UsersRound,
   X,
 } from 'lucide-react';
 import * as THREE from 'three';
 import { PUBLIC_MODEL_FILES, PUBLIC_MODEL_GROUPS } from './publicModelPieces.generated.js';
 import { PUBLIC_TEMPLATE_FILES, PUBLIC_TEMPLATE_GROUPS } from './publicTemplates.generated.js';
+import { loadAuthenticatedUser, supabase, supabaseConfigured } from './supabase.js';
+import TrainingPage from './training.jsx';
+import GIRIH_APPS from '../packages/girih-design/apps.json';
+import { ASSET_CONTRACT_MANIFEST } from '../packages/asset-contracts/manifest.js';
+import {
+  archiveLibraryAsset,
+  listLibraryAssets,
+  listLibraryAssetVersions,
+  saveLibraryAsset,
+  setCurrentLibraryAssetVersion,
+  updateLibraryAssetMetadata,
+} from '../packages/library-client/index.js';
 import './styles.css';
+import './landing.css';
 
 const STORAGE_KEY = 'girih.pieces.v1';
 const ADMIN_SETTINGS_STORAGE_KEY = 'girih.pieceAdminSettings.v1';
+const SHAMSEH_WIDTH_NORMALIZATION_STORAGE_KEY = 'girih.shamsehWidthNormalization.v1';
 const GROUP_COLOR_PALETTES_STORAGE_KEY = 'girih.groupColorPalettes.v1';
 const MODELS_STORAGE_KEY = 'girih.models.v1';
+const MODELS_DATABASE_NAME = 'girih-model-library';
+const MODELS_DATABASE_STORE = 'model-library';
+const SURFACE_STICKERS_DATABASE_STORE = 'surface-sticker-library';
+const SURFACE_STICKERS_STORAGE_KEY = 'girih.surfaceStickerLibrary.v1';
 const MOTIFS_STORAGE_KEY = 'girih.motifs.v1';
-const ANALYSIS_VERSION = 6;
+const RECOVERY_DRAFT_STORAGE_KEY = 'girih.recoveryDraft.v1';
+const PENDING_STUDIO_MODEL_ID_KEY = 'girih.pendingStudioModelId.v1';
+const NIGHT_MODE_STORAGE_KEY = 'girih.nightMode.v1';
+const GLASS_SETTINGS_STORAGE_KEY = 'girih.glassSettings.v1';
+const ANALYSIS_VERSION = 7;
 const SNAP_DISTANCE = 0.45;
 const OBJ_DISPLAY_SIZE = 2.2;
 const HISTORY_LIMIT = 80;
 const TARGETED_REAL_BOUNDARY_NAMES = new Set(['setareh', 'maku']);
 const REMOVED_DEFAULT_PIECE_IDS = new Set(['decagon', 'pentagon', 'bowtie', 'rhombus', 'dart']);
+const LEGACY_MOROCCO_GROUP = '8 Morroco';
+const LEGACY_MOROCCO_ID_PREFIX = '8-morroco-';
+const MOROCCO_ID_PREFIX = '8-morocco-';
+const SHAMSEH_REFERENCE_GROUP = '8 Morocco';
+const SHAMSEH_REFERENCE_BY_GROUP = {
+  '8 Morocco': 'Shamseh',
+  '8 Persian': 'Shamseh',
+  '10 Kond': 'Shamseh Kond',
+  '10 Tond': 'Shamseh',
+};
+const UNIVERSAL_PIECE_HEIGHT = 0.08;
+const SHAMSEH_WIDTH_NORMALIZATION_VERSION = 'morocco-shamseh-width-and-flat-height-v9';
+const UNIVERSAL_PIECE_COLORS = {
+  '8 Persian/Bazooband B': '#2f66ba',
+  '8 Persian/Bazooband S': '#43857a',
+  '8 Persian/Chalipa': '#ffffff',
+  '8 Persian/Khuneh': '#2f66ba',
+  '8 Persian/Moraba B': '#ffffff',
+  '8 Persian/Moraba S': '#d50000',
+  '8 Persian/Shamseh': '#ffd31a',
+  '8 Persian/Tabl': '#5bbbed',
+  '8 Persian/Zohreh': '#43857a',
+  '10 Kond/Giveh': '#020818',
+  '10 Kond/Loz': '#ffd31a',
+  '10 Kond/Panj': '#ffd31a',
+  '10 Kond/Sekro': '#020818',
+  '10 Kond/Separi': '#ffd31a',
+  '10 Kond/Setareh Shol': '#020818',
+  '10 Kond/Shamseh Kond': '#ffffff',
+  '10 Kond/Shesh Shol': '#ffd31a',
+  '10 Kond/Sormehdan': '#020818',
+  '10 Kond/Tabl': '#ffd31a',
+  '10 Kond/Toranj Kond': '#020818',
+  '10 Tond/Badami': '#3041b7',
+  '10 Tond/Chenari': '#3041b7',
+  '10 Tond/Maku': '#3041b7',
+  '10 Tond/Setareh': '#ffffff',
+  '10 Tond/Shamseh': '#ffd31a',
+  '10 Tond/Shesh Band': '#3041b7',
+  '10 Tond/Tah Borideh': '#3041b7',
+  '10 Tond/Taragheh': '#ffffff',
+  '10 Tond/Toranj': '#ffffff',
+  '8 Morocco/Badami': '#66645f',
+  '8 Morocco/Charsoo': '#ffffff',
+  '8 Morocco/Chenari': '#619574',
+  '8 Morocco/Flesh': '#ffffff',
+  '8 Morocco/Gavi': '#619574',
+  '8 Morocco/Ghayegh B': '#d38a32',
+  '8 Morocco/Ghayegh S': '#a5a5a5',
+  '8 Morocco/Gorz': '#619574',
+  '8 Morocco/Khesht': '#d50000',
+  '8 Morocco/Khuneh': '#ffffff',
+  '8 Morocco/Lozi': '#d50000',
+  '8 Morocco/Moraba': '#66645f',
+  '8 Morocco/Mosalas': '#66645f',
+  '8 Morocco/Nimpa': '#619574',
+  '8 Morocco/Pabozi B': '#ffffff',
+  '8 Morocco/Pabozi S': '#ffffff',
+  '8 Morocco/Potk': '#ffffff',
+  '8 Morocco/Setareh': '#d50000',
+  '8 Morocco/Shamseh': '#d50000',
+  '8 Morocco/Shesh': '#619574',
+  '8 Morocco/Sormedan': '#ffffff',
+  '8 Morocco/Tabl': '#619574',
+  '8 Morocco/Toranj': '#ffffff',
+};
+const BUILT_IN_GROUP_PALETTE_ID = 'universal-default';
 const EXPORT_MATERIALS = new Set(['glass', 'plastic', 'paper']);
 const EDGE_LINE_MODES = new Set(['single', 'double', 'offset']);
 const DEFAULT_SCENE_STYLE = 'presentation';
 const STAGE_CAMERA_VIEWS = [
-  { id: 'top', label: 'Top', position: [0, 12, 0.001], up: [0, 0, -1], lockRotate: true },
+  { id: 'top', label: 'Top', position: [0, 6, 0.001], up: [0, 0, -1], lockRotate: true },
   { id: 'iso-ne', label: 'NE', position: [7.2, 6.4, 7.2], up: [0, 1, 0] },
   { id: 'iso-nw', label: 'NW', position: [-7.2, 6.4, 7.2], up: [0, 1, 0] },
   { id: 'iso-se', label: 'SE', position: [7.2, 6.4, -7.2], up: [0, 1, 0] },
   { id: 'iso-sw', label: 'SW', position: [-7.2, 6.4, -7.2], up: [0, 1, 0] },
 ];
 const STAGE_CAMERA_VIEW_MAP = new Map(STAGE_CAMERA_VIEWS.map((view) => [view.id, view]));
+const CAMERA_VIDEO_ROTATIONS = 1;
+const CAMERA_VIDEO_FPS = 30;
+const CAMERA_VIDEO_BITRATE = 20000000;
+const CAMERA_VIDEO_WIDTH = 1920;
+const CAMERA_VIDEO_HEIGHT = 1080;
+const CAMERA_VIDEO_PRESETS = [
+  { id: 'orbit-decline', label: 'Declining orbit · 10s', durationMs: 10000 },
+  { id: 'top-spin-zoom', label: 'Top ¼ spin + zoom · 5s', durationMs: 5000 },
+];
+CAMERA_VIDEO_PRESETS.push({ id: 'center-assembly', label: 'Center assembly - 8s', durationMs: 8000, type: 'assembly' });
+const CAMERA_VIDEO_PRESET_MAP = new Map(CAMERA_VIDEO_PRESETS.map((preset) => [preset.id, preset]));
+const TEMPLATE_GROUP_LOGOS = {
+  '8 Morocco': '/template-group-logos/8-morocco.png',
+  '8 Persian': '/template-group-logos/8-persian.png',
+  '10 Tond': '/template-group-logos/10-tond.png',
+  '10 Kond': '/template-group-logos/10-kond.png',
+};
+const MARKETPLACE_CATEGORIES = ['10 Tond', '10 Kond', '8 Morocco', '8 Persian', 'Stickers'];
 const DEFAULT_RENDER_SETTINGS = {
   backgroundColor: '#1b3f3a',
   edgeColor: '#123f3a',
@@ -58,6 +189,72 @@ const DEFAULT_RENDER_SETTINGS = {
   edgeOffsetCount: 2,
   edgeOffsetDistance: 4,
 };
+const EXPORT_FORMAT_OPTIONS = [
+  { value: 'png', label: 'PNG image' },
+  { value: 'png-transparent', label: 'PNG transparent' },
+  { value: 'png-flat-color', label: '2D Color' },
+  { value: 'svg', label: 'SVG vector' },
+  { value: 'eps', label: 'EPS vector' },
+  { value: 'dxf', label: 'DXF laser/CNC' },
+  { value: 'stl', label: 'STL 3D print' },
+  { value: 'pdf', label: 'PDF document' },
+  { value: 'mp4', label: 'MP4 video' },
+  { value: 'json', label: 'JSON model' },
+  { value: 'obj', label: 'OBJ model' },
+];
+const EXPORT_PAPER_SIZES = [
+  { value: 'canvas', label: 'Canvas 4:3', width: 4, height: 3, pdf: { width: 842, height: 595 } },
+  { value: 'a4', label: 'A4', width: 210, height: 297, pdf: { width: 595, height: 842 } },
+  { value: 'a3', label: 'A3', width: 297, height: 420, pdf: { width: 842, height: 1191 } },
+  { value: 'letter', label: 'Letter', width: 8.5, height: 11, pdf: { width: 612, height: 792 } },
+  { value: 'square', label: 'Square', width: 1, height: 1, pdf: { width: 720, height: 720 } },
+];
+const DEFAULT_EXPORT_PAPER_SIZE = 'canvas';
+const TRANSPARENT_BACKGROUND_EXPORT_FORMATS = new Set(['png', 'png-flat-color']);
+const GRAPHIC_2D_EXPORT_FORMATS = new Set(['png', 'png-transparent', 'png-flat-color', 'pdf']);
+const EXPORT_2D_STYLE_OPTIONS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'pencil', label: 'Color pencil' },
+  { value: 'paper-cut', label: 'Paper cut' },
+  { value: 'hatch', label: '45° hatch' },
+];
+const EXPORT_2D_FORMATS = new Set(['png-flat-color', 'png-transparent', 'svg', 'eps', 'dxf', 'pdf']);
+const EXPORT_2D_GRAPHIC_FORMATS = new Set(['png-flat-color', 'png-transparent', 'pdf']);
+const EXPORT_3D_FORMATS = new Set(['png', 'pdf', 'mp4', 'stl', 'json', 'obj']);
+const FREE_LIBRARY_GROUP = '10 Tond';
+const FREE_EXPORT_FORMATS = new Set(['png', 'png-flat-color']);
+const USER_ROLES = {
+  ADMIN: 'admin',
+  PAID: 'paid',
+  FREE: 'free',
+};
+const GIRIH_STUDIO_APP_ORIGINS = new Set([
+  'https://girihstudio.com',
+  'https://bricks.girihstudio.com',
+  'https://muqarnas.girihstudio.com',
+  'https://mehraz.girihstudio.com',
+]);
+
+function safeAppReturnUrl() {
+  const value = new URLSearchParams(window.location.search).get('nextApp');
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    const local = ['localhost', '127.0.0.1'].includes(url.hostname);
+    return GIRIH_STUDIO_APP_ORIGINS.has(url.origin) || local ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+function accountAuthRedirectUrl() {
+  const nextApp = safeAppReturnUrl();
+  if (!nextApp) return `${window.location.origin}/app`;
+  const callback = new URL('/app', window.location.origin);
+  callback.searchParams.set('mode', 'login');
+  callback.searchParams.set('nextApp', nextApp);
+  return callback.toString();
+}
 const DEFAULT_MODEL_TRANSFORM = {
   scaleX: 1,
   scaleY: 1,
@@ -83,6 +280,36 @@ const EXPORT_SHADOW_QUALITY_SCALE = 1.3;
 const EXPORT_SHADOW_MAP_SIZE = 8192;
 const EXPORT_RENDER_SCALE = 1.5;
 const GLASS_EXPORT_RENDER_SCALE = 0.5;
+const GLASS_HDR_ENVIRONMENT_URL = '/environment/studio_small_09_1k.hdr';
+const GLASS_IOR = 1.5;
+const GLASS_MIN_OPTICAL_THICKNESS = 0.03;
+const GLASS_MAX_OPTICAL_THICKNESS = 0.08;
+const GLASS_POSTPROCESS_PIECE_LIMIT = 160;
+const GLASS_SSR_PIECE_LIMIT = 72;
+const DEFAULT_GLASS_SETTINGS = Object.freeze({
+  transparency: 0.92,
+  thickness: 0.055,
+  reflection: 0.58,
+  highlight: 0.62,
+  edgeDarkness: 0.34,
+  shadow: 0.42,
+  frosted: 0.06,
+  glossiness: 0.82,
+});
+const GLASS_CONTROL_FIELDS = [
+  { id: 'transparency', label: 'Transparency', min: 55, max: 98, step: 1, unit: '%' },
+  { id: 'thickness', label: 'Thickness', min: 3, max: 8, step: 0.5, unit: ' mm' },
+  { id: 'reflection', label: 'Reflection', min: 0, max: 100, step: 1, unit: '%' },
+  { id: 'highlight', label: 'Highlight', min: 0, max: 100, step: 1, unit: '%' },
+  { id: 'edgeDarkness', label: 'Edge darkness', min: 0, max: 100, step: 1, unit: '%' },
+  { id: 'shadow', label: 'Shadow intensity', min: 0, max: 100, step: 1, unit: '%' },
+  { id: 'frosted', label: 'Frosted amount', min: 0, max: 100, step: 1, unit: '%' },
+  { id: 'glossiness', label: 'Glossiness', min: 0, max: 100, step: 1, unit: '%' },
+];
+const SURFACE_STICKER_SHAPE_TYPES = new Set(['circle', 'rectangle', 'triangle', 'line']);
+const SURFACE_STICKER_MAX_SHAPES = 64;
+const SURFACE_STICKER_IMAGE_SIZE = 1024;
+const SURFACE_STICKER_TEXTURE_SIZE = 1024;
 const MOBILE_EXPORT_RENDER_SCALE = 1;
 const MOBILE_EXPORT_SHADOW_MAP_SIZE = 2048;
 const MOBILE_EXPORT_MAX_PIXELS = 8_000_000;
@@ -187,11 +414,14 @@ function publicTemplate(id, name, filename, group = 'Default') {
 }
 
 function publicModelPiece(id, name, filename, color, group = 'Default') {
+  const normalizedGroup = normalizePieceGroupName(group);
+  const universalColor = universalPieceColor(normalizedGroup, name) || color;
   return {
     id,
     name,
-    group: normalizePieceGroupName(group),
-    color,
+    group: normalizedGroup,
+    color: universalColor,
+    defaultColor: universalColor,
     height: 0.18,
     type: 'glb',
     glbUrl: `/models/${encodeModelPath(filename)}`,
@@ -204,6 +434,7 @@ function publicModelPiece(id, name, filename, color, group = 'Default') {
     snapEdges: [],
     verticalEdges: [],
     displayEdges: [],
+    offsetLinesEnabled: true,
     sourceHeightPx: '',
     sourceWidthPx: '',
     sourceLengthPx: '',
@@ -211,6 +442,10 @@ function publicModelPiece(id, name, filename, color, group = 'Default') {
     keepAspectRatio: true,
     analysisVersion: 0,
   };
+}
+
+function universalPieceColor(group, name) {
+  return UNIVERSAL_PIECE_COLORS[`${normalizePieceGroupName(group)}/${name}`] || null;
 }
 
 function encodeModelPath(path) {
@@ -242,11 +477,114 @@ function useMobileViewport() {
   return mobile;
 }
 
+function SharedLibraryModelControls({
+  signedIn,
+  assets,
+  activeAssetId,
+  selectedAssetId,
+  selectedVersionId,
+  editForm,
+  versions,
+  busy,
+  status,
+  canSave,
+  onSave,
+  onOpen,
+  onRefresh,
+  onSelect,
+  onEditChange,
+  onRename,
+  onArchive,
+  onSelectVersion,
+  onMakeCurrentVersion,
+}) {
+  const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) || assets[0] || null;
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) || selectedAsset?.currentVersion || null;
+  return (
+    <div className="shared-library-models">
+      <div className="shared-library-heading">
+        <span><FolderOpen size={14} /> Shared library</span>
+        {signedIn && <button type="button" onClick={onRefresh} disabled={busy}>Refresh</button>}
+      </div>
+      {!signedIn ? <small>Sign in to save and open models across Girih Studio apps.</small> : (
+        <div className="shared-library-columns">
+          <section className="shared-library-list-column">
+            <button type="button" className="shared-library-save" onClick={onSave} disabled={!canSave || busy}>
+              <Save size={14} /> {activeAssetId ? 'Save new version' : 'Save to library'}
+            </button>
+            <div className="model-list">
+              {assets.map((asset) => (
+                <button type="button" className={`model-row ${asset.id === selectedAsset?.id ? 'is-active' : ''}`} key={asset.id} onClick={() => onSelect(asset)}>
+                  <SharedLibraryThumbnail asset={asset} version={asset.currentVersion} />
+                  <span>
+                    <strong>{asset.name}</strong>
+                    <small>Version {asset.currentVersion?.version_number || '—'}{asset.owned ? '' : ' · shared'}</small>
+                  </span>
+                  <FolderOpen size={14} />
+                </button>
+              ))}
+              {!busy && !assets.length && <small>No Girih models in your shared library yet.</small>}
+            </div>
+          </section>
+          {selectedAsset ? (
+            <section className="shared-library-manager-card">
+              <SharedLibraryThumbnail asset={selectedAsset} version={selectedVersion} />
+              <strong>{selectedAsset.name}</strong>
+              <small>Current version {selectedAsset.currentVersion?.version_number || '—'}</small>
+              <label>Name<input value={editForm.name} onChange={(event) => onEditChange({ ...editForm, name: event.target.value })} maxLength={120} /></label>
+              <label>Description<input value={editForm.description} onChange={(event) => onEditChange({ ...editForm, description: event.target.value })} maxLength={2000} /></label>
+              <div className="shared-library-manager-actions">
+                <button type="button" onClick={() => onOpen(selectedAsset)} disabled={busy}>Open selected</button>
+                <button type="button" onClick={onRename} disabled={busy}>Rename</button>
+                <button type="button" className="danger" onClick={() => onArchive(selectedAsset)} disabled={busy}>Archive</button>
+              </div>
+              <div className="shared-library-version-list">
+                <strong>Versions</strong>
+                {versions.map((version) => {
+                  const current = version.id === selectedAsset.current_version_id;
+                  return (
+                    <button type="button" key={version.id} className={version.id === selectedVersionId ? 'active' : ''} onClick={() => onSelectVersion(version.id)}>
+                      <span>Version {version.version_number}{current ? ' · current' : ''}</span>
+                      {!current && <em onClick={(event) => { event.stopPropagation(); onMakeCurrentVersion(selectedAsset, version); }}>Make current</em>}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : <section className="shared-library-manager-card shared-library-empty-detail"><FolderOpen size={28} /><span>Select an item to preview and manage it.</span></section>}
+        </div>
+      )}
+      {status && <small className="shared-library-status">{status}</small>}
+    </div>
+  );
+}
+
 function App() {
   const isMobileViewport = useMobileViewport();
   const [pieces, setPieces] = usePersistentPieces();
-  const [savedModels, setSavedModels] = usePersistentModels();
+  const [savedModels, setSavedModels, persistSavedModels] = usePersistentModels();
   const [savedMotifs, setSavedMotifs] = usePersistentMotifs();
+  const [sharedLibraryModels, setSharedLibraryModels] = useState([]);
+  const [activeLibraryAssetId, setActiveLibraryAssetId] = useState(null);
+  const [selectedLibraryAssetId, setSelectedLibraryAssetId] = useState('');
+  const [sharedLibraryEdit, setSharedLibraryEdit] = useState({ name: '', description: '' });
+  const [sharedLibraryVersions, setSharedLibraryVersions] = useState([]);
+  const [selectedLibraryVersionId, setSelectedLibraryVersionId] = useState('');
+  const [libraryEditReturnTo, setLibraryEditReturnTo] = useState('');
+  const [sharedLibraryBusy, setSharedLibraryBusy] = useState(false);
+  const [sharedLibraryStatus, setSharedLibraryStatus] = useState('');
+  const [sharedLibraryDialogOpen, setSharedLibraryDialogOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState(() => (new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'login'));
+  const [loginName, setLoginName] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginMessage, setLoginMessage] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const {
     placed,
     commitPlaced,
@@ -264,9 +602,20 @@ function App() {
   const clipboardPiecesRef = useRef([]);
   const placedRef = useRef(placed);
   const selectedIdsRef = useRef([]);
+  const checkoutRefreshStartedRef = useRef(false);
+  const libraryHandoffLoadedRef = useRef(false);
+  const shamsehWidthNormalizationAppliedRef = useRef(false);
+  const recoveryDraftInitializedRef = useRef(false);
+  const allowPageExitRef = useRef(false);
+  const exportPreviewCanvasRef = useRef(null);
+  const cameraVideoRecordingRef = useRef(false);
+  const cameraVideoProgressRef = useRef(null);
   const [material, setMaterial] = useState('plastic');
+  const [glassSettings, setGlassSettings] = useState(readGlassSettings);
   const [draft, setDraft] = useState(emptyDraft());
   const [editingId, setEditingId] = useState(null);
+  const [surfaceEditorPieceId, setSurfaceEditorPieceId] = useState(null);
+  const [surfaceStickerDraft, setSurfaceStickerDraft] = useState(() => normalizeSurfaceSticker());
   const [contextMenu, setContextMenu] = useState(null);
   const [modelName, setModelName] = useState('');
   const [motifName, setMotifName] = useState('');
@@ -276,17 +625,55 @@ function App() {
   const [motifGapX, setMotifGapX] = useState(0);
   const [motifGapY, setMotifGapY] = useState(0);
   const [modelTransform, setModelTransform] = useState(DEFAULT_MODEL_TRANSFORM);
+  const [modelTransformKeepAspect, setModelTransformKeepAspect] = useState(true);
+  const [snappingEnabled, setSnappingEnabled] = useState(true);
+  const [nightMode, setNightMode] = useState(() => localStorage.getItem(NIGHT_MODE_STORAGE_KEY) === 'true');
   const [stageCamera, setStageCamera] = useState('top');
+  const [cameraVideoPlaying, setCameraVideoPlaying] = useState(false);
+  const [cameraVideoPreset, setCameraVideoPreset] = useState(CAMERA_VIDEO_PRESETS[0].id);
+  const [cameraPresetMenuOpen, setCameraPresetMenuOpen] = useState(false);
+  const [cameraVideoProgress, setCameraVideoProgress] = useState(0);
+  const [assemblyVideoDurationSec, setAssemblyVideoDurationSec] = useState(8);
   const [exportOrientation, setExportOrientation] = useState('landscape');
   const [exportFormat, setExportFormat] = useState('png');
+  const [exportDimensionMode, setExportDimensionMode] = useState('3d');
+  const [export3DMaterial, setExport3DMaterial] = useState(material);
+  const [export3DCamera, setExport3DCamera] = useState(stageCamera);
+  const [export3DShadows, setExport3DShadows] = useState(true);
+  const [exportPaperSize, setExportPaperSize] = useState(DEFAULT_EXPORT_PAPER_SIZE);
+  const [exportTransparentBackground, setExportTransparentBackground] = useState(false);
+  const [export2DStyle, setExport2DStyle] = useState('standard');
+  const [exportPencilColor, setExportPencilColor] = useState('#526f9c');
+  const [exportPencilIntensity, setExportPencilIntensity] = useState(65);
+  const [exportPaperGap, setExportPaperGap] = useState(8);
+  const [exportPaperCutOut, setExportPaperCutOut] = useState(false);
+  const [exportHatchSpacing, setExportHatchSpacing] = useState(10);
+  const [exportHatchThickness, setExportHatchThickness] = useState(1.5);
+  const [exportHatchAngle, setExportHatchAngle] = useState(45);
+  const [exportHatchOutline, setExportHatchOutline] = useState(2);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportPreview, setExportPreview] = useState(null);
+  const [exportPreviewLoading, setExportPreviewLoading] = useState(false);
+  const [exportPreviewError, setExportPreviewError] = useState('');
+  const [exportPreviewZoom, setExportPreviewZoom] = useState(1);
+  const [exportPreviewPan, setExportPreviewPan] = useState({ x: 0, y: 0 });
+  const [itemSummaryOpen, setItemSummaryOpen] = useState(false);
+  const [pendingNavigationUrl, setPendingNavigationUrl] = useState('');
+  const [savedDesignSignature, setSavedDesignSignature] = useState(() =>
+    designStateSignature([], 'plastic', DEFAULT_RENDER_SETTINGS, DEFAULT_MODEL_TRANSFORM),
+  );
   const [renderBgColor, setRenderBgColor] = useState(DEFAULT_RENDER_SETTINGS.backgroundColor);
   const [renderEdgeColor, setRenderEdgeColor] = useState(DEFAULT_RENDER_SETTINGS.edgeColor);
   const [renderEdgeThickness, setRenderEdgeThickness] = useState(DEFAULT_RENDER_SETTINGS.edgeThickness);
   const [renderEdgeMode, setRenderEdgeMode] = useState(DEFAULT_RENDER_SETTINGS.edgeMode);
   const [renderEdgeOffsetCount, setRenderEdgeOffsetCount] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetCount);
   const [renderEdgeOffsetDistance, setRenderEdgeOffsetDistance] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetDistance);
+  const [exportBgColor, setExportBgColor] = useState(DEFAULT_RENDER_SETTINGS.backgroundColor);
+  const [exportEdgeColor, setExportEdgeColor] = useState(DEFAULT_RENDER_SETTINGS.edgeColor);
+  const [exportEdgeThickness, setExportEdgeThickness] = useState(DEFAULT_RENDER_SETTINGS.edgeThickness);
+  const [exportEdgeOffsetCount, setExportEdgeOffsetCount] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetCount);
+  const [exportEdgeOffsetDistance, setExportEdgeOffsetDistance] = useState(DEFAULT_RENDER_SETTINGS.edgeOffsetDistance);
   const [liveShadowsEnabled, setLiveShadowsEnabled] = useState(false);
-  const [printPreview, setPrintPreview] = useState(null);
   const [mobilePiecesOpen, setMobilePiecesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAdminOpen, setMobileAdminOpen] = useState(false);
@@ -302,6 +689,7 @@ function App() {
   const [collapsedPaletteGroups, setCollapsedPaletteGroups] = useState(() => new Set());
   const [groupColorPalettes, setGroupColorPalettes] = useState(readGroupColorPalettes);
   const [selectedGroupPalettes, setSelectedGroupPalettes] = useState({});
+  const [adminGroupHeightInputs, setAdminGroupHeightInputs] = useState({});
   const [modelTransformCollapsed, setModelTransformCollapsed] = useState(true);
   const [motifsCollapsed, setMotifsCollapsed] = useState(true);
   const [stageVisibleBounds, setStageVisibleBounds] = useState(null);
@@ -309,16 +697,91 @@ function App() {
   const importSceneInputRef = useRef(null);
   const templatePreviewDragRef = useRef(null);
   const templatePreviewPointersRef = useRef(new Map());
+  const exportPreviewPanDragRef = useRef(null);
+  const userRole = normalizeUserRole(currentUser?.role);
+  const isAdminUser = userRole === USER_ROLES.ADMIN;
+  const isPaidUser = userRole === USER_ROLES.PAID;
+  const isFreeUser = userRole === USER_ROLES.FREE;
+  const canUseAdmin = isAdminUser || isPaidUser;
+  const canUsePalettes = isAdminUser || isPaidUser;
+  const canUseAdvancedTools = isAdminUser || isPaidUser;
+  const canUseGrouping = isAdminUser || isPaidUser;
+  const canUseTemplates = isAdminUser || isPaidUser;
+  useEffect(() => {
+    if (!currentUser) {
+      setSharedLibraryModels([]);
+      setActiveLibraryAssetId(null);
+      return;
+    }
+    refreshGirihLibrary();
+  }, [currentUser?.id]);
+  const allowedLibraryGroups = useMemo(
+    () => (isFreeUser ? [normalizePieceGroupName(FREE_LIBRARY_GROUP)] : PUBLIC_MODEL_GROUPS.map(normalizePieceGroupName)),
+    [isFreeUser],
+  );
+  const availablePieces = useMemo(
+    () => pieces.filter((piece) => allowedLibraryGroups.includes(normalizePieceGroupName(piece.group))),
+    [pieces, allowedLibraryGroups],
+  );
+  const availableTemplates = useMemo(
+    () => (canUseTemplates ? PUBLIC_TEMPLATES.filter((template) => allowedLibraryGroups.includes(normalizePieceGroupName(template.group))) : []),
+    [allowedLibraryGroups, canUseTemplates],
+  );
+  const availableExportOptions = useMemo(
+    () => (isFreeUser ? EXPORT_FORMAT_OPTIONS.filter((option) => FREE_EXPORT_FORMATS.has(option.value)) : EXPORT_FORMAT_OPTIONS),
+    [isFreeUser],
+  );
+  const contextualExportOptions = useMemo(() => {
+    const formatSet = exportDimensionMode === '2d'
+      ? export2DStyle === 'standard' ? EXPORT_2D_FORMATS : EXPORT_2D_GRAPHIC_FORMATS
+      : EXPORT_3D_FORMATS;
+    return availableExportOptions.filter((option) => formatSet.has(option.value));
+  }, [availableExportOptions, exportDimensionMode, export2DStyle]);
 
-  const explicitGroupByPieceId = new Map();
-  stageGroups.forEach((group) => group.ids.forEach((id) => explicitGroupByPieceId.set(id, group.id)));
-  const groupedPlaced = placed.map((item) => ({
-    ...item,
-    groupInstanceId: item.groupInstanceId || explicitGroupByPieceId.get(item.id) || null,
-  }));
-  const selected = groupedPlaced.find((item) => item.id === selectedId);
-  const activeGroupPieces = activeGroupId ? groupedPlaced.filter((item) => item.groupInstanceId === activeGroupId) : [];
-  const rawSelectedPieces = selectedIds.map((id) => groupedPlaced.find((item) => item.id === id)).filter(Boolean);
+  const groupedPlaced = useMemo(() => {
+    const explicitGroupByPieceId = new Map();
+    stageGroups.forEach((group) => group.ids.forEach((id) => explicitGroupByPieceId.set(id, group.id)));
+    return placed.map((item) => ({
+      ...item,
+      groupInstanceId: item.groupInstanceId || explicitGroupByPieceId.get(item.id) || null,
+    }));
+  }, [placed, stageGroups]);
+  const activeDesignSignature = useMemo(
+    () => designStateSignature(groupedPlaced, material, {
+      backgroundColor: renderBgColor,
+      edgeColor: renderEdgeColor,
+      edgeThickness: renderEdgeThickness,
+      edgeMode: renderEdgeMode,
+      edgeOffsetCount: renderEdgeOffsetCount,
+      edgeOffsetDistance: renderEdgeOffsetDistance,
+    }, modelTransform),
+    [
+      groupedPlaced,
+      material,
+      renderBgColor,
+      renderEdgeColor,
+      renderEdgeThickness,
+      renderEdgeMode,
+      renderEdgeOffsetCount,
+      renderEdgeOffsetDistance,
+      modelTransform,
+    ],
+  );
+  const designHasUnsavedChanges = groupedPlaced.length > 0 && activeDesignSignature !== savedDesignSignature;
+  const visibleGroupedPlaced = useMemo(() => groupedPlaced.filter((item) => !item.hidden), [groupedPlaced]);
+  const stagePreviewPlaced = useMemo(() => {
+    if (!surfaceEditorPieceId) return visibleGroupedPlaced;
+    const previewSticker = normalizeSurfaceSticker(surfaceStickerDraft);
+    const surfaceSticker = hasSurfaceStickerContent(previewSticker) ? previewSticker : undefined;
+    return visibleGroupedPlaced.map((item) => (
+      item.sourceId === surfaceEditorPieceId
+        ? { ...item, surfaceSticker, surfaceStickerPreview: true }
+        : item
+    ));
+  }, [visibleGroupedPlaced, surfaceEditorPieceId, surfaceStickerDraft]);
+  const selected = visibleGroupedPlaced.find((item) => item.id === selectedId);
+  const activeGroupPieces = activeGroupId ? visibleGroupedPlaced.filter((item) => item.groupInstanceId === activeGroupId) : [];
+  const rawSelectedPieces = selectedIds.map((id) => visibleGroupedPlaced.find((item) => item.id === id)).filter(Boolean);
   const selectedPieces = activeGroupPieces.length > 1 ? activeGroupPieces : rawSelectedPieces;
   const selectedGroupId =
     activeGroupPieces.length > 1
@@ -326,23 +789,26 @@ function App() {
       : selectedPieces.length > 1 && selectedPieces.every((piece) => piece.groupInstanceId && piece.groupInstanceId === selectedPieces[0].groupInstanceId)
         ? selectedPieces[0].groupInstanceId
       : null;
-  const selectedGroupPieces = selectedGroupId ? groupedPlaced.filter((item) => item.groupInstanceId === selectedGroupId) : [];
+  const selectedGroupPieces = selectedGroupId ? visibleGroupedPlaced.filter((item) => item.groupInstanceId === selectedGroupId) : [];
   const selectedIsWholeGroup = selectedGroupId && selectedGroupPieces.length === selectedPieces.length;
   const hasClipboardPieces = clipboardPieces.length > 0 || clipboardPiecesRef.current.length > 0;
   const selectedObjectCount = selectedPieces.length;
   const groupedObjectCount = Math.max(stageGroups.length, Array.from(
-    groupedPlaced.reduce((groups, item) => {
+    visibleGroupedPlaced.reduce((groups, item) => {
       if (!item.groupInstanceId) return groups;
       groups.set(item.groupInstanceId, (groups.get(item.groupInstanceId) || 0) + 1);
       return groups;
     }, new Map()).values(),
   ).filter((count) => count > 1).length);
-  const completed = placed.length >= 7 && countSnappedPairs(placed) >= 5;
-  const pieceGroups = useMemo(() => groupLibraryPieces(pieces, PUBLIC_MODEL_GROUPS), [pieces]);
-  const templates = useMemo(() => PUBLIC_TEMPLATES, []);
+  const itemSummaryItems = useMemo(() => buildItemSummaryItems(visibleGroupedPlaced), [visibleGroupedPlaced]);
+  const completed = visibleGroupedPlaced.length >= 7 && countSnappedPairs(visibleGroupedPlaced) >= 5;
+  const pieceGroups = useMemo(() => groupLibraryPieces(availablePieces, allowedLibraryGroups), [availablePieces, allowedLibraryGroups]);
+  const adminPieceGroups = useMemo(() => groupLibraryPieces(pieces, PUBLIC_MODEL_GROUPS), [pieces]);
+  const palettePieceGroups = useMemo(() => groupLibraryPieces(availablePieces, allowedLibraryGroups), [availablePieces, allowedLibraryGroups]);
+  const templates = availableTemplates;
   const templateGroups = useMemo(
-    () => groupTemplateLibrary(templates, [...PUBLIC_MODEL_GROUPS, ...PUBLIC_TEMPLATE_GROUPS]),
-    [templates],
+    () => groupTemplateLibrary(templates, [...allowedLibraryGroups, ...PUBLIC_TEMPLATE_GROUPS.map(normalizePieceGroupName)]),
+    [templates, allowedLibraryGroups],
   );
   const templateGroupNames = useMemo(
     () => templateGroups.map((group) => group.name),
@@ -354,15 +820,397 @@ function App() {
   const framePoints = useMemo(
     () =>
       framePointIds
-        .map((id) => groupedPlaced.find((item) => item.id === id))
+        .map((id) => visibleGroupedPlaced.find((item) => item.id === id))
         .filter(Boolean)
         .map((item) => ({ id: item.id, x: item.x || 0, y: item.y || 0 })),
-    [framePointIds, groupedPlaced],
+    [framePointIds, visibleGroupedPlaced],
   );
   const selectedMotif = savedMotifs.find((motif) => motif.id === selectedMotifId) || savedMotifs[0] || null;
   const isPaperMaterial = material === 'paper';
+  const exportSupports2DStyle = exportDimensionMode === '2d';
+  const exportUsesPageLayout = exportDimensionMode === '2d' || new Set(['png', 'pdf', 'mp4']).has(exportFormat);
   const inactivePaperExportControlClass = isPaperMaterial ? 'export-disabled-control' : undefined;
   const edgeLineEnabled = !isPaperMaterial && Number(renderEdgeThickness) > 0;
+  const exportSupportsTransparentBackground = TRANSPARENT_BACKGROUND_EXPORT_FORMATS.has(exportFormat);
+  const exportPreviewUsesTransparentBackground =
+    exportFormat === 'png-transparent' ||
+    (exportSupportsTransparentBackground && exportTransparentBackground) ||
+    (exportDimensionMode === '2d' && export2DStyle === 'paper-cut' && exportPaperCutOut);
+  const selectedVideoPreset = CAMERA_VIDEO_PRESET_MAP.get(cameraVideoPreset) || CAMERA_VIDEO_PRESETS[0];
+  const selectedVideoDurationMs = selectedVideoPreset.type === 'assembly'
+    ? clamp(Number(assemblyVideoDurationSec) || 8, 2, 30) * 1000
+    : selectedVideoPreset.durationMs;
+  const liveVideoExportActive = exportDialogOpen && exportDimensionMode === '3d' && exportFormat === 'mp4';
+
+  useEffect(() => {
+    if (!contextualExportOptions.some((option) => option.value === exportFormat)) {
+      setExportFormat(contextualExportOptions[0]?.value || availableExportOptions[0]?.value || 'png');
+    }
+  }, [availableExportOptions, contextualExportOptions, exportFormat]);
+
+  useEffect(() => {
+    if (!liveVideoExportActive) return;
+    setRenderBgColor(exportBgColor);
+    setRenderEdgeColor(exportEdgeColor);
+    setRenderEdgeThickness(exportEdgeThickness);
+    setRenderEdgeMode('offset');
+    setRenderEdgeOffsetCount(exportEdgeOffsetCount);
+    setRenderEdgeOffsetDistance(exportEdgeOffsetDistance);
+    setMaterial(normalizeMaterialName(export3DMaterial));
+    setStageCamera(export3DCamera);
+    setLiveShadowsEnabled(!!export3DShadows);
+  }, [
+    liveVideoExportActive,
+    exportBgColor,
+    exportEdgeColor,
+    exportEdgeThickness,
+    exportEdgeOffsetCount,
+    exportEdgeOffsetDistance,
+    export3DMaterial,
+    export3DCamera,
+    export3DShadows,
+  ]);
+
+  useEffect(() => {
+    const recovery = readRecoveryDraft();
+    if (recovery?.pieces?.length) {
+      const recoveredPieces = rehydrateScenePieces(recovery);
+      replacePlaced(() => recoveredPieces);
+      const recoveredSettings = normalizeRenderSettings(recovery.renderSettings);
+      setMaterial(normalizeMaterialName(recovery.material || 'plastic'));
+      setRenderBgColor(recoveredSettings.backgroundColor);
+      setRenderEdgeColor(recoveredSettings.edgeColor);
+      setRenderEdgeThickness(recoveredSettings.edgeThickness);
+      setRenderEdgeMode(recoveredSettings.edgeMode);
+      setRenderEdgeOffsetCount(recoveredSettings.edgeOffsetCount);
+      setRenderEdgeOffsetDistance(recoveredSettings.edgeOffsetDistance);
+      setModelTransform(normalizeModelTransform(recovery.modelTransform));
+      setModelName(recovery.name || 'Recovered Girih model');
+    }
+    recoveryDraftInitializedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const nextApp = safeAppReturnUrl();
+    if (!nextApp || !supabase) return;
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active || !data.session) return;
+      const target = new URL(nextApp);
+      target.hash = new URLSearchParams({
+        girih_access_token: data.session.access_token,
+        girih_refresh_token: data.session.refresh_token,
+      }).toString();
+      window.location.replace(target);
+    });
+    return () => { active = false; };
+  }, [currentUser]);
+
+  useEffect(() => {
+    let active = true;
+    let pendingModelId = '';
+    try {
+      pendingModelId = sessionStorage.getItem(PENDING_STUDIO_MODEL_ID_KEY) || '';
+      if (pendingModelId) sessionStorage.removeItem(PENDING_STUDIO_MODEL_ID_KEY);
+    } catch {
+      pendingModelId = '';
+    }
+    if (!pendingModelId) return () => { active = false; };
+    localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+    readModelsFromDevice().then((models) => {
+      if (!active) return;
+      const pendingModel = models.find((model) => model.id === pendingModelId);
+      if (pendingModel) loadSavedModel(pendingModel);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!recoveryDraftInitializedRef.current) return undefined;
+    const timer = window.setTimeout(persistRecoveryDraft, 500);
+    return () => window.clearTimeout(timer);
+  }, [designHasUnsavedChanges, activeDesignSignature, modelName]);
+
+  useEffect(() => {
+    if (!designHasUnsavedChanges) return undefined;
+    const handleBeforeUnload = (event) => {
+      persistRecoveryDraft();
+      if (allowPageExitRef.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const handlePageHide = () => persistRecoveryDraft();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistRecoveryDraft();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [designHasUnsavedChanges, activeDesignSignature, modelName]);
+
+  useEffect(() => {
+    const protectInternalLink = (event) => {
+      if (!designHasUnsavedChanges || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target.closest?.('a[href]');
+      if (!anchor || anchor.hasAttribute('download') || anchor.target === '_blank') return;
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.href === window.location.href) return;
+      event.preventDefault();
+      setPendingNavigationUrl(destination.href);
+    };
+    document.addEventListener('click', protectInternalLink, true);
+    return () => document.removeEventListener('click', protectInternalLink, true);
+  }, [designHasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!templateGroups.length) return;
+    const hasActiveGroup = templateGroups.some((group) => group.name === activeTemplateGroupName);
+    if (!hasActiveGroup) {
+      const nextGroup = templateGroups[0];
+      setActiveTemplateGroup(nextGroup.name);
+      setSelectedTemplateId(nextGroup.items[0]?.id || '');
+    }
+  }, [templateGroups, activeTemplateGroupName]);
+
+  useEffect(() => {
+    if (!canUseAdmin && mobileAdminOpen) setMobileAdminOpen(false);
+  }, [canUseAdmin, mobileAdminOpen]);
+
+  useEffect(() => {
+    if (canUseTemplates) return;
+    setTemplatePanelOpen(false);
+    setTemplateStagePreviewVisible(false);
+    setSelectedTemplateId('');
+  }, [canUseTemplates]);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthReady(true);
+      return undefined;
+    }
+
+    let active = true;
+    const syncSession = async (session) => {
+      if (!active) return;
+      if (!session?.user) {
+        setCurrentUser(null);
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const nextUser = await loadAuthenticatedUser(session.user);
+        if (active) setCurrentUser(nextUser);
+      } catch (error) {
+        if (active) {
+          setCurrentUser(null);
+          setLoginError(error.message || 'Could not load your Girih profile.');
+        }
+      } finally {
+        if (active) setAuthReady(true);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        setLoginError(error.message);
+        setAuthReady(true);
+        return;
+      }
+      syncSession(data.session);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => syncSession(session), 0);
+    });
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(NIGHT_MODE_STORAGE_KEY, String(nightMode));
+    document.documentElement.style.colorScheme = nightMode ? 'dark' : 'light';
+  }, [nightMode]);
+
+  useEffect(() => {
+    localStorage.setItem(GLASS_SETTINGS_STORAGE_KEY, JSON.stringify(glassSettings));
+  }, [glassSettings]);
+
+  useEffect(() => {
+    if (!supabase || !currentUser || checkoutRefreshStartedRef.current) return undefined;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') !== 'success') return undefined;
+    checkoutRefreshStartedRef.current = true;
+    let cancelled = false;
+    let attempts = 0;
+    const refreshProfile = async () => {
+      attempts += 1;
+      const { data } = await supabase.auth.getUser();
+      const nextUser = data.user ? await loadAuthenticatedUser(data.user).catch(() => null) : null;
+      if (cancelled) return;
+      if (nextUser && nextUser.role !== currentUser.role) setCurrentUser(nextUser);
+      if (nextUser?.role === USER_ROLES.PAID || attempts >= 6) {
+        params.delete('checkout');
+        const query = params.toString();
+        window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+        return;
+      }
+      window.setTimeout(refreshProfile, 1200);
+    };
+    refreshProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!supabase || !currentUser || libraryHandoffLoadedRef.current) return undefined;
+    const params = new URLSearchParams(window.location.search);
+    const assetId = params.get('libraryAsset') || '';
+    const returnTo = params.get('returnTo') || '';
+    const versionId = params.get('version') || '';
+    if (!assetId) return undefined;
+    libraryHandoffLoadedRef.current = true;
+    let cancelled = false;
+    setSharedLibraryBusy(true);
+    listLibraryAssets(supabase, { assetType: 'girih_pattern' })
+      .then(async (assets) => {
+        if (cancelled) return;
+        setSharedLibraryModels(assets);
+        const asset = assets.find((item) => item.id === assetId);
+        if (!asset) {
+          setSharedLibraryStatus('This shared library item was not found in Girih App.');
+          return;
+        }
+        let targetAsset = asset;
+        if (versionId && versionId !== asset.current_version_id) {
+          const versions = await listLibraryAssetVersions(supabase, asset.id);
+          const selectedVersion = versions.find((version) => version.id === versionId);
+          if (selectedVersion) {
+            targetAsset = { ...asset, currentVersion: selectedVersion, current_version_id: selectedVersion.id };
+            setSharedLibraryVersions(versions);
+            setSelectedLibraryVersionId(selectedVersion.id);
+          }
+        }
+        if (cancelled) return;
+        setLibraryEditReturnTo(returnTo);
+        setSelectedLibraryAssetId(asset.id);
+        openGirihLibraryAsset(targetAsset);
+        setSharedLibraryStatus(returnTo ? 'Editing this library item from Mehraz. Save to return to Mehraz.' : '');
+      })
+      .catch((error) => {
+        if (!cancelled) setSharedLibraryStatus(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setSharedLibraryBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    const email = loginEmail.trim().toLowerCase();
+    if (!supabase) {
+      setLoginError('Global login is not configured yet. Add the Supabase environment variables.');
+      return;
+    }
+    if (!email || loginPassword.length < 8) {
+      setLoginError('Enter a valid email and a password of at least 8 characters.');
+      return;
+    }
+    setLoginError('');
+    setLoginMessage('');
+    setAuthBusy(true);
+    try {
+      if (authMode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: loginPassword,
+          options: {
+            data: { full_name: loginName.trim() },
+            emailRedirectTo: new URLSearchParams(window.location.search).get('libraryAsset')
+              ? window.location.href
+              : accountAuthRedirectUrl(),
+          },
+        });
+        if (error) throw error;
+        if (!data.session) {
+          setLoginMessage('Check your email to confirm your account, then log in.');
+          setAuthMode('login');
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: loginPassword });
+        if (error) throw error;
+      }
+      setLoginPassword('');
+    } catch (error) {
+      setLoginError(error.message || 'Authentication failed.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handleGoogleLogin() {
+    if (!supabase) {
+      setLoginError('Global login is not configured yet.');
+      return;
+    }
+    setLoginError('');
+    setLoginMessage('');
+    setAuthBusy(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: new URLSearchParams(window.location.search).get('libraryAsset')
+          ? window.location.href
+          : accountAuthRedirectUrl(),
+        queryParams: { prompt: 'select_account' },
+      },
+    });
+    if (error) {
+      setLoginError(error.message || 'Google sign-in could not be started.');
+      setAuthBusy(false);
+    }
+  }
+
+  async function logout() {
+    if (supabase) await supabase.auth.signOut();
+    setMobileAdminOpen(false);
+    setMobileMenuOpen(false);
+    setTemplatePanelOpen(false);
+    setContextMenu(null);
+  }
+
+  async function openBillingFlow(endpoint) {
+    if (!supabase || billingBusy) return;
+    setBillingBusy(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (!accessToken) throw new Error('Please log in again.');
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.url) throw new Error(result.error || 'Could not open billing.');
+      window.location.assign(result.url);
+    } catch (error) {
+      window.alert(error.message || 'Could not open billing.');
+      setBillingBusy(false);
+    }
+  }
 
   function currentRenderSettings() {
     return normalizeRenderSettings({
@@ -372,6 +1220,36 @@ function App() {
       edgeMode: 'offset',
       edgeOffsetCount: renderEdgeOffsetCount,
       edgeOffsetDistance: renderEdgeOffsetDistance,
+    });
+  }
+
+  function persistRecoveryDraft() {
+    if (!recoveryDraftInitializedRef.current) return;
+    if (!designHasUnsavedChanges) {
+      localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+      return;
+    }
+    const recovery = compactSceneModelForStorage(
+      serializeSceneModel(
+        modelName.trim() || 'Recovered Girih model',
+        groupedPlaced,
+        DEFAULT_SCENE_STYLE,
+        material,
+        currentRenderSettings(),
+        modelTransform,
+      ),
+    );
+    writeJsonToLocalStorage(RECOVERY_DRAFT_STORAGE_KEY, recovery);
+  }
+
+  function currentExportRenderSettings() {
+    return normalizeRenderSettings({
+      backgroundColor: exportBgColor,
+      edgeColor: exportEdgeColor,
+      edgeThickness: exportEdgeThickness,
+      edgeMode: 'offset',
+      edgeOffsetCount: exportEdgeOffsetCount,
+      edgeOffsetDistance: exportEdgeOffsetDistance,
     });
   }
 
@@ -392,8 +1270,8 @@ function App() {
   }
 
   function selectPlacedIds(ids) {
-    const nextIds = ids.filter((id, index) => id && ids.indexOf(id) === index && groupedPlaced.some((item) => item.id === id));
-    const nextPieces = nextIds.map((id) => groupedPlaced.find((item) => item.id === id)).filter(Boolean);
+    const nextIds = ids.filter((id, index) => id && ids.indexOf(id) === index && visibleGroupedPlaced.some((item) => item.id === id));
+    const nextPieces = nextIds.map((id) => visibleGroupedPlaced.find((item) => item.id === id)).filter(Boolean);
     const nextGroupId =
       nextPieces.length > 1 && nextPieces.every((piece) => piece.groupInstanceId && piece.groupInstanceId === nextPieces[0].groupInstanceId)
         ? nextPieces[0].groupInstanceId
@@ -409,17 +1287,83 @@ function App() {
       selectPlacedIds([]);
       return;
     }
-    const piece = groupedPlaced.find((item) => item.id === id);
+    const piece = visibleGroupedPlaced.find((item) => item.id === id);
     if (!piece) {
       selectPlacedIds([]);
       return;
     }
-    const groupIds = piece.groupInstanceId ? groupedPlaced.filter((item) => item.groupInstanceId === piece.groupInstanceId).map((item) => item.id) : [id];
+    const groupIds = piece.groupInstanceId ? visibleGroupedPlaced.filter((item) => item.groupInstanceId === piece.groupInstanceId).map((item) => item.id) : [id];
     selectPlacedIds(groupIds);
   }
 
+  function togglePlacedSelection(id) {
+    const piece = visibleGroupedPlaced.find((item) => item.id === id);
+    if (!piece) return;
+    const toggleIds = piece.groupInstanceId
+      ? visibleGroupedPlaced.filter((item) => item.groupInstanceId === piece.groupInstanceId).map((item) => item.id)
+      : [id];
+    const currentIds = selectedIdsRef.current.length ? selectedIdsRef.current : selectedIds;
+    const currentSet = new Set(currentIds);
+    const shouldRemove = toggleIds.every((itemId) => currentSet.has(itemId));
+    toggleIds.forEach((itemId) => {
+      if (shouldRemove) currentSet.delete(itemId);
+      else currentSet.add(itemId);
+    });
+    selectPlacedIds(Array.from(currentSet));
+  }
+
   function updateModelTransform(field, value) {
-    setModelTransform((current) => normalizeModelTransform({ ...current, [field]: value }));
+    const current = normalizeModelTransform(modelTransform);
+    let next = normalizeModelTransform({ ...current, [field]: value });
+    if (modelTransformKeepAspect && field.startsWith('scale')) {
+      const uniformScale = next[field];
+      next = { ...next, scaleX: uniformScale, scaleY: uniformScale, scaleZ: uniformScale };
+    }
+    applyTransformToSelection(current, next, field);
+    setModelTransform(next);
+  }
+
+  function applyTransformToSelection(currentTransform, nextTransform, changedField) {
+    const ids = selectedPieces.map((piece) => piece.id);
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    const safeRatio = (nextValue, currentValue) => {
+      const currentNumber = Number(currentValue);
+      const nextNumber = Number(nextValue);
+      if (!Number.isFinite(currentNumber) || Math.abs(currentNumber) < 0.000001 || !Number.isFinite(nextNumber)) return 1;
+      return nextNumber / currentNumber;
+    };
+    const scaleDelta = {
+      x: safeRatio(nextTransform.scaleX, currentTransform.scaleX),
+      y: safeRatio(nextTransform.scaleY, currentTransform.scaleY),
+      z: safeRatio(nextTransform.scaleZ, currentTransform.scaleZ),
+    };
+    const positionDelta = {
+      x: nextTransform.positionX - currentTransform.positionX,
+      y: nextTransform.positionY - currentTransform.positionY,
+      z: nextTransform.positionZ - currentTransform.positionZ,
+    };
+    const rotationDelta = {
+      x: changedField === 'rotationX' ? THREE.MathUtils.degToRad(nextTransform.rotationX - currentTransform.rotationX) : 0,
+      y: changedField === 'rotationY' ? THREE.MathUtils.degToRad(nextTransform.rotationY - currentTransform.rotationY) : 0,
+      z: changedField === 'rotationZ' ? THREE.MathUtils.degToRad(nextTransform.rotationZ - currentTransform.rotationZ) : 0,
+    };
+
+    commitPlaced((items) => {
+      const selectedItems = items.filter((item) => idSet.has(item.id));
+      if (!selectedItems.length) return items;
+      const groupId =
+        selectedItems.length > 1 &&
+        selectedItems.every((item) => item.groupInstanceId && item.groupInstanceId === selectedItems[0].groupInstanceId)
+          ? selectedItems[0].groupInstanceId
+          : null;
+      const transformAsGroup = !!groupId;
+      const center = transformAsGroup ? selectionCenter(selectedItems) : null;
+      return items.map((item) => {
+        if (!idSet.has(item.id)) return item;
+        return transformSelectedPiece(item, { scaleDelta, positionDelta, rotationDelta, center, transformAsGroup });
+      });
+    });
   }
 
   function togglePieceGroup(groupName) {
@@ -500,6 +1444,7 @@ function App() {
   }
 
   function openTemplateGroup(groupName) {
+    if (!canUseTemplates) return;
     const normalizedGroupName = normalizePieceGroupName(groupName);
     setActiveTemplateGroup(normalizedGroupName);
     setTemplatePanelOpen(true);
@@ -589,29 +1534,38 @@ function App() {
   }
 
   function saveGroupColorPalette(group) {
+    if (!canUsePalettes) return;
     const groupName = normalizePieceGroupName(group.name);
     if (!group.items.length) return;
+    const groupSourceIds = new Set(group.items.map((piece) => piece.id));
+    const stageColorsBySource = new Map(
+      groupedPlaced
+        .filter((item) => groupSourceIds.has(item.sourceId))
+        .map((item) => [item.sourceId, item.color]),
+    );
     const palette = {
       id: crypto.randomUUID(),
       savedAt: Date.now(),
-      colors: Object.fromEntries(group.items.map((piece) => [piece.id, piece.color])),
+      colors: Object.fromEntries(group.items.map((piece) => [piece.id, stageColorsBySource.get(piece.id) || piece.color])),
     };
     setGroupColorPalettes((current) => {
       const existing = Array.isArray(current[groupName]) ? current[groupName] : [];
-      if (existing.length >= 6) return current;
-      const nextGroupPalettes = [...existing, palette].map((item, index) => ({ ...item, name: `${index + 1}` }));
+      if (existing.length >= 5) return current;
+      const nextGroupPalettes = [...existing, palette].map((item, index) => ({ ...item, name: `${index + 2}` }));
       return { ...current, [groupName]: nextGroupPalettes };
     });
     setSelectedGroupPalettes((current) => ({ ...current, [groupName]: palette.id }));
   }
 
   function deleteGroupColorPalette(groupName, paletteId) {
+    if (!canUsePalettes) return;
+    if (paletteId === BUILT_IN_GROUP_PALETTE_ID) return;
     const normalizedGroupName = normalizePieceGroupName(groupName);
     setGroupColorPalettes((current) => {
       const existing = Array.isArray(current[normalizedGroupName]) ? current[normalizedGroupName] : [];
       const nextGroupPalettes = existing
         .filter((palette) => palette.id !== paletteId)
-        .map((item, index) => ({ ...item, name: `${index + 1}` }));
+        .map((item, index) => ({ ...item, name: `${index + 2}` }));
       return { ...current, [normalizedGroupName]: nextGroupPalettes };
     });
     setSelectedGroupPalettes((current) => {
@@ -623,8 +1577,9 @@ function App() {
   }
 
   function applyGroupColorPalette(group, paletteId) {
+    if (!canUsePalettes) return;
     const groupName = normalizePieceGroupName(group.name);
-    const palettes = groupColorPalettes[groupName] || [];
+    const palettes = buildGroupColorPalettes(group, groupColorPalettes[groupName]);
     const palette = palettes.find((item) => item.id === paletteId) || palettes[0];
     if (!palette?.colors) return;
     const updatedById = new Map(
@@ -669,11 +1624,11 @@ function App() {
   }, [selectedTemplate?.id]);
 
   useEffect(() => {
-    if (selectedId && !placed.some((item) => item.id === selectedId)) setSelectedId(null);
-    setSelectedIds((ids) => ids.filter((id) => placed.some((item) => item.id === id)));
-    if (activeGroupId && !groupedPlaced.some((item) => item.groupInstanceId === activeGroupId)) setActiveGroupId(null);
-    if (contextMenu && !placed.some((item) => item.id === contextMenu.id)) setContextMenu(null);
-  }, [placed, selectedId, activeGroupId, contextMenu]);
+    if (selectedId && !visibleGroupedPlaced.some((item) => item.id === selectedId)) setSelectedId(null);
+    setSelectedIds((ids) => ids.filter((id) => visibleGroupedPlaced.some((item) => item.id === id)));
+    if (activeGroupId && !visibleGroupedPlaced.some((item) => item.groupInstanceId === activeGroupId)) setActiveGroupId(null);
+    if (contextMenu && !visibleGroupedPlaced.some((item) => item.id === contextMenu.id)) setContextMenu(null);
+  }, [visibleGroupedPlaced, selectedId, activeGroupId, contextMenu]);
 
   useEffect(() => {
     pieces.forEach((piece) => {
@@ -707,12 +1662,48 @@ function App() {
               sourceFootprintScale: analysis.sourceFootprintScale,
               analysisVersion: analysis.analysisVersion,
             };
-            return applyAdminPieceSetting(analyzed);
+            return {
+              ...applyAdminPieceSetting(analyzed),
+              points: analysis.points,
+              snapEdges: analysis.snapEdges,
+              verticalEdges: analysis.verticalEdges,
+              displayEdges: usesTargetedRealBoundary(item) ? analysis.displayEdges : item.displayEdges,
+              sourceHeightPx: analysis.sourceHeightPx,
+              sourceWidthPx: analysis.sourceWidthPx,
+              sourceLengthPx: analysis.sourceLengthPx,
+              sourceFootprintScale: analysis.sourceFootprintScale,
+              analysisVersion: analysis.analysisVersion,
+            };
           }),
         );
       });
     });
   }, [pieces, setPieces]);
+
+  useEffect(() => {
+    if (shamsehWidthNormalizationAppliedRef.current) return;
+    const currentNormalizationVersion = localStorage.getItem(SHAMSEH_WIDTH_NORMALIZATION_STORAGE_KEY);
+    if (currentNormalizationVersion === SHAMSEH_WIDTH_NORMALIZATION_VERSION) {
+      shamsehWidthNormalizationAppliedRef.current = true;
+      return;
+    }
+    const normalized = normalizePiecesToShamsehReferenceWidth(pieces);
+    if (!normalized) return;
+    shamsehWidthNormalizationAppliedRef.current = true;
+    normalized.pieces
+      .filter((piece) => DEFAULT_PIECE_BY_ID.has(piece.id))
+      .forEach((piece) => saveAdminPieceSetting(piece));
+    localStorage.setItem(SHAMSEH_WIDTH_NORMALIZATION_STORAGE_KEY, SHAMSEH_WIDTH_NORMALIZATION_VERSION);
+    if (!normalized.changed) return;
+    const normalizedById = new Map(normalized.pieces.map((piece) => [piece.id, piece]));
+    setPieces(normalized.pieces);
+    commitPlaced((items) =>
+      items.map((item) => {
+        const nextSource = normalizedById.get(item.sourceId);
+        return nextSource ? applyLibraryPieceToInstance(nextSource, item) : item;
+      }),
+    );
+  }, [pieces, setPieces, commitPlaced]);
 
   useEffect(() => {
     function closeMenu() {
@@ -732,29 +1723,51 @@ function App() {
       const isEditingField =
         target instanceof HTMLElement &&
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
-      if (isEditingField || (!event.ctrlKey && !event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === 'z' && event.shiftKey) {
+      if (isEditingField) return;
+      const key = event.key;
+      const arrowDeltas = {
+        ArrowLeft: { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+        ArrowUp: { x: 0, y: -1 },
+        ArrowDown: { x: 0, y: 1 },
+      };
+      if ((key === 'Delete' || key === 'Backspace') && selectedPieces.length) {
+        event.preventDefault();
+        deleteSelectedPieces();
+        return;
+      }
+      if (arrowDeltas[key] && selectedPieces.length) {
+        event.preventDefault();
+        const step = event.altKey ? 0.005 : event.shiftKey ? 0.1 : 0.02;
+        nudgeSelectedPieces({
+          x: arrowDeltas[key].x * step,
+          y: arrowDeltas[key].y * step,
+        });
+        return;
+      }
+      if (!event.ctrlKey && !event.metaKey) return;
+      const shortcutKey = key.toLowerCase();
+      if (shortcutKey === 'z' && event.shiftKey) {
         event.preventDefault();
         redoStage();
         return;
       }
-      if (key === 'z') {
+      if (shortcutKey === 'z') {
         event.preventDefault();
         undoStage();
         return;
       }
-      if (key === 'y') {
+      if (shortcutKey === 'y') {
         event.preventDefault();
         redoStage();
         return;
       }
-      if (key === 'c') {
+      if (shortcutKey === 'c') {
         event.preventDefault();
         copySelectedPieces();
         return;
       }
-      if (key === 'v') {
+      if (shortcutKey === 'v') {
         event.preventDefault();
         pasteClipboardPieces();
       }
@@ -762,7 +1775,95 @@ function App() {
 
     window.addEventListener('keydown', handleHistoryShortcut);
     return () => window.removeEventListener('keydown', handleHistoryShortcut);
-  }, [undoStage, redoStage, selectedPieces, clipboardPieces]);
+  }, [undoStage, redoStage, selectedPieces, clipboardPieces, selectedIds]);
+
+  useEffect(() => {
+    if (!exportDialogOpen) {
+      exportPreviewCanvasRef.current = null;
+      setExportPreview(null);
+      setExportPreviewError('');
+      return;
+    }
+    if (!visibleGroupedPlaced.length) {
+      exportPreviewCanvasRef.current = null;
+      setExportPreview(null);
+      return;
+    }
+
+    let cancelled = false;
+    setExportPreviewLoading(true);
+    setExportPreviewError('');
+    renderExportPreviewCanvas(exportFormat, {
+      orientation: exportOrientation,
+      paperSize: exportPaperSize,
+      transparentBackground: exportTransparentBackground,
+      graphicStyle: export2DStyle,
+      paperCutOut: exportPaperCutOut,
+      exportMaterial: export3DMaterial,
+      exportCamera: export3DCamera,
+      exportShadows: export3DShadows,
+      zoom: exportPreviewZoom,
+      pan: exportPreviewPan,
+    })
+      .then((canvas) => {
+        if (cancelled) return;
+        exportPreviewCanvasRef.current = canvas;
+        setExportPreview({
+          imageUrl: canvas.toDataURL('image/png'),
+          format: exportFormat,
+          orientation: exportOrientation,
+          paperSize: exportPaperSize,
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to render export preview', error);
+        if (!cancelled) {
+          exportPreviewCanvasRef.current = null;
+          setExportPreview(null);
+          const detail = error instanceof Error && error.message ? ` ${error.message}` : '';
+          setExportPreviewError(`Preview could not be generated.${detail}`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setExportPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    exportDialogOpen,
+    exportFormat,
+    exportOrientation,
+    exportPaperSize,
+    exportTransparentBackground,
+    export2DStyle,
+    export3DMaterial,
+    export3DCamera,
+    export3DShadows,
+    exportPreviewZoom,
+    exportPreviewPan,
+    exportPencilColor,
+    exportPencilIntensity,
+    exportPaperGap,
+    exportPaperCutOut,
+    exportHatchSpacing,
+    exportHatchThickness,
+    exportHatchAngle,
+    exportHatchOutline,
+    visibleGroupedPlaced,
+    stageGroups,
+    material,
+    modelTransform,
+    stageCamera,
+    stageCameraSnapshot,
+    exportBgColor,
+    exportEdgeColor,
+    exportEdgeThickness,
+    exportEdgeOffsetCount,
+    exportEdgeOffsetDistance,
+    liveShadowsEnabled,
+  ]);
 
   function addPiece(piece) {
     commitPlaced((items) => {
@@ -773,6 +1874,9 @@ function App() {
         x: 0,
         y: 0,
         rotation: 0,
+        mirrorHorizontal: false,
+        mirrorVertical: false,
+        hidden: false,
         snappedTo: null,
       };
       return [...items, placeNewPieceNearCollection(instance, items, stageVisibleBounds)];
@@ -799,20 +1903,96 @@ function App() {
     setContextMenu(null);
   }
 
-  function recolorPlaced(id, color) {
-    commitPlaced((items) => items.map((item) => (item.id === id ? { ...item, color } : item)));
+  function deleteSelectedPieces() {
+    const ids = selectedPieces.map((piece) => piece.id);
+    if (!ids.length) return;
+    const idSet = new Set(ids);
+    commitPlaced((items) => items.filter((item) => !idSet.has(item.id)));
+    setSelectedId(null);
+    setSelectedIds([]);
+    setActiveGroupId(null);
+    setStageGroups((groups) =>
+      groups
+        .map((group) => ({ ...group, ids: group.ids.filter((itemId) => !idSet.has(itemId)) }))
+        .filter((group) => group.ids.length > 1),
+    );
+    setContextMenu(null);
   }
 
-  function toggleMirrorPlacedVertical(id) {
+  function nudgeSelectedPieces(delta) {
+    const ids = selectedPieces.map((piece) => piece.id);
+    if (!ids.length) return;
+    const idSet = new Set(ids);
     commitPlaced((items) =>
       items.map((item) =>
-        item.id === id ? { ...item, mirrorVertical: !item.mirrorVertical, snappedTo: null } : item,
+        idSet.has(item.id)
+          ? { ...item, x: (item.x || 0) + delta.x, y: (item.y || 0) + delta.y, snappedTo: null }
+          : item,
       ),
     );
     setContextMenu(null);
   }
 
+  function togglePieceInstancesHidden(piece) {
+    const instances = groupedPlaced.filter((item) => item.sourceId === piece.id);
+    if (!instances.length) return;
+    const shouldHide = instances.some((item) => !item.hidden);
+    const hiddenIds = new Set(instances.map((item) => item.id));
+    commitPlaced((items) =>
+      items.map((item) => (hiddenIds.has(item.id) ? { ...item, hidden: shouldHide, snappedTo: shouldHide ? null : item.snappedTo } : item)),
+    );
+    if (shouldHide) {
+      setSelectedIds((ids) => ids.filter((id) => !hiddenIds.has(id)));
+      setSelectedId((current) => (current && hiddenIds.has(current) ? null : current));
+      setActiveGroupId(null);
+      if (contextMenu && hiddenIds.has(contextMenu.id)) setContextMenu(null);
+    }
+  }
+
+  function recolorPlaced(id, color) {
+    const currentIds = selectedIdsRef.current || [];
+    const targetIds = new Set(currentIds.includes(id) ? currentIds : [id]);
+    commitPlaced((items) => items.map((item) => (targetIds.has(item.id) ? { ...item, color } : item)));
+  }
+
+  function toggleMirrorPlaced(id, axis) {
+    commitPlaced((items) => {
+      const source = items.find((item) => item.id === id);
+      if (!source) return items;
+      const currentIds = selectedIdsRef.current || [];
+      const selectedIdSet = new Set(currentIds.includes(id) ? currentIds : [id]);
+      const groupItems = source.groupInstanceId ? items.filter((item) => item.groupInstanceId === source.groupInstanceId) : [];
+      const targetItems = selectedIdSet.size > 1
+        ? items.filter((item) => selectedIdSet.has(item.id))
+        : groupItems.length > 1
+          ? groupItems
+          : [source];
+      const ids = new Set(targetItems.map((item) => item.id));
+      const center = targetItems.length > 1 ? selectionCenter(targetItems) : null;
+      return items.map((item) => {
+        if (!ids.has(item.id)) return item;
+        const mirrored = {
+          ...item,
+          mirrorHorizontal: axis === 'horizontal' ? !item.mirrorHorizontal : !!item.mirrorHorizontal,
+          mirrorVertical: axis === 'vertical' ? !item.mirrorVertical : !!item.mirrorVertical,
+          snappedTo: null,
+        };
+        if (!center) return mirrored;
+        const dx = (item.x || 0) - center.x;
+        const dy = (item.y || 0) - center.y;
+        return {
+          ...mirrored,
+          x: axis === 'horizontal' ? center.x - dx : item.x,
+          y: axis === 'vertical' ? center.y - dy : item.y,
+          rotation: normalizeAngle(-(item.rotation || 0)),
+        };
+      });
+    });
+    setContextMenu(null);
+  }
+
   function createGroupFromIds(sourceIds) {
+    if (!canUseGrouping) return;
     const currentPlaced = placedRef.current;
     const idsToGroup = sourceIds.filter((id, index, ids) => id && ids.indexOf(id) === index && currentPlaced.some((item) => item.id === id));
     if (idsToGroup.length < 2) return;
@@ -847,10 +2027,12 @@ function App() {
   }
 
   function groupAllStagePieces() {
+    if (!canUseGrouping) return;
     createGroupFromIds(placedRef.current.map((item) => item.id));
   }
 
   function ungroupSelectedPieces() {
+    if (!canUseGrouping) return;
     if (!selectedIds.length) return;
     const groupIds = new Set(selectedPieces.map((piece) => piece.groupInstanceId).filter(Boolean));
     if (!groupIds.size) return;
@@ -862,7 +2044,10 @@ function App() {
 
   function copySelectedPieces() {
     if (!selectedPieces.length) return;
-    const nextClipboard = selectedPieces.map((piece) => ({ ...piece }));
+    const selectedIdSet = new Set(selectedPieces.map((piece) => piece.id));
+    const nextClipboard = placedRef.current
+      .filter((piece) => selectedIdSet.has(piece.id))
+      .map((piece) => ({ ...piece }));
     clipboardPiecesRef.current = nextClipboard;
     setClipboardPieces(nextClipboard);
     setContextMenu(null);
@@ -895,7 +2080,9 @@ function App() {
         groupInstanceId,
       };
     });
-    commitPlaced((items) => [...items, ...copies]);
+    const nextPlaced = [...placedRef.current, ...copies];
+    placedRef.current = nextPlaced;
+    commitPlaced(() => nextPlaced);
     if (pastedGroupIds.size) {
       setStageGroups((groups) => [
         ...groups,
@@ -904,22 +2091,68 @@ function App() {
           .map(([id, ids]) => ({ id, ids })),
       ]);
     }
+    selectedIdsRef.current = nextSelection;
     setSelectedIds(nextSelection);
     setSelectedId(nextSelection[0] || null);
-    setActiveGroupId(groupIdMap.values().next().value || null);
+    setActiveGroupId(null);
     setContextMenu(null);
   }
 
-  function settleSelectedPieces(ids, delta, previousItems = []) {
+  function settleSelectedPieces(ids, delta, previousItems = [], anchorId = '') {
     const idSet = new Set(ids);
     if (!idSet.size) return;
     commitPlaced(
-      (items) =>
-        items.map((item) =>
-          idSet.has(item.id)
-            ? { ...item, x: (item.x || 0) + delta.x, y: (item.y || 0) + delta.y, snappedTo: null }
-            : item,
-        ),
+      (items) => {
+        const previousById = new Map(previousItems.map((item) => [item.id, item]));
+        const movedSelection = items
+          .filter((item) => idSet.has(item.id))
+          .map((item) => {
+            const previous = previousById.get(item.id) || item;
+            return { ...item, x: (previous.x || 0) + delta.x, y: (previous.y || 0) + delta.y, snappedTo: null };
+          });
+        if (!snappingEnabled) {
+          const movedById = new Map(movedSelection.map((item) => [item.id, item]));
+          return items.map((item) => movedById.get(item.id) || item);
+        }
+
+        const anchor = movedSelection.find((item) => item.id === anchorId) || movedSelection[0];
+        if (!anchor) return items;
+        const others = items.filter((item) => !idSet.has(item.id));
+        const selectionEdgeBlockers = movedSelection.filter((item) => item.id !== anchor.id);
+        const collided = closestCollisionTargets(anchor, collidingPieces(anchor, others));
+        const snap = findBestSnap(anchor, others, { collided, edgeBlockers: selectionEdgeBlockers });
+        const collisionPlacement = snap ? null : findBestCollisionPlacement(anchor, others, { collided, edgeBlockers: selectionEdgeBlockers });
+        const anchorTransform = snap?.transform || collisionPlacement?.transform;
+        let settledSelection = movedSelection;
+        let anchorTransformApplied = false;
+
+        if (anchorTransform) {
+          const rotationDelta = shortAngle((anchorTransform.rotation || 0) - (anchor.rotation || 0));
+          const cosine = Math.cos(rotationDelta);
+          const sine = Math.sin(rotationDelta);
+          settledSelection = movedSelection.map((item) => {
+            const relativeX = (item.x || 0) - (anchor.x || 0);
+            const relativeY = (item.y || 0) - (anchor.y || 0);
+            return {
+              ...item,
+              x: anchorTransform.x + relativeX * cosine - relativeY * sine,
+              y: anchorTransform.y + relativeX * sine + relativeY * cosine,
+              rotation: normalizeAngle((item.rotation || 0) + rotationDelta),
+              snappedTo: item.id === anchor.id && snap ? snap.targetId : null,
+            };
+          });
+          const externalCollision = settledSelection.some((item) => collidesWithAny(item, others));
+          if (externalCollision) settledSelection = movedSelection;
+          else anchorTransformApplied = true;
+        }
+
+        const movedStillCollides = settledSelection.some((item) => collidesWithAny(item, others));
+        if (movedStillCollides && !anchorTransformApplied) {
+          settledSelection = items.filter((item) => idSet.has(item.id));
+        }
+        const settledById = new Map(settledSelection.map((item) => [item.id, item]));
+        return items.map((item) => settledById.get(item.id) || item);
+      },
       (items) => {
         const previousById = new Map(previousItems.map((item) => [item.id, item]));
         return items.map((item) => previousById.get(item.id) || item);
@@ -933,6 +2166,7 @@ function App() {
       if (!moving) return items;
       const { previous, ...nextTransform } = transform;
       const moved = { ...moving, ...nextTransform, snappedTo: null };
+      if (!snappingEnabled) return items.map((item) => (item.id === id ? moved : item));
       const others = items.filter((item) => item.id !== id);
       const collided = closestCollisionTargets(moved, collidingPieces(moved, others));
       const snap = findBestSnap(moved, others, { collided });
@@ -979,6 +2213,10 @@ function App() {
         }
       }
       const others = items.filter((item) => item.id !== id);
+      if (!snappingEnabled) {
+        const rotated = { ...moving, rotation: normalizeAngle(moving.rotation + Math.PI / 2), snappedTo: null };
+        return items.map((item) => (item.id === id ? rotated : item));
+      }
       const nextFace = findNextSnappedFace(moving, others);
       if (nextFace) {
         const next = { ...moving, ...nextFace.transform, snappedTo: nextFace.targetId };
@@ -993,6 +2231,7 @@ function App() {
 
   function savePiece(event) {
     event.preventDefault();
+    if (!canUseAdmin) return;
     if (!editingId) return;
     const points = parsePoints(draft.points);
     if (points.length < 3) return;
@@ -1018,6 +2257,7 @@ function App() {
       objText: draft.objText || undefined,
       glbDataUrl: draft.glbDataUrl || undefined,
       glbUrl: draft.glbUrl || undefined,
+      surfaceSticker: hasSurfaceStickerContent(draft.surfaceSticker) ? normalizeSurfaceSticker(draft.surfaceSticker) : undefined,
     };
     saveAdminPieceSetting(piece);
     setPieces((items) => {
@@ -1062,6 +2302,7 @@ function App() {
       objText: piece.objText || '',
       glbDataUrl: piece.glbDataUrl || '',
       glbUrl: piece.glbUrl || '',
+      surfaceSticker: piece.surfaceSticker,
     });
   }
 
@@ -1083,6 +2324,7 @@ function App() {
       sourceFootprintScale: imported.sourceFootprintScale ?? '',
       keepAspectRatio: draft.keepAspectRatio !== false,
       analysisVersion: imported.analysisVersion,
+      surfaceSticker: draft.surfaceSticker,
       points: imported.points.map((point) => point.map((value) => Number(value.toFixed(4))).join(',')).join(' '),
       snapEdges: imported.snapEdges,
       verticalEdges: imported.verticalEdges,
@@ -1111,6 +2353,7 @@ function App() {
   }
 
   function updatePieceColor(piece, color) {
+    if (!canUseAdmin) return;
     const nextPiece = { ...piece, color };
     saveAdminPieceSetting(nextPiece);
     setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
@@ -1121,18 +2364,97 @@ function App() {
   }
 
   function updatePieceHeight(piece, value) {
+    if (!canUseAdmin) return;
     const height = Number(value);
     if (!Number.isFinite(height) || height <= 0) return;
-    const nextPiece = { ...piece, height };
+    const currentSize = pieceStageDimensions(piece);
+    const nextPiece = {
+      ...piece,
+      height,
+      stageWidth: currentSize.width,
+      stageLength: currentSize.length,
+      keepAspectRatio: false,
+    };
     saveAdminPieceSetting(nextPiece);
     setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
     commitPlaced((items) =>
       items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
     );
-    setDraft((current) => (editingId === piece.id ? { ...current, height: formatDimensionValue(height) } : current));
+  }
+
+  function commitAdminGroupPieces(group, nextPieces) {
+    if (!canUseAdmin || !nextPieces.length) return;
+    const updatedById = new Map(nextPieces.map((piece) => [piece.id, piece]));
+    nextPieces.forEach((piece) => saveAdminPieceSetting(piece));
+    setPieces((items) => items.map((item) => updatedById.get(item.id) || item));
+    commitPlaced((items) =>
+      items.map((item) => {
+        const nextSource = updatedById.get(item.sourceId);
+        return nextSource ? applyLibraryPieceToInstance(nextSource, item) : item;
+      }),
+    );
+    setDraft((current) => {
+      const nextSource = updatedById.get(editingId);
+      if (!nextSource) return current;
+      return {
+        ...current,
+        height: formatDimensionValue(nextSource.height),
+        stageWidth: formatDimensionValue(pieceStageDimensions(nextSource).width),
+        stageLength: formatDimensionValue(pieceStageDimensions(nextSource).length),
+      };
+    });
+  }
+
+function resetAdminGroupSizeSettings(group, nextPieces) {
+    const settings = readAdminPieceSettings();
+    const nextById = new Map(nextPieces.map((piece) => [piece.id, piece]));
+    group.items.forEach((piece) => {
+      const nextPiece = nextById.get(piece.id) ? markPieceSettingsAsUniversalDefault(nextById.get(piece.id)) : null;
+      if (!nextPiece) return;
+      settings[piece.id] = {
+        ...(settings[piece.id] || {}),
+        color: nextPiece.color,
+        height: nextPiece.height,
+        stageWidth: nextPiece.stageWidth,
+        stageLength: nextPiece.stageLength,
+        defaultColor: nextPiece.defaultColor,
+        defaultHeight: nextPiece.defaultHeight,
+        defaultStageWidth: nextPiece.defaultStageWidth,
+        defaultStageLength: nextPiece.defaultStageLength,
+        sourceHeightPx: nextPiece.sourceHeightPx,
+        sourceWidthPx: nextPiece.sourceWidthPx,
+        sourceLengthPx: nextPiece.sourceLengthPx,
+        sourceFootprintScale: nextPiece.sourceFootprintScale,
+        keepAspectRatio: nextPiece.keepAspectRatio !== false,
+      };
+    });
+    localStorage.setItem(ADMIN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  }
+
+  function resetAdminGroupSizes(group) {
+    if (!canUseAdmin) return;
+    const nextPieces = group.items.map((piece) => sizePieceFromOriginal(piece, 1));
+    resetAdminGroupSizeSettings(group, nextPieces);
+    commitAdminGroupPieces(group, nextPieces);
+    setAdminGroupHeightInputs((current) => {
+      const next = { ...current };
+      delete next[normalizePieceGroupName(group.name)];
+      return next;
+    });
+  }
+
+  function setAdminGroupHeight(group, value) {
+    if (!canUseAdmin) return;
+    const targetHeight = Number(value);
+    const groupName = normalizePieceGroupName(group.name);
+    setAdminGroupHeightInputs((current) => ({ ...current, [groupName]: value }));
+    if (!Number.isFinite(targetHeight) || targetHeight <= 0) return;
+    const nextPieces = group.items.map((piece) => sizePieceHeightOnly(piece, targetHeight));
+    commitAdminGroupPieces(group, nextPieces);
   }
 
   function deletePiece(id) {
+    if (!canUseAdmin) return;
     setPieces((items) => items.filter((item) => item.id !== id));
     commitPlaced((items) => items.filter((item) => item.sourceId !== id));
   }
@@ -1146,7 +2468,17 @@ function App() {
     setModelTransform(DEFAULT_MODEL_TRANSFORM);
   }
 
+  function startNewProject() {
+    if (designHasUnsavedChanges && !window.confirm('Start a new project and discard the unsaved changes on this stage?')) return;
+    resetScene();
+    setModelName('');
+    setActiveLibraryAssetId(null);
+    setSavedDesignSignature('');
+    localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+  }
+
   function saveSelectedAsMotif() {
+    if (!canUseAdvancedTools) return;
     if (!selectedPieces.length) return;
     const name = motifName.trim() || `Motif ${savedMotifs.length + 1}`;
     const motif = createMotifFromPieces(name, selectedPieces);
@@ -1157,6 +2489,7 @@ function App() {
   }
 
   function tessellateSelectedMotif() {
+    if (!canUseAdvancedTools) return;
     if (!selectedMotif) return;
     const result = createTessellatedMotifInstances(selectedMotif, {
       rows: motifRows,
@@ -1174,24 +2507,221 @@ function App() {
   }
 
   function deleteMotif(id) {
+    if (!canUseAdvancedTools) return;
     setSavedMotifs((items) => items.filter((motif) => motif.id !== id));
     setSelectedMotifId((current) => (current === id ? '' : current));
   }
 
-  function saveCurrentModel() {
-    if (!placed.length) return;
+  async function saveCurrentModel() {
+    if (!placed.length) return false;
     const name = modelName.trim() || `Girih model ${savedModels.length + 1}`;
-    const model = serializeSceneModel(name, groupedPlaced, DEFAULT_SCENE_STYLE, material, currentRenderSettings(), modelTransform);
-    setSavedModels((items) => [model, ...items]);
+    const model = compactSceneModelForStorage(
+      serializeSceneModel(name, groupedPlaced, DEFAULT_SCENE_STYLE, material, currentRenderSettings(), DEFAULT_MODEL_TRANSFORM),
+    );
+    const nextModels = [model, ...savedModels].slice(0, 20);
+    if (!await persistSavedModels(nextModels)) {
+      window.alert('The model could not be saved in this browser. Check available device storage and try again.');
+      return false;
+    }
+    setSavedModels(nextModels);
     setModelName(name);
+    setSavedDesignSignature(activeDesignSignature);
+    localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+    return true;
   }
 
-  function loadSavedModel(model) {
+  function openPieceSurfaceEditor(piece) {
+    if (surfaceEditorPieceId === piece.id) {
+      setSurfaceEditorPieceId(null);
+      setSurfaceStickerDraft(normalizeSurfaceSticker());
+      return;
+    }
+    setSurfaceEditorPieceId(piece.id);
+    setSurfaceStickerDraft(normalizeSurfaceSticker(piece.surfaceSticker));
+  }
+
+  function savePieceSurfaceSticker(piece) {
+    if (!canUseAdmin) return;
+    const surfaceSticker = normalizeSurfaceSticker(surfaceStickerDraft);
+    const nextPiece = {
+      ...piece,
+      surfaceSticker: hasSurfaceStickerContent(surfaceSticker) ? surfaceSticker : undefined,
+    };
+    try {
+      saveAdminPieceSetting(nextPiece);
+    } catch (error) {
+      console.error('Failed to save the piece surface sticker', error);
+      window.alert('The sticker is too large to save on this device. Try a smaller PNG or fewer shapes.');
+      return;
+    }
+    setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
+    commitPlaced((items) =>
+      items.map((item) => (item.sourceId === piece.id ? applyLibraryPieceToInstance(nextPiece, item) : item)),
+    );
+    setSurfaceEditorPieceId(null);
+    setSurfaceStickerDraft(normalizeSurfaceSticker());
+  }
+
+  function togglePieceOffsetLines(piece) {
+    if (!canUseAdmin) return;
+    const nextPiece = { ...piece, offsetLinesEnabled: piece.offsetLinesEnabled === false };
+    saveAdminPieceSetting(nextPiece);
+    setPieces((items) => items.map((item) => (item.id === piece.id ? nextPiece : item)));
+    commitPlaced((items) =>
+      items.map((item) => (item.sourceId === piece.id ? { ...item, offsetLinesEnabled: nextPiece.offsetLinesEnabled } : item)),
+    );
+  }
+
+  async function refreshGirihLibrary() {
+    if (!currentUser || !supabase) return;
+    setSharedLibraryBusy(true);
+    try {
+      const assets = await listLibraryAssets(supabase, { assetType: 'girih_pattern' });
+      setSharedLibraryModels(assets);
+      setSelectedLibraryAssetId((current) => (assets.some((asset) => asset.id === current) ? current : assets[0]?.id || ''));
+      setSharedLibraryStatus('');
+    } catch (error) {
+      setSharedLibraryStatus(error.message);
+    } finally {
+      setSharedLibraryBusy(false);
+    }
+  }
+
+  async function saveCurrentModelToLibrary() {
+    if (!placed.length || !currentUser || !supabase) return;
+    const name = modelName.trim() || `Girih model ${sharedLibraryModels.length + 1}`;
+    const basePayload = serializeSceneModel(
+      name,
+      groupedPlaced,
+      DEFAULT_SCENE_STYLE,
+      material,
+      currentRenderSettings(),
+      DEFAULT_MODEL_TRANSFORM,
+    );
+    setSharedLibraryBusy(true);
+    try {
+      const previewImage = await modelMarketplacePreview(basePayload).catch(() => '');
+      const payload = previewImage ? { ...basePayload, previewImage } : basePayload;
+      const result = await saveLibraryAsset(supabase, {
+        assetId: activeLibraryAssetId,
+        assetType: 'girih_pattern',
+        sourceApp: 'girih',
+        name,
+        payload,
+        metadata: { editorSchemaVersion: payload.version || 1, pieceCount: groupedPlaced.length },
+        artifacts: previewImage ? { preview_png: previewImage } : undefined,
+      });
+      setActiveLibraryAssetId(result.assetId);
+      setModelName(name);
+      setSavedDesignSignature(activeDesignSignature);
+      await refreshGirihLibrary();
+      if (libraryEditReturnTo) {
+        allowPageExitRef.current = true;
+        const returnUrl = new URL(libraryEditReturnTo, window.location.origin);
+        returnUrl.searchParams.set('libraryUpdated', '1');
+        returnUrl.searchParams.set('assetId', result.assetId);
+        returnUrl.searchParams.set('sourceApp', 'girih');
+        window.location.href = returnUrl.toString();
+        return;
+      }
+      setSharedLibraryStatus(result.updated
+        ? `Library version ${result.versionNumber} saved.`
+        : 'Saved to your shared library.');
+    } catch (error) {
+      setSharedLibraryStatus(error.message);
+    } finally {
+      setSharedLibraryBusy(false);
+    }
+  }
+
+  async function saveCurrentModelFromHeader() {
+    await saveCurrentModelToLibrary();
+    if (!libraryEditReturnTo) setSharedLibraryDialogOpen(true);
+  }
+
+  function openGirihLibraryAsset(asset) {
+    const payload = asset.currentVersion?.payload;
+    if (!payload) {
+      setSharedLibraryStatus('This library item has no readable version.');
+      return;
+    }
+    loadSavedModel(payload, asset.id);
+    setSharedLibraryStatus(`Opened ${asset.name} · version ${asset.currentVersion.version_number}.`);
+  }
+
+  async function renameGirihLibraryAsset() {
+    if (!selectedLibraryAssetId) return;
+    setSharedLibraryBusy(true);
+    try {
+      await updateLibraryAssetMetadata(supabase, selectedLibraryAssetId, sharedLibraryEdit);
+      await refreshGirihLibrary();
+      setSharedLibraryStatus('Library item renamed.');
+    } catch (error) {
+      setSharedLibraryStatus(error.message);
+    } finally {
+      setSharedLibraryBusy(false);
+    }
+  }
+
+  async function archiveGirihLibraryAsset(asset) {
+    if (!asset) return;
+    if (!window.confirm(`Archive "${asset.name}" from the Girih library?`)) return;
+    setSharedLibraryBusy(true);
+    try {
+      await archiveLibraryAsset(supabase, asset.id);
+      setSelectedLibraryAssetId('');
+      await refreshGirihLibrary();
+      setSharedLibraryStatus('Library item archived.');
+    } catch (error) {
+      setSharedLibraryStatus(error.message);
+    } finally {
+      setSharedLibraryBusy(false);
+    }
+  }
+
+  async function makeGirihLibraryVersionCurrent(asset, version) {
+    if (!asset || !version) return;
+    setSharedLibraryBusy(true);
+    try {
+      await setCurrentLibraryAssetVersion(supabase, asset.id, version.id);
+      await refreshGirihLibrary();
+      setSelectedLibraryVersionId(version.id);
+      setSharedLibraryStatus(`Version ${version.version_number} is now current.`);
+    } catch (error) {
+      setSharedLibraryStatus(error.message);
+    } finally {
+      setSharedLibraryBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    const asset = sharedLibraryModels.find((item) => item.id === selectedLibraryAssetId) || sharedLibraryModels[0] || null;
+    if (!asset) {
+      setSharedLibraryEdit({ name: '', description: '' });
+      setSharedLibraryVersions([]);
+      setSelectedLibraryVersionId('');
+      return;
+    }
+    setSharedLibraryEdit({ name: asset.name || '', description: asset.description || '' });
+    listLibraryAssetVersions(supabase, asset.id)
+      .then((versions) => {
+        setSharedLibraryVersions(versions);
+        setSelectedLibraryVersionId((current) => (
+          versions.some((version) => version.id === current)
+            ? current
+            : asset.current_version_id || versions[0]?.id || ''
+        ));
+      })
+      .catch((error) => setSharedLibraryStatus(error.message));
+  }, [selectedLibraryAssetId, sharedLibraryModels]);
+
+  function loadSavedModel(model, libraryAssetId = null) {
     const next = centerScenePieces(rehydrateScenePieces(model));
     commitPlaced(() => next);
-    setMaterial(normalizeMaterialName(model.material || material));
+    const nextMaterial = normalizeMaterialName(model.material || material);
+    setMaterial(nextMaterial);
     const renderSettings = normalizeRenderSettings(model.renderSettings);
-    setModelTransform(normalizeModelTransform(model.modelTransform));
+    setModelTransform(DEFAULT_MODEL_TRANSFORM);
     setRenderBgColor(renderSettings.backgroundColor);
     setRenderEdgeColor(renderSettings.edgeColor);
     setRenderEdgeThickness(renderSettings.edgeThickness);
@@ -1202,6 +2732,29 @@ function App() {
     setSelectedIds([]);
     setActiveGroupId(null);
     setStageGroups([]);
+    setModelName(model.name || 'Girih model');
+    setActiveLibraryAssetId(libraryAssetId);
+    setSavedDesignSignature(designStateSignature(next, nextMaterial, renderSettings, DEFAULT_MODEL_TRANSFORM));
+    localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+  }
+
+  function requestProtectedNavigation(url) {
+    if (!designHasUnsavedChanges) {
+      allowPageExitRef.current = true;
+      window.location.assign(url);
+      return;
+    }
+    setPendingNavigationUrl(new URL(url, window.location.href).href);
+  }
+
+  async function continuePendingNavigation(saveFirst) {
+    if (!pendingNavigationUrl) return;
+    if (saveFirst && !await saveCurrentModel()) return;
+    if (!saveFirst) localStorage.removeItem(RECOVERY_DRAFT_STORAGE_KEY);
+    const destination = pendingNavigationUrl;
+    setPendingNavigationUrl('');
+    allowPageExitRef.current = true;
+    window.location.assign(destination);
   }
 
   function importSavedModel(model) {
@@ -1213,8 +2766,10 @@ function App() {
     setStageGroups([]);
   }
 
-  function deleteSavedModel(id) {
-    setSavedModels((items) => items.filter((item) => item.id !== id));
+  async function deleteSavedModel(id) {
+    const nextModels = savedModels.filter((item) => item.id !== id);
+    if (!await persistSavedModels(nextModels)) return;
+    setSavedModels(nextModels);
   }
 
   async function importSceneModelFile(event) {
@@ -1230,67 +2785,338 @@ function App() {
     event.target.value = '';
   }
 
-  async function exportScene(format) {
-    const renderSettings = currentRenderSettings();
-    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', groupedPlaced, DEFAULT_SCENE_STYLE, material, renderSettings, modelTransform);
+  async function renderExportPreviewCanvas(format = exportFormat, options = {}) {
+    const safeFormat = contextualExportOptions.some((option) => option.value === format) ? format : contextualExportOptions[0]?.value || 'png';
+    const renderSettings = currentExportRenderSettings();
+    const orientation = options.orientation || exportOrientation;
+    const paperSize = options.paperSize || exportPaperSize;
+    const transparentBackground = safeFormat === 'png-transparent' || (!!options.transparentBackground && TRANSPARENT_BACKGROUND_EXPORT_FORMATS.has(safeFormat));
+    const graphicStyle = exportDimensionMode === '2d' ? (options.graphicStyle || export2DStyle) : 'standard';
+    const exportMaterial = normalizeMaterialName(options.exportMaterial || export3DMaterial);
+    const exportCamera = options.exportCamera || export3DCamera;
+    if (graphicStyle !== 'standard') {
+      return renderGraphic2DCanvas(visibleGroupedPlaced, {
+        modelTransform: DEFAULT_MODEL_TRANSFORM,
+        orientation,
+        paperSize,
+        renderSettings,
+        transparentBackground,
+        graphicStyle,
+        pencilColor: exportEdgeColor,
+        pencilIntensity: exportPencilIntensity,
+        paperGap: exportPaperGap,
+        paperCutOut: exportPaperCutOut,
+        hatchSpacing: exportHatchSpacing,
+        hatchThickness: exportHatchThickness,
+        hatchAngle: exportHatchAngle,
+        hatchOutline: exportHatchOutline,
+      });
+    }
+    const topLinePreviewFormats = new Set(['png-transparent', 'svg', 'eps', 'dxf']);
+    if (safeFormat === 'png-flat-color' || (exportDimensionMode === '2d' && safeFormat === 'pdf')) {
+      return renderFlatColorTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings, transparentBackground, material: exportMaterial, glassSettings });
+    }
+    if (safeFormat === 'svg' && material === 'glass') {
+      return renderFlatColorTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings, transparentBackground: true, material, glassSettings });
+    }
+    if (topLinePreviewFormats.has(safeFormat)) {
+      return renderTransparentTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings });
+    }
+    return renderSceneCanvas(visibleGroupedPlaced, {
+      style: DEFAULT_SCENE_STYLE,
+      material: exportMaterial,
+      glassSettings,
+      modelTransform: DEFAULT_MODEL_TRANSFORM,
+      view: exportCamera,
+      cameraSnapshot: null,
+      orientation,
+      paperSize,
+      renderSettings,
+      transparentBackground,
+      shadowsEnabled: !!options.exportShadows && !transparentBackground,
+      zoom: options.zoom || 1,
+      pan: options.pan,
+    });
+  }
+
+  async function exportScene(format, options = {}) {
+    if (!contextualExportOptions.some((option) => option.value === format)) return;
+    const renderSettings = currentExportRenderSettings();
+    const orientation = options.orientation || exportOrientation;
+    const paperSize = options.paperSize || exportPaperSize;
+    const transparentBackground = format === 'png-transparent' || (!!exportTransparentBackground && TRANSPARENT_BACKGROUND_EXPORT_FORMATS.has(format));
+    if (exportDimensionMode === '2d' && export2DStyle !== 'standard' && GRAPHIC_2D_EXPORT_FORMATS.has(format)) {
+      const canvas = renderGraphic2DCanvas(visibleGroupedPlaced, {
+        modelTransform: DEFAULT_MODEL_TRANSFORM,
+        orientation,
+        paperSize,
+        renderSettings,
+        transparentBackground,
+        graphicStyle: export2DStyle,
+        pencilColor: exportEdgeColor,
+        pencilIntensity: exportPencilIntensity,
+        paperGap: exportPaperGap,
+        paperCutOut: exportPaperCutOut,
+        hatchSpacing: exportHatchSpacing,
+        hatchThickness: exportHatchThickness,
+        hatchAngle: exportHatchAngle,
+        hatchOutline: exportHatchOutline,
+      });
+      if (format === 'pdf') downloadPdfFromCanvas(`girih-model-${export2DStyle}.pdf`, canvas, orientation, paperSize);
+      else downloadCanvasPng(`girih-model-${export2DStyle}.png`, canvas);
+      return;
+    }
+    const payload = serializeSceneModel(modelName.trim() || 'Girih scene', visibleGroupedPlaced, DEFAULT_SCENE_STYLE, material, renderSettings, DEFAULT_MODEL_TRANSFORM);
+    if (format === 'mp4') {
+      await exportCameraVideo();
+      return;
+    }
     if (format === 'png') {
-      const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings, shadowsEnabled: liveShadowsEnabled });
+      const canvas = await renderSceneCanvas(visibleGroupedPlaced, { style: DEFAULT_SCENE_STYLE, material: export3DMaterial, glassSettings, modelTransform: DEFAULT_MODEL_TRANSFORM, view: export3DCamera, cameraSnapshot: null, orientation, paperSize, renderSettings, transparentBackground, shadowsEnabled: export3DShadows && !transparentBackground, zoom: exportPreviewZoom, pan: exportPreviewPan });
       downloadCanvasPng('girih-model.png', canvas);
       return;
     }
     if (format === 'png-transparent') {
-      const canvas = renderTransparentTopCanvas(groupedPlaced, { modelTransform });
+      const canvas = renderTransparentTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings });
       downloadCanvasPng('girih-model-transparent.png', canvas);
       return;
     }
+    if (format === 'png-flat-color') {
+      const canvas = renderFlatColorTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings, transparentBackground, material, glassSettings });
+      downloadCanvasPng('girih-model-flat-color.png', canvas);
+      return;
+    }
     if (format === 'pdf') {
-      const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings, shadowsEnabled: liveShadowsEnabled });
-      downloadPdfFromCanvas('girih-model.pdf', canvas, exportOrientation);
+      const canvas = await renderSceneCanvas(visibleGroupedPlaced, { style: DEFAULT_SCENE_STYLE, material: export3DMaterial, glassSettings, modelTransform: DEFAULT_MODEL_TRANSFORM, view: export3DCamera, cameraSnapshot: null, orientation, paperSize, renderSettings, shadowsEnabled: export3DShadows, zoom: exportPreviewZoom, pan: exportPreviewPan });
+      downloadPdfFromCanvas('girih-model.pdf', canvas, orientation, paperSize);
       return;
     }
     if (format === 'svg') {
-      downloadText('girih-model.svg', toSvg(groupedPlaced, { modelTransform }));
+      downloadText('girih-model.svg', toSvg(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, material, glassSettings }));
       return;
     }
     if (format === 'eps') {
-      downloadText('girih-model.eps', toEps(groupedPlaced, { modelTransform }));
+      downloadText('girih-model.eps', toEps(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM }));
       return;
     }
     if (format === 'dxf') {
-      downloadText('girih-model.dxf', toDxf(groupedPlaced, { modelTransform }));
+      downloadText('girih-model.dxf', toDxf(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM }));
       return;
     }
     if (format === 'stl') {
-      downloadText('girih-model.stl', await toStl(groupedPlaced, { modelTransform }));
+      downloadText('girih-model.stl', await toStl(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM }));
       return;
     }
     const text = format === 'json' ? JSON.stringify(payload, null, 2) : toObj(payload);
     downloadText(`girih-model.${format}`, text);
   }
 
-  async function openPrintPreview() {
-    if (!placed.length) return;
-    const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings(), shadowsEnabled: liveShadowsEnabled });
-    setPrintPreview({
-      imageUrl: canvas.toDataURL('image/png'),
-      orientation: exportOrientation,
-      view: stageCamera,
+  async function exportCameraVideo() {
+    if (cameraVideoRecordingRef.current) return;
+    const canvas = document.querySelector('.stage-canvas canvas');
+    if (!canvas || typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+      alert('MP4 export requires a browser with WebCodecs support. Please use the latest Chrome, Edge, or Safari.');
+      return;
+    }
+    if (exportDimensionMode === '2d' && format === 'pdf') {
+      const canvas = renderFlatColorTopCanvas(visibleGroupedPlaced, { modelTransform: DEFAULT_MODEL_TRANSFORM, orientation, paperSize, renderSettings, transparentBackground: false, material, glassSettings });
+      downloadPdfFromCanvas('girih-model-2d-color.pdf', canvas, orientation, paperSize);
+      return;
+    }
+    const encoderConfig = {
+      codec: 'avc1.420028',
+      width: CAMERA_VIDEO_WIDTH,
+      height: CAMERA_VIDEO_HEIGHT,
+      bitrate: CAMERA_VIDEO_BITRATE,
+      framerate: CAMERA_VIDEO_FPS,
+      bitrateMode: 'constant',
+      latencyMode: 'quality',
+      avc: { format: 'avc' },
+    };
+    const support = await VideoEncoder.isConfigSupported(encoderConfig);
+    if (!support.supported) {
+      alert('This browser cannot encode H.264 MP4 video. Please use the latest Chrome, Edge, or Safari.');
+      return;
+    }
+    const recordingCanvas = document.createElement('canvas');
+    recordingCanvas.width = CAMERA_VIDEO_WIDTH;
+    recordingCanvas.height = CAMERA_VIDEO_HEIGHT;
+    const recordingContext = recordingCanvas.getContext('2d', { alpha: false });
+    const target = new ArrayBufferTarget();
+    const muxer = new Muxer({
+      target,
+      video: {
+        codec: 'avc',
+        width: CAMERA_VIDEO_WIDTH,
+        height: CAMERA_VIDEO_HEIGHT,
+      },
+      fastStart: 'in-memory',
+      firstTimestampBehavior: 'offset',
     });
+    let encoderError = null;
+    const encoder = new VideoEncoder({
+      output: (chunk, metadata) => muxer.addVideoChunk(chunk, metadata),
+      error: (error) => {
+        encoderError = error;
+      },
+    });
+    encoder.configure(encoderConfig);
+    cameraVideoRecordingRef.current = true;
+    try {
+      setCameraVideoPlaying(false);
+      await nextAnimationFrame();
+      cameraVideoProgressRef.current = 0;
+      setCameraVideoPlaying(true);
+      await nextAnimationFrame();
+      const totalFrames = Math.round((selectedVideoDurationMs / 1000) * CAMERA_VIDEO_FPS);
+      const frameDuration = Math.round(1000000 / CAMERA_VIDEO_FPS);
+      for (let frameIndex = 0; frameIndex < totalFrames; frameIndex += 1) {
+        cameraVideoProgressRef.current = frameIndex / Math.max(1, totalFrames - 1);
+        await nextAnimationFrame();
+        drawVideoCanvasFrame(recordingContext, canvas, renderBgColor);
+        const frame = new VideoFrame(recordingCanvas, {
+          timestamp: frameIndex * frameDuration,
+          duration: frameDuration,
+        });
+        encoder.encode(frame, { keyFrame: frameIndex % (CAMERA_VIDEO_FPS * 2) === 0 });
+        frame.close();
+        if (encoder.encodeQueueSize > 12) await encoder.flush();
+        if (encoderError) throw encoderError;
+      }
+      await encoder.flush();
+      if (encoderError) throw encoderError;
+      encoder.close();
+      muxer.finalize();
+      setCameraVideoPlaying(false);
+      cameraVideoProgressRef.current = null;
+      downloadBlob(`girih-${selectedVideoPreset.type === 'assembly' ? 'assembly' : 'camera'}-${selectedVideoPreset.id}.mp4`, new Blob([target.buffer], { type: 'video/mp4' }));
+    } catch (error) {
+      console.error('Failed to export camera video', error);
+      alert('Video export failed. Please try again.');
+      setCameraVideoPlaying(false);
+      if (encoder.state !== 'closed') encoder.close();
+    } finally {
+      cameraVideoProgressRef.current = null;
+      cameraVideoRecordingRef.current = false;
+    }
   }
 
-  async function printCurrentModel() {
-    if (!placed.length) return;
-    const canvas = await renderSceneCanvas(groupedPlaced, { style: DEFAULT_SCENE_STYLE, material, modelTransform, view: stageCamera, cameraSnapshot: stageCameraSnapshot, orientation: exportOrientation, renderSettings: currentRenderSettings(), shadowsEnabled: liveShadowsEnabled });
-    printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${stageCamera}`);
+  function openExportDialog() {
+    if (!visibleGroupedPlaced.length) return;
+    setExportBgColor(renderBgColor);
+    setExportEdgeColor(renderEdgeColor);
+    setExportEdgeThickness(renderEdgeThickness);
+    setExportEdgeOffsetCount(renderEdgeOffsetCount);
+    setExportEdgeOffsetDistance(renderEdgeOffsetDistance);
+    setExport3DMaterial(material === 'paper' ? 'plastic' : material);
+    setExport3DCamera(stageCamera);
+    setExport3DShadows(liveShadowsEnabled);
+    setExportPreviewZoom(1);
+    setExportPreviewPan({ x: 0, y: 0 });
+    if (!contextualExportOptions.some((option) => option.value === exportFormat)) {
+      setExportFormat(contextualExportOptions[0]?.value || availableExportOptions[0]?.value || 'png');
+    }
+    setExportDialogOpen(true);
   }
 
-  function exportSelectedFormat() {
-    exportScene(exportFormat);
+  async function printCurrentExport() {
+    if (!visibleGroupedPlaced.length) return;
+    const printWindow = openPrintWindow();
+    if (!printWindow) return;
+    try {
+      const canvas =
+        exportPreviewCanvasRef.current ||
+        (await renderExportPreviewCanvas(exportFormat, {
+          orientation: exportOrientation,
+          paperSize: exportPaperSize,
+          transparentBackground: exportTransparentBackground,
+          graphicStyle: export2DStyle,
+          paperCutOut: exportPaperCutOut,
+          exportMaterial: export3DMaterial,
+          exportCamera: export3DCamera,
+          exportShadows: export3DShadows,
+          zoom: exportPreviewZoom,
+          pan: exportPreviewPan,
+        }));
+      printCanvas(canvas, exportOrientation, `${modelName.trim() || 'Girih model'} - ${exportFormat}`, exportPaperSize, printWindow);
+    } catch (error) {
+      printWindow.close();
+      window.alert(error?.message || 'Unable to prepare the print preview.');
+    }
+  }
+
+  function printItemSummaryList() {
+    const rows = itemSummaryItems.map((item) => `
+      <tr>
+        <td class="shape">${pieceSummarySvgMarkup(item.piece)}</td>
+        <td>${escapeHtml(item.name)}</td>
+        <td class="count">${item.count}</td>
+      </tr>
+    `).join('');
+    const frame = openPrintWindow();
+    if (!frame) return;
+    frame.document.write(`<!doctype html>
+<html>
+  <head>
+    <title>Item summary</title>
+    <style>
+      @page { size: A4 portrait; margin: 12mm; }
+      body { margin: 0; color: #2d2924; font-family: Arial, sans-serif; }
+      h1 { margin: 0 0 12px; font-size: 18px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px solid #d8ccba; padding: 7px 8px; text-align: left; font-size: 12px; }
+      th { background: #f6efe3; font-size: 11px; text-transform: uppercase; }
+      .shape { width: 42px; }
+      .shape svg { width: 30px; height: 30px; display: block; }
+      .count { width: 70px; text-align: right; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Item summary (${placed.length} pieces)</h1>
+    <table>
+      <thead><tr><th>Shape</th><th>Item name</th><th class="count">Count</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="3">No visible items on stage.</td></tr>'}</tbody>
+    </table>
+    <script>
+      window.addEventListener('load', () => {
+        window.focus();
+        window.print();
+      });
+    </script>
+  </body>
+</html>`);
+    frame.document.close();
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginScreen
+        ready={authReady}
+        configured={supabaseConfigured}
+        mode={authMode}
+        name={loginName}
+        email={loginEmail}
+        password={loginPassword}
+        error={loginError}
+        message={loginMessage}
+        busy={authBusy}
+        onModeChange={(mode) => {
+          setAuthMode(mode);
+          setLoginError('');
+          setLoginMessage('');
+        }}
+        onNameChange={setLoginName}
+        onEmailChange={setLoginEmail}
+        onPasswordChange={setLoginPassword}
+        onSubmit={handleLogin}
+        onGoogleLogin={handleGoogleLogin}
+      />
+    );
   }
 
   return (
     <div
-      className="app-shell"
+      className={`app-shell girih-theme-girih ${nightMode ? 'night-mode' : ''}`}
       onPointerDown={(event) => {
         if (!mobileAdminOpen && !templatePanelOpen) return;
         if (
@@ -1305,11 +3131,70 @@ function App() {
         setTemplatePanelOpen(false);
       }}
     >
+      <header className="girih-editor-header girih-product-header">
+        <div className="girih-editor-brand girih-header-start">
+          <a href="/" aria-label="Girih Studio home"><img src="/landing/brand/girih-logo-color.png" alt="" /><span>Girih Studio</span></a>
+          <i />
+          <span className="girih-product-identity"><girih-app-icon app="girih"></girih-app-icon><strong>Girih App</strong><small>Pattern design</small></span>
+        </div>
+        <div className="girih-header-tools girih-editor-tools" aria-label="Project commands">
+          <button type="button" className="girih-button" onClick={startNewProject}><Plus size={15} /> New</button>
+          <button type="button" className="girih-button" onClick={undoStage} disabled={!canUndo}><Undo2 size={15} /> Undo</button>
+          <button type="button" className="girih-button" onClick={redoStage} disabled={!canRedo}><Redo2 size={15} /> Redo</button>
+          <button type="button" className="girih-button" onClick={() => importSceneInputRef.current?.click()}><Upload size={15} /> Import</button>
+          <button type="button" className="girih-button" onClick={openExportDialog} disabled={!visibleGroupedPlaced.length}><Download size={15} /> Export</button>
+          <button type="button" className="girih-button girih-editor-save-button" disabled={!placed.length || sharedLibraryBusy} onClick={saveCurrentModelFromHeader}><Save size={15} /> {sharedLibraryBusy ? 'Saving...' : 'Save project'}</button>
+        </div>
+        <nav className="girih-header-end" aria-label="Girih App navigation">
+          <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+          <button type="button" onClick={() => { setSharedLibraryDialogOpen(true); refreshGirihLibrary(); }}><FolderOpen size={15} /> Library</button>
+          <a href="/profile"><User size={15} /> Profile</a>
+          <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+        </nav>
+        <input ref={importSceneInputRef} className="hidden-file" type="file" accept="application/json,.json" onChange={importSceneModelFile} />
+      </header>
+      {sharedLibraryDialogOpen && (
+        <div className="shared-library-dialog-backdrop" role="presentation" onPointerDown={() => setSharedLibraryDialogOpen(false)}>
+          <section className="shared-library-dialog" role="dialog" aria-modal="true" aria-labelledby="girih-library-title" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="shared-library-dialog-heading">
+              <div><small>Girih Studio</small><h2 id="girih-library-title">Girih pattern library</h2></div>
+              <button type="button" onClick={() => setSharedLibraryDialogOpen(false)}>Close</button>
+            </div>
+            <SharedLibraryModelControls
+              signedIn={!!currentUser}
+              assets={sharedLibraryModels}
+              activeAssetId={activeLibraryAssetId}
+              selectedAssetId={selectedLibraryAssetId}
+              selectedVersionId={selectedLibraryVersionId}
+              editForm={sharedLibraryEdit}
+              versions={sharedLibraryVersions}
+              busy={sharedLibraryBusy}
+              status={sharedLibraryStatus}
+              canSave={!!placed.length}
+              onSave={saveCurrentModelToLibrary}
+              onOpen={openGirihLibraryAsset}
+              onRefresh={refreshGirihLibrary}
+              onSelect={(asset) => { setSelectedLibraryAssetId(asset.id); setSharedLibraryEdit({ name: asset.name || '', description: asset.description || '' }); }}
+              onEditChange={setSharedLibraryEdit}
+              onRename={renameGirihLibraryAsset}
+              onArchive={archiveGirihLibraryAsset}
+              onSelectVersion={setSelectedLibraryVersionId}
+              onMakeCurrentVersion={makeGirihLibraryVersionCurrent}
+            />
+          </section>
+        </div>
+      )}
       <div className="mobile-topbar">
-        <button type="button" onClick={() => setMobilePiecesOpen((open) => !open)}>
+        {!mobilePiecesOpen && (
+        <button className="mobile-shapes-button" type="button" onClick={() => setMobilePiecesOpen((open) => !open)}>
           <Layers3 size={18} /> Shapes
         </button>
-        <button type="button" onClick={() => setMobileMenuOpen(true)}>
+        )}
+        <button className="mobile-home-button" type="button" aria-label="Return to Girih Studio landing page" title="Home" onClick={() => requestProtectedNavigation('/')}>
+          <img src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+        </button>
+        <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+        <button className="mobile-menu-button" type="button" onClick={() => setMobileMenuOpen(true)}>
           <Menu size={18} /> Menu
         </button>
       </div>
@@ -1327,13 +3212,41 @@ function App() {
         />
       )}
 
-      <aside className={`library-panel ${mobilePiecesOpen ? 'open' : ''}`}>
-        <div className="brand-block">
-          <Grid3X3 size={28} />
-          <div>
-            <h1>Girih</h1>
-            <p>Assemble modular 3D geometric pieces with automatic edge snapping.</p>
-          </div>
+      <aside className={`library-panel girih-product-sidebar ${mobilePiecesOpen ? 'open' : ''}`}>
+        <div className="brand-app-row">
+          <a className="brand-block" href="/" aria-label="Return to Girih Studio home">
+            <img src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+            <girih-app-icon app="girih"></girih-app-icon><h1>Girih App</h1>
+          </a>
+          <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+        </div>
+        <div className="profile-card desktop-profile-card">
+          <button type="button" className="profile-identity" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)}>
+            <User size={17} />
+            <span>
+              <strong>{currentUser.name}</strong>
+              <small>{roleLabel(userRole)} profile</small>
+            </span>
+          </button>
+          {accountMenuOpen && <nav className="profile-account-menu" aria-label="User account">
+            <a href="/profile"><User size={15} /> Profile</a>
+            <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+            <a href="/marketplace" aria-label="Marketplace"><Store size={15} /> Market place</a>
+            {isAdminUser && <a href="/admin"><BarChart3 size={15} /> User overview</a>}
+          </nav>}
+          {!isAdminUser && (
+            <button
+              type="button"
+              className="billing-button"
+              disabled={billingBusy}
+              onClick={() => openBillingFlow(isPaidUser ? '/api/create-portal-session' : '/api/create-checkout-session')}
+            >
+              {billingBusy ? 'Opening...' : isPaidUser ? 'Billing' : 'Upgrade'}
+            </button>
+          )}
+          <button type="button" onClick={logout}>
+            Log out
+          </button>
         </div>
 
         <section className="panel-section piece-library-section">
@@ -1361,7 +3274,7 @@ function App() {
                       <small>{group.items.length}</small>
                       <span aria-hidden="true">{collapsed ? '+' : '-'}</span>
                     </button>
-                    <button
+                    {canUseTemplates && <button
                       type="button"
                       className="template-group-button"
                       title={`Open ${group.name} templates`}
@@ -1369,8 +3282,8 @@ function App() {
                       data-template-toggle
                       onClick={() => openTemplateGroup(group.name)}
                     >
-                      <ImageIcon size={15} />
-                    </button>
+                      <img src={TEMPLATE_GROUP_LOGOS[group.name]} alt="" />
+                    </button>}
                   </div>
                   {!collapsed && (
                     <div className="piece-group-items">
@@ -1389,45 +3302,7 @@ function App() {
           </div>
         </section>
 
-        <section className="panel-section model-panel desktop-library-controls">
-          <div className="section-title">
-            <Save size={18} />
-            <span>Models</span>
-          </div>
-          <label>
-            Model name
-            <input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="My Girih model" />
-          </label>
-          <div className="action-row">
-            <button onClick={saveCurrentModel} disabled={!placed.length}>
-              <Save size={16} /> Save
-            </button>
-            <button onClick={() => importSceneInputRef.current?.click()}>
-              <Upload size={16} /> Import
-            </button>
-          </div>
-          <input ref={importSceneInputRef} className="hidden-file" type="file" accept="application/json,.json" onChange={importSceneModelFile} />
-          <div className="model-list">
-            {savedModels.map((model) => (
-              <div className="model-row" key={model.id}>
-                <span>
-                  <strong>{model.name}</strong>
-                  <small>{model.pieces?.length || 0} pieces</small>
-                </span>
-                <button title="Load and clear stage" onClick={() => loadSavedModel(model)}>
-                  Load
-                </button>
-                <button title="Add to current stage" onClick={() => importSavedModel(model)}>
-                  Add
-                </button>
-                <button aria-label={`Delete ${model.name}`} onClick={() => deleteSavedModel(model.id)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-
+        {canUseAdvancedTools && (
         <section className="panel-section model-panel desktop-library-controls">
           <CollapsibleControlGroup title="Motifs" collapsed={motifsCollapsed} onToggle={() => setMotifsCollapsed((collapsed) => !collapsed)}>
           <label>
@@ -1483,6 +3358,7 @@ function App() {
           )}
           </CollapsibleControlGroup>
         </section>
+        )}
 
         <section className="panel-section controls-grid desktop-library-controls">
           <CollapsibleControlGroup
@@ -1490,7 +3366,13 @@ function App() {
             collapsed={modelTransformCollapsed}
             onToggle={() => setModelTransformCollapsed((collapsed) => !collapsed)}
           >
-            <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+            <ModelTransformControls
+              modelTransform={modelTransform}
+              keepAspectRatio={modelTransformKeepAspect}
+              onKeepAspectRatioChange={setModelTransformKeepAspect}
+              onChange={updateModelTransform}
+              disabled={!selectedPieces.length}
+            />
           </CollapsibleControlGroup>
         </section>
 
@@ -1503,12 +3385,13 @@ function App() {
               <option value="paper">Paper</option>
             </select>
           </label>
+          {material === 'glass' && <GlassAppearanceControls settings={glassSettings} onChange={setGlassSettings} />}
         </section>
 
         <section className="panel-section controls-grid desktop-library-controls">
           <div className="section-title">
-            <Printer size={18} />
-            <span>Export</span>
+            <Palette size={18} />
+            <span>View</span>
           </div>
           <div className="export-grid">
             <label className={inactivePaperExportControlClass}>
@@ -1565,38 +3448,6 @@ function App() {
                 />
               </label>
             </div>
-            <label>
-              Page orientation
-              <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
-                <option value="landscape">Landscape</option>
-                <option value="portrait">Portrait</option>
-              </select>
-            </label>
-            <label>
-              Export format
-              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
-                <option value="png">PNG image</option>
-                <option value="png-transparent">PNG transparent</option>
-                <option value="svg">SVG vector</option>
-                <option value="eps">EPS vector</option>
-                <option value="dxf">DXF laser/CNC</option>
-                <option value="stl">STL 3D print</option>
-                <option value="pdf">PDF document</option>
-                <option value="json">JSON model</option>
-                <option value="obj">OBJ model</option>
-              </select>
-            </label>
-          </div>
-          <div className="action-row">
-            <button onClick={exportSelectedFormat} disabled={!placed.length}>
-              <Download size={16} /> Export
-            </button>
-            <button onClick={openPrintPreview} disabled={!placed.length}>
-              <Eye size={16} /> Preview
-            </button>
-            <button onClick={printCurrentModel} disabled={!placed.length}>
-              <Printer size={16} /> Print
-            </button>
           </div>
         </section>
       </aside>
@@ -1610,43 +3461,67 @@ function App() {
           </button>
         </div>
 
+        <section className="panel-section mobile-menu-primary-actions">
+          <button type="button" aria-pressed={nightMode} onClick={() => setNightMode((enabled) => !enabled)}>
+            {nightMode ? <Sun size={17} /> : <Moon size={17} />}
+            <span>{nightMode ? 'Day mode' : 'Night mode'}</span>
+          </button>
+          {canUseAdmin && (
+            <button
+              type="button"
+              data-admin-toggle
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setMobileAdminOpen(true);
+              }}
+            >
+              <Settings2 size={17} />
+              <span>Back stage</span>
+            </button>
+          )}
+        </section>
+
+        <div className="profile-card mobile-profile-card">
+          <button type="button" className="profile-identity" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen((open) => !open)}>
+            <User size={17} />
+            <span>
+              <strong>{currentUser.name}</strong>
+              <small>{roleLabel(userRole)} profile</small>
+            </span>
+          </button>
+          {accountMenuOpen && <nav className="profile-account-menu" aria-label="User account">
+            <a href="/profile"><User size={15} /> Profile</a>
+            <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+            <a href="/marketplace" aria-label="Marketplace"><Store size={15} /> Market place</a>
+            {isAdminUser && <a href="/admin"><BarChart3 size={15} /> User overview</a>}
+          </nav>}
+          {!isAdminUser && (
+            <button
+              type="button"
+              className="billing-button"
+              disabled={billingBusy}
+              onClick={() => openBillingFlow(isPaidUser ? '/api/create-portal-session' : '/api/create-checkout-session')}
+            >
+              {billingBusy ? 'Opening...' : isPaidUser ? 'Billing' : 'Upgrade'}
+            </button>
+          )}
+          <button type="button" onClick={logout}>Log out</button>
+        </div>
+
+        {canUseAdvancedTools && (
         <section className="panel-section model-panel">
           <div className="section-title">
-            <Save size={18} />
-            <span>Models</span>
+            <Upload size={18} />
+            <span>Project files</span>
           </div>
-          <label>
-            Model name
-            <input value={modelName} onChange={(event) => setModelName(event.target.value)} placeholder="My Girih model" />
-          </label>
           <div className="action-row">
-            <button onClick={saveCurrentModel} disabled={!placed.length}>
-              <Save size={16} /> Save
-            </button>
             <button onClick={() => importSceneInputRef.current?.click()}>
               <Upload size={16} /> Import
             </button>
-          </div>
-          <div className="model-list">
-            {savedModels.map((model) => (
-              <div className="model-row" key={model.id}>
-                <span>
-                  <strong>{model.name}</strong>
-                  <small>{model.pieces?.length || 0} pieces</small>
-                </span>
-                <button title="Load and clear stage" onClick={() => loadSavedModel(model)}>
-                  Load
-                </button>
-                <button title="Add to current stage" onClick={() => importSavedModel(model)}>
-                  Add
-                </button>
-                <button aria-label={`Delete ${model.name}`} onClick={() => deleteSavedModel(model.id)}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
+            <button type="button" onClick={() => { setSharedLibraryDialogOpen(true); refreshGirihLibrary(); }}><FolderOpen size={15} /> Library</button>
           </div>
         </section>
+        )}
 
         <section className="panel-section controls-grid">
           <CollapsibleControlGroup
@@ -1654,7 +3529,13 @@ function App() {
             collapsed={modelTransformCollapsed}
             onToggle={() => setModelTransformCollapsed((collapsed) => !collapsed)}
           >
-            <ModelTransformControls modelTransform={modelTransform} onChange={updateModelTransform} />
+            <ModelTransformControls
+              modelTransform={modelTransform}
+              keepAspectRatio={modelTransformKeepAspect}
+              onKeepAspectRatioChange={setModelTransformKeepAspect}
+              onChange={updateModelTransform}
+              disabled={!selectedPieces.length}
+            />
           </CollapsibleControlGroup>
         </section>
 
@@ -1667,12 +3548,13 @@ function App() {
               <option value="paper">Paper</option>
             </select>
           </label>
+          {material === 'glass' && <GlassAppearanceControls settings={glassSettings} onChange={setGlassSettings} />}
         </section>
 
         <section className="panel-section controls-grid">
           <div className="section-title">
-            <Printer size={18} />
-            <span>Export</span>
+            <Palette size={18} />
+            <span>View</span>
           </div>
           <div className="export-grid">
             <label className={inactivePaperExportControlClass}>
@@ -1729,53 +3611,9 @@ function App() {
                 />
               </label>
             </div>
-            <label>
-              Page orientation
-              <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
-                <option value="landscape">Landscape</option>
-                <option value="portrait">Portrait</option>
-              </select>
-            </label>
-            <label>
-              Export format
-              <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
-                <option value="png">PNG image</option>
-                <option value="png-transparent">PNG transparent</option>
-                <option value="svg">SVG vector</option>
-                <option value="eps">EPS vector</option>
-                <option value="dxf">DXF laser/CNC</option>
-                <option value="stl">STL 3D print</option>
-                <option value="pdf">PDF document</option>
-                <option value="json">JSON model</option>
-                <option value="obj">OBJ model</option>
-              </select>
-            </label>
-          </div>
-          <div className="action-row">
-            <button onClick={exportSelectedFormat} disabled={!placed.length}>
-              <Download size={16} /> Export
-            </button>
-            <button onClick={openPrintPreview} disabled={!placed.length}>
-              <Eye size={16} /> Preview
-            </button>
-            <button onClick={printCurrentModel} disabled={!placed.length}>
-              <Printer size={16} /> Print
-            </button>
           </div>
         </section>
 
-        <section className="panel-section action-row">
-          <button
-            type="button"
-            data-admin-toggle
-            onClick={() => {
-              setMobileMenuOpen(false);
-              setMobileAdminOpen(true);
-            }}
-          >
-            <Upload size={16} /> Admin panel
-          </button>
-        </section>
       </aside>
 
       <main
@@ -1783,15 +3621,22 @@ function App() {
         onPointerDown={() => {
           setMobileAdminOpen(false);
           setTemplatePanelOpen(false);
+          setCameraPresetMenuOpen(false);
         }}
       >
         <div className="stage-toolbar">
-          <div>
+          <button
+            type="button"
+            className="stage-info-button"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setItemSummaryOpen(true)}
+            title="Open item summary"
+          >
             <strong>{completed ? 'Puzzle complete' : 'Build stage'}</strong>
             <span>
-              {placed.length} pieces, {selectedObjectCount} selected, {groupedObjectCount} groups, {countSnappedPairs(placed)} snapped pairs
+              {visibleGroupedPlaced.length} visible, {selectedObjectCount} selected, {groupedObjectCount} groups, {countSnappedPairs(visibleGroupedPlaced)} snapped pairs
             </span>
-          </div>
+          </button>
           <div className="stage-tools" onPointerDown={(event) => event.stopPropagation()}>
             <div className="stage-view-controls" aria-label="Stage camera view">
               {STAGE_CAMERA_VIEWS.map((view) => (
@@ -1806,8 +3651,87 @@ function App() {
                   {view.label}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`stage-snap-button ${snappingEnabled ? 'active' : ''}`}
+                aria-pressed={snappingEnabled}
+                title={snappingEnabled ? 'Snapping is on' : 'Snapping is off'}
+                onClick={() => setSnappingEnabled((enabled) => !enabled)}
+              >
+                <Magnet size={14} />
+                <span>Snap</span>
+              </button>
+              <div className="camera-preset-control">
+                <button
+                  type="button"
+                  className={`camera-video-button ${cameraVideoPlaying ? 'active' : ''}`}
+                  aria-pressed={cameraVideoPlaying}
+                  aria-expanded={cameraPresetMenuOpen}
+                  title={cameraVideoPlaying ? 'Stop camera video' : 'Choose camera video preset'}
+                  onClick={() => {
+                    if (cameraVideoPlaying) {
+                      setCameraVideoPlaying(false);
+                      setCameraVideoProgress(0);
+                      return;
+                    }
+                    setCameraPresetMenuOpen((open) => !open);
+                  }}
+                >
+                  <span className="camera-video-progress" style={{ width: `${cameraVideoProgress * 100}%` }} />
+                  <Play size={14} />
+                  <span>Video</span>
+                </button>
+                {cameraPresetMenuOpen && (
+                  <div className="camera-preset-menu" role="menu">
+                    {CAMERA_VIDEO_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={cameraVideoPreset === preset.id ? 'selected' : ''}
+                        role="menuitem"
+                        onClick={() => {
+                          setCameraVideoPreset(preset.id);
+                          setCameraVideoProgress(0);
+                          setCameraPresetMenuOpen(false);
+                          setCameraVideoPlaying(true);
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    {selectedVideoPreset.type === 'assembly' && (
+                      <label className="camera-preset-speed">
+                        Speed
+                        <span>
+                          <input
+                            type="number"
+                            min="2"
+                            max="30"
+                            step="1"
+                            value={assemblyVideoDurationSec}
+                            onChange={(event) => setAssemblyVideoDurationSec(event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                          sec
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="history-controls">
+              <button
+                type="button"
+                className={`night-mode-toggle ${nightMode ? 'active' : ''}`}
+                aria-label={nightMode ? 'Switch to day mode' : 'Switch to night mode'}
+                aria-pressed={nightMode}
+                title={nightMode ? 'Day mode' : 'Night mode'}
+                onClick={() => setNightMode((enabled) => !enabled)}
+              >
+                {nightMode ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              {canUseGrouping && (
               <button
                 type="button"
                 className="mobile-group-all-button"
@@ -1819,52 +3743,44 @@ function App() {
                 <Box size={16} />
                 <span>Group all</span>
               </button>
-              <button type="button" data-admin-toggle aria-label="Open admin panel" title="Admin panel" onClick={() => setMobileAdminOpen(true)}>
-                <Upload size={16} />
+              )}
+              {canUseAdmin && (
+              <button type="button" data-admin-toggle aria-label="Open Back stage" title="Back stage" onClick={() => setMobileAdminOpen(true)}>
+                <Settings2 size={16} />
               </button>
-              <button type="button" aria-label="Clear whole stage" title="Clear whole stage" onClick={resetScene} disabled={!placed.length}>
+              )}
+              <button
+                type="button"
+                className={`mobile-snap-button ${snappingEnabled ? 'active' : ''}`}
+                aria-label={snappingEnabled ? 'Turn snapping off' : 'Turn snapping on'}
+                aria-pressed={snappingEnabled}
+                title={snappingEnabled ? 'Snapping is on' : 'Snapping is off'}
+                onClick={() => setSnappingEnabled((enabled) => !enabled)}
+              >
+                <Magnet size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label={isMobileViewport ? 'Clear whole stage' : 'Delete selected items'}
+                title={isMobileViewport ? 'Clear whole stage' : 'Delete selected items'}
+                onClick={isMobileViewport ? resetScene : deleteSelectedPieces}
+                disabled={isMobileViewport ? !placed.length : !selectedPieces.length}
+              >
                 <Trash2 size={16} />
               </button>
+              {canUseAdvancedTools && (
               <button
                 type="button"
                 aria-label={frameMode ? 'Cancel frame tool' : 'Frame model'}
                 title={frameMode ? 'Cancel frame tool' : 'Frame model'}
                 className={frameMode ? 'active' : ''}
                 onClick={frameMode ? cancelFrameMode : startFrameMode}
-                disabled={!placed.length}
+                disabled={!visibleGroupedPlaced.length}
               >
-                <Box size={16} />
+                <Frame size={17} />
               </button>
-              <button type="button" aria-label="Undo stage action" title="Undo (Ctrl+Z)" onClick={undoStage} disabled={!canUndo}>
-                <Undo2 size={16} />
-              </button>
-              <button type="button" aria-label="Redo stage action" title="Redo (Ctrl+Y)" onClick={redoStage} disabled={!canRedo}>
-                <Redo2 size={16} />
-              </button>
+              )}
             </div>
-            {selectedPieces.length > 0 && (
-              <div className="selection-chip">
-                <Box size={16} />
-                {selectedIsWholeGroup ? `Group (${selectedPieces.length})` : selectedPieces.length === 1 ? selectedPieces[0].name : `${selectedPieces.length} selected`}
-                <button
-                  type="button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={groupSelectedPieces}
-                  disabled={selectedPieces.length < 2 || selectedIsWholeGroup}
-                >
-                  Group
-                </button>
-                <button type="button" onClick={ungroupSelectedPieces} disabled={!selectedPieces.some((piece) => piece.groupInstanceId)}>
-                  Ungroup
-                </button>
-                <button type="button" onClick={copySelectedPieces}>
-                  Copy
-                </button>
-                <button type="button" onClick={pasteClipboardPieces} disabled={!hasClipboardPieces}>
-                  Paste
-                </button>
-              </div>
-            )}
             {frameMode && (
               <div className="selection-chip frame-chip">
                 <Box size={16} />
@@ -1877,11 +3793,12 @@ function App() {
           </div>
         </div>
         <GirihStage
-          placed={groupedPlaced}
+          placed={stagePreviewPlaced}
           selectedId={selectedId}
           selectedIds={selectedIds}
           activeGroupId={activeGroupId}
           material={material}
+          glassSettings={glassSettings}
           style={DEFAULT_SCENE_STYLE}
           cameraMode={stageCamera}
           backgroundColor={renderBgColor}
@@ -1891,11 +3808,16 @@ function App() {
           edgeOffsetCount={renderEdgeOffsetCount}
           edgeOffsetDistance={renderEdgeOffsetDistance}
           liveShadowsEnabled={liveShadowsEnabled}
-          modelTransform={modelTransform}
+          modelTransform={DEFAULT_MODEL_TRANSFORM}
           mobileViewport={isMobileViewport}
+          cameraVideoPlaying={cameraVideoPlaying}
+          cameraVideoPreset={cameraVideoPreset}
+          cameraVideoDurationMs={selectedVideoDurationMs}
+          cameraVideoProgressRef={cameraVideoProgressRef}
           frameMode={frameMode}
           framePoints={framePoints}
           onSelect={selectPlaced}
+          onToggleSelect={togglePlacedSelection}
           onFramePick={pickFrameObject}
           onSelectionChange={selectPlacedIds}
           onMove={updatePlaced}
@@ -1905,7 +3827,20 @@ function App() {
           onContextMenu={setContextMenu}
           onViewBoundsChange={setStageVisibleBounds}
           onCameraChange={setStageCameraSnapshot}
+          onCameraVideoProgress={setCameraVideoProgress}
+          onCameraVideoEnd={() => {
+            setCameraVideoPlaying(false);
+            setCameraVideoProgress(0);
+          }}
         />
+        {!placed.length && (
+          <div className="stage-welcome" aria-hidden="true">
+            <div className="stage-welcome-mark"><Grid3X3 size={34} /></div>
+            <span className="stage-welcome-eyebrow">Geometric pattern design</span>
+            <h2>Build a complete Girih pattern.</h2>
+            <p>Choose a piece family, place the first tile, then rotate, repeat, and snap pieces into a finished composition.</p>
+          </div>
+        )}
         {selectedTemplate && !templatePanelOpen && templateStagePreviewVisible && (
           <div className="stage-template-preview" data-template-toggle onPointerDown={(event) => event.stopPropagation()}>
             <button
@@ -1936,18 +3871,31 @@ function App() {
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(event) => event.stopPropagation()}
           >
-            <strong>{groupedPlaced.find((item) => item.id === contextMenu.id)?.name || 'Piece'}</strong>
+            <strong>{selectedPieces.length > 1 ? `${selectedPieces.length} selected pieces` : groupedPlaced.find((item) => item.id === contextMenu.id)?.name || 'Piece'}</strong>
             <label>
-              Instance color
+                {selectedPieces.length > 1 ? 'Selection color' : 'Instance color'}
               <input
                 type="color"
                 value={groupedPlaced.find((item) => item.id === contextMenu.id)?.color || '#1c7c74'}
                 onChange={(event) => recolorPlaced(contextMenu.id, event.target.value)}
               />
             </label>
-            <button onClick={() => toggleMirrorPlacedVertical(contextMenu.id)}>
-              {groupedPlaced.find((item) => item.id === contextMenu.id)?.mirrorVertical ? 'Unmirror vertically' : 'Mirror vertically'}
+            {canUseAdvancedTools && (
+            <>
+            <button onClick={() => toggleMirrorPlaced(contextMenu.id, 'vertical')}>
+              {selectedPieces.length > 1
+                ? 'Mirror selection vertically'
+                : groupedPlaced.find((item) => item.id === contextMenu.id)?.mirrorVertical ? 'Unmirror vertically' : 'Mirror vertically'}
             </button>
+            <button onClick={() => toggleMirrorPlaced(contextMenu.id, 'horizontal')}>
+              {selectedPieces.length > 1
+                ? 'Mirror selection horizontally'
+                : groupedPlaced.find((item) => item.id === contextMenu.id)?.mirrorHorizontal ? 'Unmirror horizontally' : 'Mirror horizontally'}
+            </button>
+            </>
+            )}
+            {canUseGrouping && (
+            <>
             <button
               onPointerDown={(event) => {
                 event.preventDefault();
@@ -1961,43 +3909,359 @@ function App() {
             <button onClick={ungroupSelectedPieces} disabled={!selectedPieces.some((piece) => piece.groupInstanceId)}>
               Ungroup
             </button>
+            </>
+            )}
             <button onClick={copySelectedPieces} disabled={!selectedPieces.length}>
               Copy selection
             </button>
             <button onClick={pasteClipboardPieces} disabled={!hasClipboardPieces}>
               Paste
             </button>
-            <button onClick={() => deletePlaced(contextMenu.id)}>
+            <button onClick={() => (selectedPieces.length > 1 ? deleteSelectedPieces() : deletePlaced(contextMenu.id))}>
               <Trash2 size={15} />
-              Delete instance
+              {selectedPieces.length > 1 ? 'Delete selection' : 'Delete instance'}
             </button>
           </div>
         )}
-        {printPreview && (
-          <div className="preview-backdrop" onClick={() => setPrintPreview(null)}>
-            <div className="preview-dialog" onClick={(event) => event.stopPropagation()}>
+        {pendingNavigationUrl && (
+          <div className="preview-backdrop" onClick={() => setPendingNavigationUrl('')}>
+            <div className="preview-dialog unsaved-design-dialog" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-design-title" onClick={(event) => event.stopPropagation()}>
               <div className="preview-header">
-                <strong>Print preview</strong>
-                <span>
-                  {getStageCameraView(printPreview.view).label} / {printPreview.orientation}
-                </span>
+                <strong id="unsaved-design-title">Save your design?</strong>
+                <button type="button" className="preview-close-button" aria-label="Cancel navigation" onClick={() => setPendingNavigationUrl('')}>
+                  <X size={16} />
+                </button>
               </div>
-              <img src={printPreview.imageUrl} alt="Girih print preview" />
+              <p>Your stage has changes that are not saved as a model. Save them before leaving Girih App?</p>
               <div className="action-row">
-                <button onClick={printCurrentModel}>
+                <button type="button" onClick={() => continuePendingNavigation(true)}>
+                  <Save size={16} /> Save model and leave
+                </button>
+                <button type="button" className="danger-button" onClick={() => continuePendingNavigation(false)}>
+                  Leave without saving
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setPendingNavigationUrl('')}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {itemSummaryOpen && (
+          <div className="preview-backdrop" onClick={() => setItemSummaryOpen(false)}>
+            <div className="preview-dialog item-summary-dialog" onClick={(event) => event.stopPropagation()}>
+              <div className="preview-header">
+                <strong>Item summary</strong>
+                <span>{placed.length} pieces / {itemSummaryItems.length} item types</span>
+                <button type="button" className="preview-close-button" aria-label="Close item summary" onClick={() => setItemSummaryOpen(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="item-summary-list">
+                {itemSummaryItems.length ? (
+                  itemSummaryItems.map((item) => (
+                    <div className="item-summary-row" key={item.key}>
+                      <PieceIcon piece={item.piece} filled />
+                      <span>{item.name}</span>
+                      <strong>{item.count}</strong>
+                    </div>
+                  ))
+                ) : (
+                  <div className="item-summary-empty">No items on stage.</div>
+                )}
+              </div>
+              <div className="action-row">
+                <button onClick={printItemSummaryList} disabled={!itemSummaryItems.length}>
+                  <Printer size={16} /> Print summary
+                </button>
+                <button className="secondary-button" onClick={() => setItemSummaryOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {exportDialogOpen && (
+          <div className="preview-backdrop" onClick={() => setExportDialogOpen(false)}>
+            <div className="preview-dialog export-dialog" onClick={(event) => event.stopPropagation()}>
+              <div className="preview-header">
+                <strong>Export preview</strong>
+                <span>
+                  {exportDimensionMode.toUpperCase()} / {contextualExportOptions.find((option) => option.value === exportFormat)?.label || exportFormat}{exportDimensionMode === '2d' ? ` / ${EXPORT_2D_STYLE_OPTIONS.find((option) => option.value === export2DStyle)?.label}` : ''}
+                </span>
+                <button type="button" className="preview-close-button" aria-label="Close export preview" onClick={() => setExportDialogOpen(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="export-workspace">
+                <div className="export-settings-column">
+              <div className="export-dimension-switch" role="group" aria-label="Export dimension">
+                <button
+                  type="button"
+                  className={exportDimensionMode === '2d' ? 'active' : ''}
+                  onClick={() => {
+                    setExportDimensionMode('2d');
+                    setExportFormat('png-flat-color');
+                  }}
+                >2D</button>
+                <button
+                  type="button"
+                  className={exportDimensionMode === '3d' ? 'active' : ''}
+                  onClick={() => {
+                    setExportDimensionMode('3d');
+                    setExportFormat('png');
+                  }}
+                >3D</button>
+              </div>
+              <div className="export-dialog-controls">
+                <label>
+                  Export format
+                  <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                    {contextualExportOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {exportDimensionMode === '2d' && <label>
+                  2D graphic style
+                  <select value={export2DStyle} onChange={(event) => setExport2DStyle(event.target.value)}>
+                    {EXPORT_2D_STYLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>}
+                {exportUsesPageLayout && <label>
+                  Paper size
+                  <select value={exportPaperSize} onChange={(event) => setExportPaperSize(event.target.value)}>
+                    {EXPORT_PAPER_SIZES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>}
+                {exportUsesPageLayout && <label>
+                  Page orientation
+                  <select value={exportOrientation} onChange={(event) => setExportOrientation(event.target.value)}>
+                    <option value="landscape">Landscape</option>
+                    <option value="portrait">Portrait</option>
+                  </select>
+                </label>}
+                {exportSupportsTransparentBackground && <label className="export-background-toggle">
+                  <input
+                    type="checkbox"
+                    checked={exportTransparentBackground}
+                    disabled={!exportSupportsTransparentBackground}
+                    onChange={(event) => setExportTransparentBackground(event.target.checked)}
+                  />
+                  <span>Transparent BG / Stage</span>
+                </label>}
+                {exportDimensionMode === '3d' && exportFormat === 'mp4' && (
+                  <label>
+                    Camera preset
+                    <select value={cameraVideoPreset} onChange={(event) => setCameraVideoPreset(event.target.value)}>
+                      {CAMERA_VIDEO_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {exportDimensionMode === '3d' && exportFormat === 'mp4' && selectedVideoPreset.type === 'assembly' && (
+                  <label>
+                    Assembly duration (sec)
+                    <input
+                      type="number"
+                      min="2"
+                      max="30"
+                      step="1"
+                      value={assemblyVideoDurationSec}
+                      onChange={(event) => setAssemblyVideoDurationSec(event.target.value)}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="export-view-controls">
+                <label>
+                  Stage BG
+                  <input
+                    type="color"
+                    value={exportBgColor}
+                    disabled={exportPreviewUsesTransparentBackground}
+                    onChange={(event) => setExportBgColor(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Edge color
+                  <input type="color" value={exportEdgeColor} onChange={(event) => setExportEdgeColor(event.target.value)} />
+                </label>
+                <label className="export-edge-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Number(exportEdgeThickness) > 0}
+                    onChange={(event) => setExportEdgeThickness(event.target.checked ? 1 : 0)}
+                  />
+                  <span>Edge line</span>
+                </label>
+                <label>
+                  Line (px)
+                  <input
+                    type="number"
+                    min="0.25"
+                    max="12"
+                    step="0.25"
+                    value={exportEdgeThickness}
+                    disabled={Number(exportEdgeThickness) <= 0}
+                    onChange={(event) => setExportEdgeThickness(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Offset count
+                  <input
+                    type="number"
+                    min="1"
+                    max="8"
+                    step="1"
+                    value={exportEdgeOffsetCount}
+                    disabled={Number(exportEdgeThickness) <= 0}
+                    onChange={(event) => setExportEdgeOffsetCount(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Offset distance (px)
+                  <input
+                    type="number"
+                    min="0"
+                    max="40"
+                    step="0.5"
+                    value={exportEdgeOffsetDistance}
+                    disabled={Number(exportEdgeThickness) <= 0}
+                    onChange={(event) => setExportEdgeOffsetDistance(event.target.value)}
+                  />
+                </label>
+              </div>
+              {exportDimensionMode === '3d' && (
+                <div className="export-3d-context">
+                  <label>
+                    Material
+                    <select value={export3DMaterial} onChange={(event) => setExport3DMaterial(event.target.value)}>
+                      <option value="plastic">Plastic</option>
+                      <option value="glass">Glass</option>
+                    </select>
+                  </label>
+                  <label>
+                    Camera
+                    <select value={export3DCamera} onChange={(event) => setExport3DCamera(event.target.value)}>
+                      {STAGE_CAMERA_VIEWS.map((view) => <option key={view.id} value={view.id}>{view.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="export-3d-shadow-toggle">
+                    <input type="checkbox" checked={export3DShadows} onChange={(event) => setExport3DShadows(event.target.checked)} />
+                    <span>Shadow</span>
+                  </label>
+                </div>
+              )}
+              {exportDimensionMode === '2d' && export2DStyle !== 'standard' && (
+                <div className="export-style-controls">
+                  {export2DStyle === 'pencil' && (
+                    <>
+                      <label>Edge color<input type="color" value={exportEdgeColor} onChange={(event) => setExportEdgeColor(event.target.value)} /></label>
+                      <label>Intensity<input type="number" min="10" max="100" step="5" value={exportPencilIntensity} onChange={(event) => setExportPencilIntensity(event.target.value)} /></label>
+                    </>
+                  )}
+                  {export2DStyle === 'paper-cut' && (
+                    <>
+                      <label>Polygon offset (px)<input type="number" min="0" max="60" step="1" value={exportPaperGap} onChange={(event) => setExportPaperGap(event.target.value)} /></label>
+                      <label className="export-background-toggle">
+                        <input type="checkbox" checked={exportPaperCutOut} onChange={(event) => setExportPaperCutOut(event.target.checked)} />
+                        <span>Cut out</span>
+                      </label>
+                    </>
+                  )}
+                  {export2DStyle === 'hatch' && (
+                    <>
+                      <label>Angle<input type="number" min="-90" max="90" step="1" value={exportHatchAngle} onChange={(event) => setExportHatchAngle(event.target.value)} /></label>
+                      <label>Spacing (px)<input type="number" min="3" max="60" step="1" value={exportHatchSpacing} onChange={(event) => setExportHatchSpacing(event.target.value)} /></label>
+                      <label>Line (px)<input type="number" min="0.25" max="8" step="0.25" value={exportHatchThickness} onChange={(event) => setExportHatchThickness(event.target.value)} /></label>
+                      <label>Outline (px)<input type="number" min="0.25" max="12" step="0.25" value={exportHatchOutline} onChange={(event) => setExportHatchOutline(event.target.value)} /></label>
+                    </>
+                  )}
+                </div>
+              )}
+                </div>
+              <div
+                className={`export-preview-frame ${exportPreviewUsesTransparentBackground ? 'transparent-background' : ''}`}
+                onWheel={(event) => {
+                  if (exportDimensionMode !== '3d') return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setExportPreviewZoom((currentZoom) => {
+                    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+                    return clamp(Number((currentZoom * factor).toFixed(2)), 0.5, 3);
+                  });
+                }}
+                onPointerDown={(event) => {
+                  if (exportDimensionMode !== '3d' || event.button !== 0) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  exportPreviewPanDragRef.current = {
+                    pointerId: event.pointerId,
+                    x: event.clientX,
+                    y: event.clientY,
+                  };
+                }}
+                onPointerMove={(event) => {
+                  const drag = exportPreviewPanDragRef.current;
+                  if (!drag || drag.pointerId !== event.pointerId) return;
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  const deltaX = (event.clientX - drag.x) / Math.max(bounds.width, 1);
+                  const deltaY = (event.clientY - drag.y) / Math.max(bounds.height, 1);
+                  drag.x = event.clientX;
+                  drag.y = event.clientY;
+                  setExportPreviewPan((currentPan) => ({
+                    x: clamp(currentPan.x + deltaX, -0.75, 0.75),
+                    y: clamp(currentPan.y + deltaY, -0.75, 0.75),
+                  }));
+                }}
+                onPointerUp={(event) => {
+                  if (exportPreviewPanDragRef.current?.pointerId !== event.pointerId) return;
+                  exportPreviewPanDragRef.current = null;
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }}
+                onPointerCancel={() => {
+                  exportPreviewPanDragRef.current = null;
+                }}
+                onLostPointerCapture={() => {
+                  exportPreviewPanDragRef.current = null;
+                }}
+                title={exportDimensionMode === '3d' ? 'Scroll to zoom and drag to pan the export framing' : undefined}
+              >
+                {exportPreview?.imageUrl && <img src={exportPreview.imageUrl} alt="Girih export preview" draggable={false} />}
+                {exportDimensionMode === '3d' && (
+                  <div className="export-preview-zoom">{Math.round(exportPreviewZoom * 100)}% · Scroll to zoom · Drag to pan</div>
+                )}
+                {exportPreviewLoading && <div className="export-preview-status">Updating preview...</div>}
+                {exportPreviewError && <div className="export-preview-status error">{exportPreviewError}</div>}
+              </div>
+              </div>
+              <div className="action-row">
+                <button onClick={async () => {
+                  try {
+                    await exportScene(exportFormat, { orientation: exportOrientation, paperSize: exportPaperSize });
+                  } catch (error) {
+                    console.error('Export failed', error);
+                    window.alert(error?.message || 'Export failed. Please try again.');
+                  }
+                }}>
+                  <Download size={16} /> Export
+                </button>
+                <button onClick={printCurrentExport}>
                   <Printer size={16} /> Print
                 </button>
-                <button onClick={() => exportScene('pdf')}>
-                  <FileText size={16} /> PDF
+                <button className="secondary-button" onClick={() => setExportDialogOpen(false)}>
+                  Close
                 </button>
-                <button onClick={() => setPrintPreview(null)}>Close</button>
               </div>
             </div>
           </div>
         )}
       </main>
 
-      <aside className={`template-panel ${templatePanelOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
+      {canUseTemplates && <aside className={`template-panel ${templatePanelOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
         <div className="section-title">
           <ImageIcon size={18} />
           <span>Template Library</span>
@@ -2073,24 +4337,26 @@ function App() {
         ) : (
           <div className="template-empty">No templates assigned to this group yet.</div>
         )}
-      </aside>
+      </aside>}
 
+      {canUseAdmin && (
       <aside className={`admin-panel ${mobileAdminOpen ? 'open' : ''}`} onPointerDown={(event) => event.stopPropagation()}>
         <div className="section-title">
-          <Upload size={18} />
-          <span>Admin Panel</span>
-          <button type="button" className="mobile-close-button" aria-label="Close admin panel" onClick={() => setMobileAdminOpen(false)}>
+          <Settings2 size={18} />
+          <span>Back stage</span>
+          <button type="button" className="mobile-close-button" aria-label="Close Back stage" onClick={() => setMobileAdminOpen(false)}>
             <X size={16} />
           </button>
         </div>
 
         <div className="admin-list">
-          {pieceGroups.map((group) => {
+          {adminPieceGroups.map((group) => {
             const collapsed = collapsedAdminGroups.has(group.name);
             const groupName = normalizePieceGroupName(group.name);
             const paletteCollapsed = collapsedPaletteGroups.has(groupName);
-            const palettes = groupColorPalettes[groupName] || [];
-            const canSavePalette = group.items.length > 0 && palettes.length < 6;
+            const savedPalettes = groupColorPalettes[groupName] || [];
+            const palettes = buildGroupColorPalettes(group, savedPalettes);
+            const canSavePalette = group.items.length > 0 && savedPalettes.length < 5;
             return (
               <div className="admin-group" key={group.name}>
                 <div className="admin-group-header">
@@ -2102,6 +4368,23 @@ function App() {
                 </div>
                 {!collapsed && (
                   <div className="admin-group-items">
+                    <div className="admin-group-edit-row">
+                      <button type="button" onClick={() => resetAdminGroupSizes(group)}>
+                        Reset size
+                      </button>
+                      <label>
+                        Group height
+                        <input
+                          type="number"
+                          min="0.001"
+                          max="20"
+                          step="0.001"
+                          value={adminGroupHeightInputs[groupName] ?? ''}
+                          placeholder="Height"
+                          onChange={(event) => setAdminGroupHeight(group, event.target.value)}
+                        />
+                      </label>
+                    </div>
                     <div className="admin-palette-panel">
                       <div className="admin-palette-header">
                         <button type="button" className="admin-palette-toggle" onClick={() => togglePaletteGroup(groupName)}>
@@ -2133,45 +4416,88 @@ function App() {
                         />
                       )}
                     </div>
-                    {group.items.map((piece) => (
-                      <div className="admin-piece" key={piece.id}>
-                        <div className="admin-row">
-                          <PieceIcon piece={piece} />
-                          <input
-                            className="admin-color-input"
-                            type="color"
-                            value={piece.color}
-                            aria-label={`Change ${piece.name} color`}
-                            onChange={(event) => updatePieceColor(piece, event.target.value)}
-                          />
-                          <input
-                            className="admin-height-input"
-                            type="number"
-                            min="0.01"
-                            step="0.001"
-                            value={formatDimensionValue(piece.height)}
-                            aria-label={`Change ${piece.name} stage height`}
-                            onChange={(event) => updatePieceHeight(piece, event.target.value)}
-                          />
-                          <span>{piece.name}</span>
-                          <button aria-label={`Edit ${piece.name}`} onClick={() => editPiece(piece)}>
-                            <Edit3 size={15} />
-                          </button>
+                    {group.items.map((piece) => {
+                      const instances = groupedPlaced.filter((item) => item.sourceId === piece.id);
+                      const hasInstances = instances.length > 0;
+                      const isHidden = hasInstances && instances.every((item) => item.hidden);
+                      return (
+                        <div className="admin-piece" key={piece.id}>
+                          <div className="admin-row" title={piece.name}>
+                            <button
+                              type="button"
+                              className={`admin-piece-preview-toggle ${isHidden ? 'hidden-instances' : ''}`}
+                              aria-label={`${isHidden ? 'Show' : 'Hide'} ${piece.name} instances`}
+                              title={hasInstances ? `${isHidden ? 'Show' : 'Hide'} stage instances` : 'No stage instances'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                togglePieceInstancesHidden(piece);
+                              }}
+                              disabled={!hasInstances}
+                            >
+                              <PieceIcon piece={piece} />
+                              {isHidden && <EyeOff className="admin-piece-hidden-mark" size={13} />}
+                            </button>
+                            <input
+                              className="admin-color-input"
+                              type="color"
+                              value={piece.color}
+                              aria-label={`Change ${piece.name} color`}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => updatePieceColor(piece, event.target.value)}
+                            />
+                            <button
+                              type="button"
+                              className={`admin-offset-line-toggle ${piece.offsetLinesEnabled !== false ? 'active' : ''}`}
+                              aria-pressed={piece.offsetLinesEnabled !== false}
+                              aria-label={`${piece.offsetLinesEnabled !== false ? 'Hide' : 'Show'} ${piece.name} offset lines`}
+                              title={`${piece.offsetLinesEnabled !== false ? 'Hide' : 'Show'} offset lines on all ${piece.name} instances`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                togglePieceOffsetLines(piece);
+                              }}
+                            >
+                              <Layers3 size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              className={`admin-surface-sticker-toggle ${surfaceEditorPieceId === piece.id ? 'active' : ''} ${hasSurfaceStickerContent(piece.surfaceSticker) ? 'has-sticker' : ''}`}
+                              aria-pressed={surfaceEditorPieceId === piece.id}
+                              aria-label={`Edit ${piece.name} surface sticker`}
+                              title="Edit surface sticker"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openPieceSurfaceEditor(piece);
+                              }}
+                            >
+                              <ImageIcon size={15} />
+                            </button>
+                            <input
+                              className="admin-height-input"
+                              type="number"
+                              min="0.01"
+                              step="0.001"
+                              value={formatDimensionValue(piece.height)}
+                              aria-label={`Change ${piece.name} stage height`}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => updatePieceHeight(piece, event.target.value)}
+                            />
+                            <span>{piece.name}</span>
+                          </div>
+                          {surfaceEditorPieceId === piece.id && (
+                            <PieceSurfaceStickerEditor
+                              piece={piece}
+                              value={surfaceStickerDraft}
+                              onChange={setSurfaceStickerDraft}
+                              onSave={() => savePieceSurfaceSticker(piece)}
+                              onCancel={() => {
+                                setSurfaceEditorPieceId(null);
+                                setSurfaceStickerDraft(normalizeSurfaceSticker());
+                              }}
+                            />
+                          )}
                         </div>
-                        {editingId === piece.id && (
-                          <AdminPieceEditor
-                            draft={draft}
-                            onDraftChange={setDraft}
-                            onDimensionChange={updateDraftDimension}
-                            onSubmit={savePiece}
-                            onCancel={() => {
-                              setEditingId(null);
-                              setDraft(emptyDraft());
-                            }}
-                          />
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -2179,7 +4505,2252 @@ function App() {
           })}
         </div>
       </aside>
+      )}
     </div>
+  );
+}
+
+const LANDING_RESULTS = [
+  { src: '/landing/exports/framed-3d.png', alt: 'Framed Girih composition with depth and shadows', caption: 'Framed 3D', layout: 'hero' },
+  { src: '/landing/exports/star-flat-color.png', alt: 'Eight-point star flat-color export', caption: '2D color', layout: 'tall' },
+  { src: '/landing/exports/tessellated-3d.png', alt: 'Dense tessellated 3D Girih pattern', caption: 'Tessellated 3D', layout: 'square' },
+  { src: '/landing/exports/blue-rosette.png', alt: 'Blue rosette top-view export', caption: 'Top-view rosette', layout: 'square' },
+  { src: '/landing/exports/persian-grid.png', alt: 'Red, white, and gray Persian Girih pattern field', caption: 'Pattern field', layout: 'square' },
+];
+
+const LANDING_FEATURE_GROUPS = [
+  {
+    title: 'Four puzzle sets', icon: Layers3,
+    image: '/landing/features/four-puzzle-sets.png',
+    alt: 'Four geometric pattern examples representing the four Girih puzzle sets',
+    summary: 'Build with the complete 10 Kond, 10 Tond, 8 Morocco, and 8 Persian shape families.',
+  },
+  {
+    title: 'Pattern templates', icon: ImageIcon,
+    image: '/templates/girih/GIRIH0072.jpg',
+    alt: 'Golden Girih pattern template with its construction highlighted',
+    summary: 'Open curated template collections beside the stage, then zoom and pan while recreating a pattern.',
+  },
+  {
+    title: 'Piece snapping', icon: Magnet,
+    image: '/landing/features/piece-snapping.png',
+    alt: 'Separate puzzle pieces approaching a central star to demonstrate snapping',
+    summary: 'Align neighboring edges automatically for precise, connected geometric construction.',
+  },
+  {
+    title: 'Reusable motifs', icon: Save,
+    image: '/landing/features/reusable-motif.png',
+    alt: 'A complete saved Girih motif on a dark red background',
+    summary: 'Save any selected arrangement as a motif while preserving its pieces, colors, and transforms.',
+  },
+  {
+    title: 'Tessellation', icon: Grid3X3,
+    image: '/landing/features/tessellation.png',
+    alt: 'A saved motif repeated four times as a tessellation',
+    summary: 'Repeat a saved motif across adjustable rows and columns with independent horizontal and vertical gaps.',
+  },
+  {
+    title: 'Frame & crop', icon: Frame,
+    image: '/landing/features/frame-crop.png',
+    alt: 'A repeating pattern cropped into a pointed geometric frame',
+    summary: 'Draw a closed polygon through the composition, slice crossing pieces, and retain the framed interior.',
+  },
+  {
+    title: 'Export PNG & production files', icon: Download,
+    image: '/landing/features/export-png.png',
+    alt: 'Transparent PNG export of a Girih composition',
+    summary: 'Export images, vectors, print documents, DXF for laser/CNC, and STL or OBJ for 3D fabrication.',
+  },
+];
+
+function LegacyLandingPage() {
+  const [selectedLandingResult, setSelectedLandingResult] = useState(null);
+  const [landingUser, setLandingUser] = useState(null);
+  const [recentMarketplaceListings, setRecentMarketplaceListings] = useState([]);
+  const [marketplacePreviewStatus, setMarketplacePreviewStatus] = useState('loading');
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+
+    let active = true;
+    const syncLandingUser = async (session) => {
+      if (!active) return;
+      if (!session?.user) {
+        setLandingUser(null);
+        return;
+      }
+      const user = await loadAuthenticatedUser(session.user).catch(() => ({
+        name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Girih user',
+      }));
+      if (active) setLandingUser(user);
+    };
+
+    supabase.auth.getSession().then(({ data }) => syncLandingUser(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => syncLandingUser(session), 0);
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedLandingResult) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setSelectedLandingResult(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLandingResult]);
+
+  useEffect(() => {
+    let active = true;
+    marketplaceRequest('/api/marketplace-listings?limit=5')
+      .then((payload) => {
+        if (!active) return;
+        setRecentMarketplaceListings((payload.listings || []).slice(0, 5));
+        setMarketplacePreviewStatus('ready');
+      })
+      .catch(() => {
+        if (active) setMarketplacePreviewStatus('error');
+      });
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <div className="landing-page">
+      <header className="landing-nav">
+        <a className="landing-brand" href="/" aria-label="Girih Studio home">
+          <img className="landing-brand-logo" src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+          <span>Girih Studio</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <a className="landing-image-nav-button" href="#apps">
+            <img src="/landing/ui/nav-button.png" alt="" aria-hidden="true" />
+            <span>Apps</span>
+          </a>
+          <a className="landing-image-nav-button" href="#features">
+            <img src="/landing/ui/nav-button.png" alt="" aria-hidden="true" />
+            <span>Features</span>
+          </a>
+          <a className="landing-image-nav-button" href="#results">
+            <img src="/landing/ui/nav-button.png" alt="" aria-hidden="true" />
+            <span>Gallery</span>
+          </a>
+          <a className="landing-image-nav-button" href="#support">
+            <img src="/landing/ui/nav-button.png" alt="" aria-hidden="true" />
+            <span>Support</span>
+          </a>
+        </nav>
+        <div className="landing-nav-account">
+          {landingUser && <span className="landing-user-greeting">Hello {landingUser.name}</span>}
+          <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+          <a className="marketplace-icon-link" href="/marketplace" aria-label="Marketplace" title="Marketplace"><Store size={20} /></a>
+        </div>
+      </header>
+
+      <main>
+        <section className="landing-hero">
+          <video className="landing-hero-video" autoPlay muted loop playsInline preload="metadata" aria-label="Girih Studio pattern design showcase">
+            <source src="/landing/hero/girih-studio.mp4" type="video/mp4" />
+          </video>
+          <div className="landing-hero-shade" />
+          <div className="landing-hero-content">
+            <p className="landing-eyebrow">Geometric pattern workspace</p>
+            <div className="landing-hero-title-row">
+              <h1>Girih Studio</h1>
+              <a className="landing-primary-action landing-hero-start" href="/app?mode=signup">Start creating <ArrowRight size={15} /></a>
+            </div>
+            <p>Compose historic geometric systems with a modern spatial editor. Build, group, frame, tessellate, and prepare patterns for print or fabrication.</p>
+          </div>
+        </section>
+
+        <section className="landing-section landing-apps" id="apps">
+          <div className="landing-section-heading">
+            <p className="landing-eyebrow">Our apps</p>
+            <h2>One studio family, different ways to build.</h2>
+            <p>Move between focused design tools while keeping the same Girih Studio visual language and a clear path back home.</p>
+          </div>
+          <div className="landing-app-grid">
+            {GIRIH_APPS.map((app, index) => (
+              <article className={`landing-app-card landing-app-${app.id}`} key={app.id}>
+                <div className="landing-app-visual" aria-hidden="true">
+                  <span>{app.id === 'bricks' ? <Grid3X3 size={44} strokeWidth={1.4} /> : app.id === 'muqarnas' ? <Layers3 size={44} strokeWidth={1.4} /> : <Box size={44} strokeWidth={1.4} />}</span>
+                  <i>{String(index + 1).padStart(2, '0')}</i>
+                </div>
+                <div className="landing-app-copy">
+                  <div className="landing-app-meta"><span>{app.category}</span><span>{app.access}</span></div>
+                  <h3>{app.name}</h3>
+                  <p>{app.description}</p>
+                  {app.status === 'coming-soon'
+                    ? <span className="landing-app-coming-soon">Coming soon</span>
+                    : <a href={app.url}>Open {app.shortName} <ArrowRight size={16} /></a>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="landing-section landing-features" id="features">
+          <span className="landing-boundary-motif landing-boundary-motif-right landing-boundary-motif-middle landing-boundary-motif-back" aria-hidden="true">
+            <img src="/landing/motifs/boundary-yellow.png" alt="" />
+          </span>
+          <div className="landing-section-heading">
+            <p className="landing-eyebrow">The complete workspace</p>
+            <h2>Essential tools for building repeatable geometry.</h2>
+            <p>Seven focused capabilities take a pattern from its first pieces to a reusable, framed, and fabrication-ready design.</p>
+          </div>
+          <div className="landing-feature-groups">
+            {LANDING_FEATURE_GROUPS.map((group, index) => {
+              const FeatureIcon = group.icon;
+              return (
+                <article className="landing-feature-group" key={group.title} style={{ gridColumn: index + 1 }}>
+                  <div className="landing-feature-card">
+                    <div className="landing-feature-visual">
+                      <img src={group.image} alt={group.alt} />
+                    </div>
+                    <div className="landing-feature-copy">
+                      <div className="landing-feature-title">
+                        <h3>{group.title}</h3>
+                      </div>
+                      <p>{group.summary}</p>
+                    </div>
+                  </div>
+                  <span className="landing-feature-connector" aria-hidden="true">
+                    <b>{index + 1}</b>
+                    <i><FeatureIcon size={22} strokeWidth={1.5} /></i>
+                  </span>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="landing-results" id="results">
+          <div className="landing-results-copy">
+            <p className="landing-eyebrow">Built in the studio</p>
+            <h2>One system, many visual languages</h2>
+            <p>Move from a small construction rule to dense fields, framed compositions, and color studies without leaving the same workspace.</p>
+            <a href="/app">Explore the editor <ArrowRight size={16} /></a>
+          </div>
+          <div className="landing-result-gallery">
+            {LANDING_RESULTS.map((result) => (
+              <figure key={result.src} className={`mosaic-${result.layout}`}>
+                <button type="button" onClick={() => setSelectedLandingResult(result)} aria-label={`Enlarge ${result.caption}`}>
+                  <img src={result.src} alt={result.alt} />
+                </button>
+                <figcaption>{result.caption}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+
+        {selectedLandingResult && (
+          <div
+            className="landing-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedLandingResult.caption}
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setSelectedLandingResult(null);
+            }}
+          >
+            <div className="landing-lightbox-content">
+              <button type="button" className="landing-lightbox-close" aria-label="Close image" onClick={() => setSelectedLandingResult(null)}>
+                <X size={20} />
+              </button>
+              <img src={selectedLandingResult.src} alt={selectedLandingResult.alt} />
+              <p>{selectedLandingResult.caption}</p>
+            </div>
+          </div>
+        )}
+
+        <section className="landing-section landing-variations">
+          <span className="landing-boundary-motif landing-boundary-motif-left" aria-hidden="true">
+            <img src="/landing/motifs/boundary-blue.png" alt="" />
+          </span>
+          <div className="landing-section-heading">
+            <p className="landing-eyebrow">One design, different results</p>
+            <h2>Change the material, palette, edge, and background.</h2>
+            <p>The same construction can become a dimensional study or a crisp color composition without rebuilding the geometry.</p>
+          </div>
+          <div className="landing-variation-grid">
+            <figure>
+              <img src="/landing/exports/variation-a-shadow.png" alt="Blue and yellow pattern exported with dimensional shadows" />
+              <figcaption>Dimensional export</figcaption>
+            </figure>
+            <figure>
+              <img src="/landing/exports/variation-a-color.png" alt="The same blue pattern exported in a light color treatment" />
+              <figcaption>Color variation</figcaption>
+            </figure>
+            <figure>
+              <img src="/landing/exports/variation-b-warm.png" alt="Girih composition in a warm orange palette" />
+              <figcaption>Warm palette</figcaption>
+            </figure>
+            <figure>
+              <img src="/landing/exports/variation-b-cool.png" alt="The same Girih composition in a cool green palette" />
+              <figcaption>Cool palette</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section className="landing-section landing-marketplace-showcase" id="marketplace">
+          <div className="landing-marketplace-heading">
+            <div className="landing-section-heading">
+              <p className="landing-eyebrow">Newest community patterns</p>
+              <h2>Market place</h2>
+              <p>Discover the five most recently published patterns, meet their makers, and add editable designs to your own studio.</p>
+            </div>
+            <a className="landing-marketplace-browse" href="/marketplace">
+              <Store size={17} /> Browse all patterns <ArrowRight size={16} />
+            </a>
+          </div>
+          <div className="landing-marketplace-grid">
+            {marketplacePreviewStatus === 'loading' && (
+              <div className="landing-marketplace-message">Loading the newest community patterns...</div>
+            )}
+            {marketplacePreviewStatus === 'error' && (
+              <div className="landing-marketplace-message">
+                The latest patterns could not be loaded here. <a href="/marketplace">Open the market place</a> to browse the catalog.
+              </div>
+            )}
+            {marketplacePreviewStatus === 'ready' && !recentMarketplaceListings.length && (
+              <div className="landing-marketplace-message">
+                New community patterns will appear here as they are published. <a href="/marketplace">Visit the market place</a>.
+              </div>
+            )}
+            {recentMarketplaceListings.map((listing) => (
+              <MarketplaceCard
+                key={listing.id}
+                listing={listing}
+                listingHref={`/marketplace?listing=${encodeURIComponent(listing.id)}`}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="landing-section landing-heritage" id="heritage">
+          <div className="landing-section-heading">
+            <p className="landing-eyebrow">A living geometric heritage</p>
+            <h2>Patterns that carry construction knowledge</h2>
+          </div>
+          <div className="landing-history-grid">
+            <figure className="landing-history-primary">
+              <img src="/landing/darb-imam-spandrel.jpg" alt="Girih tile subdivision on the Darb-e Imam shrine spandrel in Isfahan" />
+              <figcaption>
+                <strong>Darb-e Imam, Isfahan</strong>
+                <span>A 1453 spandrel where large decagonal Girih structures subdivide into a finer geometric field.</span>
+              </figcaption>
+            </figure>
+            <figure>
+              <img src="/landing/friday-mosque-isfahan.jpg" alt="Courtyard view through an iwan at the Friday Mosque of Isfahan" />
+              <figcaption>
+                <strong>Friday Mosque, Isfahan</strong>
+                <span>Seljuk spatial form and later Safavid tile surfaces show geometry operating across architecture and ornament.</span>
+              </figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section className="landing-modern" id="today">
+          <img src="/landing/masjid-negara-facade.jpg" alt="Modern geometric screen across the facade of Malaysia's National Mosque" />
+          <div className="landing-modern-copy">
+            <p className="landing-eyebrow">Geometry in contemporary practice</p>
+            <h2>From carved surfaces to performative screens</h2>
+            <p>Today, geometric systems move through facades, shading screens, interiors, furniture, graphics, and digital fabrication. Girih Studio helps translate a visual tradition into editable geometry for contemporary work.</p>
+          </div>
+        </section>
+
+        <section className="landing-section landing-school landing-support-preview" id="support">
+          <div className="landing-section-heading">
+            <p className="landing-eyebrow">Girih Studio Support</p>
+            <h2>Answers for the workflows you use most.</h2>
+            <p>Start with these practical guides, or open the complete article library for every design and export tool.</p>
+          </div>
+          <div className="landing-school-grid">
+            <article>
+              <Grid3X3 size={30} strokeWidth={1.5} />
+              <span>01</span>
+              <h3>Make your first pattern</h3>
+              <p>Choose a puzzle set, place pieces, snap matching edges, navigate the stage, and build outward from a central shape.</p>
+              <a href="/support#article-make-your-first-girih-pattern">Read article <ArrowRight size={15} /></a>
+            </article>
+            <article>
+              <Palette size={30} strokeWidth={1.5} />
+              <span>02</span>
+              <h3>Edit colors and palettes</h3>
+              <p>Change individual piece colors, establish a consistent palette, and preserve those choices in saved compositions.</p>
+              <a href="/support#article-edit-pattern-colors">Read article <ArrowRight size={15} /></a>
+            </article>
+            <article>
+              <Download size={30} strokeWidth={1.5} />
+              <span>03</span>
+              <h3>Export and fabricate</h3>
+              <p>Prepare 2D artwork, transparent images, print layouts, CNC paths, 3D models, and camera video for real projects.</p>
+              <a href="/support#article-export-a-clean-2d-design">Read article <ArrowRight size={15} /></a>
+            </article>
+          </div>
+          <div className="landing-support-more">
+            <a className="landing-primary-action" href="/support">More articles <ArrowRight size={17} /></a>
+          </div>
+        </section>
+
+        <section className="landing-final-cta">
+          <div>
+            <p className="landing-eyebrow">Begin with a single piece</p>
+            <h2>Build the pattern you have in mind.</h2>
+          </div>
+          <a className="landing-primary-action" href="/app?mode=signup">Create a free account <ArrowRight size={17} /></a>
+        </section>
+      </main>
+
+      <footer className="landing-footer">
+        <span className="landing-boundary-motif landing-footer-motif" aria-hidden="true">
+          <img src="/landing/motifs/boundary-teal.png" alt="" />
+        </span>
+        <div className="landing-footer-brand">
+          <img src="/landing/brand/girih-logo-color.png" alt="Girih Studio" />
+        </div>
+        <p>Digital tools for geometric composition.</p>
+        <nav className="landing-footer-links" aria-label="Footer navigation">
+          <a href="/marketplace">Marketplace</a>
+          <a href="/contact">Contact</a>
+        </nav>
+        <p className="landing-credits">
+          Images: <a href="https://commons.wikimedia.org/wiki/File:Darb-i_Imam_shrine_spandrel.JPG">Darb-e Imam, public domain</a>;{' '}
+          <a href="https://commons.wikimedia.org/wiki/File:Friday_mosque_isfahan.jpg">Friday Mosque by seier+seier, CC BY 2.0</a>;{' '}
+          <a href="https://commons.wikimedia.org/wiki/File:Masjid_Negara_and_Islamic_geometric_patters_adorning_its_fa%C3%A7ade_(18789992358).jpg">Masjid Negara by Jorge Láscar, CC BY 2.0</a>.
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+function LandingPage() {
+  const [landingUser, setLandingUser] = useState(null);
+  const academy = GIRIH_APPS.find((app) => app.id === 'academy');
+  const mehraz = GIRIH_APPS.find((app) => app.id === 'mehraz');
+  const specialistApps = ['muqarnas', 'girih', 'bricks'].map((id) => GIRIH_APPS.find((app) => app.id === id)).filter(Boolean);
+  const details = {
+    muqarnas: { number: '01', output: 'Muqarnas assemblies', image: '/landing/apps/muqarnas.jpg', alt: 'Historic iwan with layered Muqarnas geometry', icon: Layers3 },
+    girih: { number: '02', output: 'Girih patterns', image: '/landing/apps/girih-v2.jpg', alt: 'Colorful historic Girih tile patterns across an architectural facade', icon: Grid3X3 },
+    bricks: { number: '03', output: 'Brick bonds', image: '/landing/apps/bricks.webp', alt: 'Historic brick facade with ornamental bond patterns', icon: Frame },
+  };
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let active = true;
+    const syncUser = async (session) => {
+      if (!active) return;
+      if (!session?.user) return setLandingUser(null);
+      const user = await loadAuthenticatedUser(session.user).catch(() => ({
+        name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Girih user',
+      }));
+      if (active) setLandingUser(user);
+    };
+    supabase.auth.getSession().then(({ data }) => syncUser(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => window.setTimeout(() => syncUser(session), 0));
+    return () => { active = false; data.subscription.unsubscribe(); };
+  }, []);
+
+  return <div className="landing-page suite-page">
+    <header className="suite-nav girih-product-header girih-theme-girih">
+      <a className="landing-brand suite-brand" href="/" aria-label="Girih Studio home">
+        <img className="landing-brand-logo" src="/landing/brand/girih-logo-color.png" alt="" />
+        <span>Girih Studio</span>
+      </a>
+      <nav className="suite-nav-links" aria-label="Main navigation">
+        <a href="#academy">Academy</a><a href="#specialist-apps">Apps</a><a href="#mehraz">Mehraz</a><a href="#shared-library">Shared library</a>
+      </nav>
+      <div className="suite-nav-actions">
+        <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+        <a className="suite-account-link" href={landingUser ? '/profile' : '/app?mode=login'}><User size={16} />{landingUser ? landingUser.name : 'Sign in'}</a>
+        <a className="suite-nav-primary" href="/training"><GraduationCap size={17} />Academy</a>
+      </div>
+    </header>
+
+    <main>
+      <section className="suite-hero">
+        <video className="suite-hero-video" autoPlay muted loop playsInline preload="metadata" aria-label="Girih Studio design workspace showcase"><source src="/landing/hero/girih-studio.mp4" type="video/mp4" /></video>
+        <div className="suite-hero-shade" />
+        <div className="suite-hero-content">
+          <p className="suite-kicker">Learn · design · save · assemble</p>
+          <h1>Girih Studio</h1>
+          <p>A connected studio for architectural geometry. Learn every method in Academy, create specialist components in Muqarnas, Girih, and Bricks, then bring them together in Mehraz.</p>
+          <div className="suite-hero-actions">
+            <a className="suite-button suite-button-primary" href="/training"><GraduationCap size={18} />Start with Academy</a>
+            <a className="suite-button suite-button-ghost" href="#specialist-apps">Explore the apps <ArrowRight size={17} /></a>
+          </div>
+          <div className="suite-hero-system"><span>Academy</span><i /><span>3 specialist apps</span><i /><span>Shared library</span><i /><span>Mehraz</span></div>
+        </div>
+      </section>
+
+      <section className="suite-academy" id="academy">
+        <div className="suite-section-heading suite-academy-heading">
+          <p className="suite-kicker">Begin here</p>
+          <h2>Academy sits above the complete studio.</h2>
+          <p>Students follow structured lessons for every app, complete a practical model, and submit it for review. Teachers build curriculum, assign modules, and track progress from one workspace.</p>
+          <div className="suite-inline-actions"><a className="suite-button suite-button-dark" href={academy?.url || '/training'}>Open Academy <ArrowRight size={17} /></a><a className="suite-text-link" href="/training">View training modules</a></div>
+        </div>
+        <div className="suite-academy-preview">
+          <div className="suite-preview-toolbar"><span><GraduationCap size={17} />Academy</span><div><b>Class</b><b className="active">Curriculum</b></div></div>
+          <div className="suite-preview-body">
+            <div className="suite-preview-title"><span>Teacher curriculum</span><strong>Training modules</strong><button type="button"><Plus size={14} />New module</button></div>
+            {specialistApps.map((app, index) => {
+              const Icon = details[app.id].icon;
+              return <div className="suite-preview-module" key={app.id}><span><Icon size={17} /></span><div><strong>{app.shortName} foundations</strong><small>{index + 4} lessons · Practical assessment</small></div><i>{index === 1 ? 'Draft' : 'Published'}</i></div>;
+            })}
+            <div className="suite-preview-progress"><span>Student progress</span><b>12 / 16 lessons completed</b><i><em /></i></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="suite-specialists" id="specialist-apps">
+        <header className="suite-section-heading"><p className="suite-kicker">Specialist creation tools</p><h2>Three apps create the components.</h2><p>Each focused workspace solves one design problem and saves a reusable, versioned result to the same library.</p></header>
+        <div className="suite-specialist-grid">
+          {specialistApps.map((app) => {
+            const detail = details[app.id]; const Icon = detail.icon;
+            return <article className={`suite-app suite-app-${app.id}`} key={app.id}>
+              <div className="suite-app-visual"><img src={detail.image} alt={detail.alt} /><span>{detail.number}</span></div>
+              <div className="suite-app-copy"><div className="suite-app-label"><girih-app-icon app={app.id} small></girih-app-icon><span>{app.category}</span></div><h3>{app.shortName}</h3><p>{app.description}</p><dl><dt>Saves to library</dt><dd>{detail.output}</dd></dl><div><small>{app.access}</small><a href={app.url}>Open app <ArrowRight size={16} /></a></div></div>
+            </article>;
+          })}
+        </div>
+      </section>
+
+      <section className="suite-library" id="shared-library">
+        <header><p className="suite-kicker">The connection between every app</p><h2>Create once. Use across the studio.</h2><p>The shared library keeps ownership, versions, previews, and production files together. Mehraz references the exact saved component, so an architectural project never changes unexpectedly.</p></header>
+        <div className="suite-library-flow">
+          <div className="suite-library-sources">{specialistApps.map((app) => <span key={app.id}><girih-app-icon app={app.id} small></girih-app-icon><b>{app.shortName}</b><small>{details[app.id].output}</small></span>)}</div>
+          <div className="suite-flow-arrow"><ArrowRight size={22} /></div>
+          <div className="suite-library-core"><FolderOpen size={30} /><strong>Shared library</strong><span>Private · versioned · reusable</span></div>
+          <div className="suite-flow-arrow"><ArrowRight size={22} /></div>
+          <div className="suite-library-destination"><girih-app-icon app="mehraz"></girih-app-icon><strong>Mehraz</strong><span>Architectural composition</span></div>
+        </div>
+      </section>
+
+      <section className="suite-mehraz" id="mehraz">
+        <img src="/landing/apps/mehraz.jpg" alt="Historic architectural composition centered on a monumental iwan" /><div className="suite-mehraz-shade" />
+        <div className="suite-mehraz-content"><p className="suite-kicker">The inclusive workspace</p><h2>Mehraz brings every component into the architecture.</h2><p>Build an iwan or interior shell, browse your saved Girih patterns, brick bonds, and Muqarnas assemblies, then place exact versions into one coordinated project.</p><div className="suite-mehraz-assets"><span><girih-app-icon app="girih" small></girih-app-icon>Girih patterns</span><span><girih-app-icon app="bricks" small></girih-app-icon>Brick bonds</span><span><girih-app-icon app="muqarnas" small></girih-app-icon>Muqarnas assemblies</span></div><a className="suite-button suite-button-light" href={mehraz?.url || 'https://mehraz.girihstudio.com'}>Open Mehraz <ArrowRight size={17} /></a></div>
+      </section>
+
+      <section className="suite-access">
+        <header className="suite-section-heading"><p className="suite-kicker">One Girih Studio account</p><h2>One sign-in opens the complete system.</h2><p>Your identity, Academy role, progress, and shared library follow you between apps.</p></header>
+        <div className="suite-access-table"><div className="suite-access-row suite-access-head"><span>Product</span><span>Purpose</span><span>Current access</span><span /></div>{[academy, ...specialistApps, mehraz].filter(Boolean).map((app) => <div className={`suite-access-row is-${app.id}`} key={app.id}><span><b>{app.shortName}</b></span><span>{app.category}</span><span>{app.access}</span><a href={app.url}>Open <ArrowRight size={15} /></a></div>)}</div>
+      </section>
+
+      <section className="suite-final"><div><p className="suite-kicker">Your path through the studio</p><h2>Learn the method. Create the component. Assemble the architecture.</h2></div><div className="suite-final-actions"><a className="suite-button suite-button-primary" href="/training"><GraduationCap size={18} />Enter Academy</a><a className="suite-button suite-button-outline" href={landingUser ? '/profile' : '/app?mode=signup'}>{landingUser ? 'Open my profile' : 'Create one account'} <ArrowRight size={17} /></a></div></section>
+    </main>
+
+    <footer className="suite-footer">
+      <div className="suite-footer-brand"><img src="/landing/brand/girih-logo-color.png" alt="" /><div><strong>Girih Studio</strong><span>Digital tools for architectural geometry.</span></div></div>
+      <nav aria-label="Footer navigation"><a href="/training">Academy</a><a href="#specialist-apps">Apps</a><a href="/marketplace">Library marketplace</a><a href="/support">Support</a><a href="/contact">Contact</a></nav>
+      <span>Academy · Muqarnas · Girih · Bricks · Mehraz</span>
+    </footer>
+  </div>;
+}
+
+function normalizeGlassSettings(settings = {}) {
+  const source = settings || {};
+  const setting = (key) => Number.isFinite(Number(source[key])) ? Number(source[key]) : DEFAULT_GLASS_SETTINGS[key];
+  return {
+    transparency: clamp(setting('transparency'), 0.55, 0.98),
+    thickness: clamp(setting('thickness'), 0.03, 0.08),
+    reflection: clamp(setting('reflection'), 0, 1),
+    highlight: clamp(setting('highlight'), 0, 1),
+    edgeDarkness: clamp(setting('edgeDarkness'), 0, 1),
+    shadow: clamp(setting('shadow'), 0, 1),
+    frosted: clamp(setting('frosted'), 0, 1),
+    glossiness: clamp(setting('glossiness'), 0, 1),
+  };
+}
+
+function readGlassSettings() {
+  try {
+    return normalizeGlassSettings(JSON.parse(localStorage.getItem(GLASS_SETTINGS_STORAGE_KEY)));
+  } catch {
+    return { ...DEFAULT_GLASS_SETTINGS };
+  }
+}
+
+function glassSettingsSignature(settings) {
+  const normalized = normalizeGlassSettings(settings);
+  return Object.values(normalized).map((value) => value.toFixed(3)).join(':');
+}
+
+async function marketplaceRequest(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  if (supabase) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`;
+  }
+  const response = await fetch(path, { ...options, headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'The request could not be completed.');
+  return payload;
+}
+
+function marketplaceMoney(cents, currency = 'usd') {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: String(currency).toUpperCase() }).format((Number(cents) || 0) / 100);
+}
+
+function MarketplaceHeader({ user }) {
+  return (
+    <header className="marketplace-header">
+      <a className="landing-brand" href="/" aria-label="Girih Studio home">
+        <img className="landing-brand-logo" src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+        <span>Girih Studio</span>
+      </a>
+      <nav aria-label="Marketplace navigation">
+        {user && <span className="marketplace-user landing-user-greeting">Hello {user.name}</span>}
+        {user?.role === USER_ROLES.ADMIN && <a className="marketplace-profile-link" href="/admin"><BarChart3 size={16} /><span>Overview</span></a>}
+        <a className="marketplace-profile-link" href="/training"><GraduationCap size={16} /><span>Academy</span></a>
+        <a className="marketplace-profile-link" href="/profile" aria-label="Profile"><User size={16} /><span>Profile</span></a>
+        <girih-app-switcher current-app="girih" compact></girih-app-switcher>
+        <a className="marketplace-icon-link" href="/marketplace" aria-label="Marketplace" title="Marketplace"><Store size={20} /></a>
+      </nav>
+    </header>
+  );
+}
+
+function formatUsageTime(seconds) {
+  const total = Math.max(0, Number(seconds) || 0);
+  if (total < 60) return total ? '< 1m' : '0m';
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  if (!hours) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
+function formatAdminDate(value, includeTime = false) {
+  if (!value) return 'Never';
+  return new Intl.DateTimeFormat(undefined, includeTime
+    ? { dateStyle: 'medium', timeStyle: 'short' }
+    : { dateStyle: 'medium' }).format(new Date(value));
+}
+
+const ADMIN_OVERVIEW_RANGES = [
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'previous_month', label: 'Previous month' },
+  { value: 'all', label: 'Since beginning' },
+];
+
+function AdminTimelineChart({ title, icon, points, metric, total, formatValue = (value) => value.toLocaleString(), accent }) {
+  const width = 600;
+  const height = 154;
+  const top = 12;
+  const bottom = 132;
+  const values = points.map((point) => Number(point[metric] || 0));
+  const maxValue = Math.max(1, ...values);
+  const coordinates = values.map((value, index) => ({
+    x: points.length > 1 ? (index / (points.length - 1)) * width : width / 2,
+    y: bottom - (value / maxValue) * (bottom - top),
+    value,
+  }));
+  const linePath = coordinates.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
+  const areaPath = coordinates.length ? `${linePath} L ${coordinates.at(-1).x.toFixed(2)} ${bottom} L ${coordinates[0].x.toFixed(2)} ${bottom} Z` : '';
+  const axisIndexes = points.length <= 2 ? points.map((_, index) => index) : [0, Math.floor((points.length - 1) / 2), points.length - 1];
+
+  return (
+    <article className="admin-timeline-card" style={{ '--timeline-accent': accent }}>
+      <header><span>{icon}{title}</span><strong>{formatValue(total)}</strong></header>
+      <div className="admin-timeline-plot">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title} over ${points.length} timeline points`} preserveAspectRatio="none">
+          {[top, (top + bottom) / 2, bottom].map((y) => <line className="admin-timeline-gridline" key={y} x1="0" x2={width} y1={y} y2={y} />)}
+          {areaPath && <path className="admin-timeline-area" d={areaPath} />}
+          {linePath && <path className="admin-timeline-line" d={linePath} />}
+          {coordinates.map((point, index) => <circle className="admin-timeline-point" key={points[index].key} cx={point.x} cy={point.y} r={points.length > 35 ? 2.5 : 4}>
+            <title>{points[index].label}: {formatValue(point.value)}</title>
+          </circle>)}
+        </svg>
+      </div>
+      <div className="admin-timeline-axis">
+        {axisIndexes.map((index) => <span key={`${points[index]?.key}-${index}`}>{points[index]?.label}</span>)}
+      </div>
+    </article>
+  );
+}
+
+function AdminOverviewPage() {
+  const [user, setUser] = useState(null);
+  const [payload, setPayload] = useState(null);
+  const [status, setStatus] = useState('Loading user overview...');
+  const [search, setSearch] = useState('');
+  const [plan, setPlan] = useState('all');
+  const [activity, setActivity] = useState('all');
+  const [sort, setSort] = useState('joined');
+  const [timeRange, setTimeRange] = useState('30d');
+
+  useEffect(() => {
+    let active = true;
+    setStatus('Loading user overview...');
+    if (!supabase) {
+      setStatus('Authentication is not configured.');
+      return undefined;
+    }
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!active) return;
+      if (!data.session?.user) {
+        window.location.href = '/app?mode=login';
+        return;
+      }
+      const nextUser = await loadAuthenticatedUser(data.session.user);
+      if (!active) return;
+      setUser(nextUser);
+      if (nextUser.role !== USER_ROLES.ADMIN) {
+        setStatus('This page is only available to administrators.');
+        return;
+      }
+      try {
+        const result = await marketplaceRequest(`/api/admin-users?range=${encodeURIComponent(timeRange)}`);
+        if (active) {
+          setPayload(result);
+          setStatus('');
+        }
+      } catch (error) {
+        if (active) setStatus(error.message);
+      }
+    }).catch((error) => active && setStatus(error.message));
+    return () => { active = false; };
+  }, [timeRange]);
+
+  const users = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const result = (payload?.users || []).filter((item) => {
+      if (term && !`${item.name} ${item.email}`.toLowerCase().includes(term)) return false;
+      if (plan !== 'all' && item.role !== plan) return false;
+      if (activity === 'online' && !item.isOnline) return false;
+      if (activity === 'active' && !item.isActive) return false;
+      if (activity === 'inactive' && item.isActive) return false;
+      return true;
+    });
+    return result.sort((a, b) => {
+      if (sort === 'usage') return b.totalSeconds - a.totalSeconds;
+      if (sort === 'designs') return (b.savedDesigns + b.marketplaceListings) - (a.savedDesigns + a.marketplaceListings);
+      if (sort === 'active') return new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0);
+      return new Date(b.joinedAt) - new Date(a.joinedAt);
+    });
+  }, [payload, search, plan, activity, sort]);
+
+  const summary = payload?.summary;
+  const rangeLabel = payload?.range?.label || ADMIN_OVERVIEW_RANGES.find((item) => item.value === timeRange)?.label || 'Selected period';
+  const rangePhrase = rangeLabel.toLowerCase();
+  const paidPercent = summary?.totalUsers ? Math.round((summary.paidUsers / summary.totalUsers) * 100) : 0;
+  const activePercent = summary?.totalUsers ? Math.round((summary.activeUsers / summary.totalUsers) * 100) : 0;
+
+  return (
+    <div className="marketplace-page admin-overview-page">
+      <MarketplaceHeader user={user} />
+      <main className="admin-overview-main">
+        <section className="admin-overview-heading">
+          <div>
+            <p className="landing-eyebrow">Administration / Users</p>
+            <h1>User overview</h1>
+            <p>A complete view of membership, engagement, saved work, and marketplace participation.</p>
+          </div>
+          <div className="admin-overview-actions">
+            <label className="admin-range-control">
+              <Clock3 size={16} />
+              <span>Reporting period</span>
+              <select value={timeRange} onChange={(event) => setTimeRange(event.target.value)} aria-label="User overview reporting period">
+                {ADMIN_OVERVIEW_RANGES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            {payload && <div className="admin-report-meta"><Activity size={16} /><span>Live report</span><small>Updated {formatAdminDate(payload.generatedAt, true)}</small></div>}
+          </div>
+        </section>
+
+        {status && <div className="admin-overview-message">{status}</div>}
+        {summary && <>
+          <section className="admin-kpi-grid" aria-label="User summary">
+            <article className="admin-kpi-card admin-kpi-primary"><span><UsersRound size={19} /> Registered users</span><strong>{summary.totalUsers.toLocaleString()}</strong><small>{summary.newUsers.toLocaleString()} joined {rangePhrase}</small></article>
+            <article className="admin-kpi-card"><span><Activity size={19} /> Active users</span><strong>{summary.activeUsers.toLocaleString()}</strong><small>{activePercent}% active {rangePhrase} · {summary.onlineUsers} online now</small></article>
+            <article className="admin-kpi-card"><span><Clock3 size={19} /> Total app time</span><strong>{formatUsageTime(summary.totalSeconds)}</strong><small>{formatUsageTime(summary.averageSeconds)} average per tracked user · {rangeLabel}</small></article>
+            <article className="admin-kpi-card"><span><Save size={19} /> Saved designs</span><strong>{summary.savedDesigns.toLocaleString()}</strong><small>{summary.marketplaceListings} marketplace listings · {summary.publishedListings} live · {rangeLabel}</small></article>
+          </section>
+
+          <section className="admin-app-overview" aria-label="Apps, users, and login status">
+            <header className="admin-timeline-heading">
+              <div><p className="landing-eyebrow">Suite access</p><h2>Apps, users, and login status</h2></div>
+              <span>One account signs users into the complete suite</span>
+            </header>
+            <div className="admin-app-grid">
+              {GIRIH_APPS.map((app) => <article key={app.id} className={`app-${app.id}`}>
+                <girih-app-icon app={app.id}></girih-app-icon>
+                <div><strong>{app.shortName}</strong><small>{app.category}</small></div>
+                <span><b>{summary.totalUsers.toLocaleString()}</b> account users</span>
+                <span className="admin-app-login"><i /> {summary.onlineUsers.toLocaleString()} logged in now</span>
+                <a href={app.url}>Open app <ArrowRight size={13} /></a>
+              </article>)}
+            </div>
+          </section>
+
+          <section className="admin-timeline-section" aria-label="User activity timeline">
+            <header className="admin-timeline-heading">
+              <div><p className="landing-eyebrow">Timeline</p><h2>User activity trends</h2></div>
+              <span>{rangeLabel} · {payload.timeline?.unit === 'hour' ? 'Hourly' : payload.timeline?.unit === 'month' ? 'Monthly' : 'Daily'} view</span>
+            </header>
+            <div className="admin-timeline-grid">
+              <AdminTimelineChart title="New registrations" icon={<UsersRound size={16} />} points={payload.timeline?.points || []} metric="newUsers" total={summary.newUsers} accent="#2f6f64" />
+              <AdminTimelineChart title="Models saved" icon={<Save size={16} />} points={payload.timeline?.points || []} metric="savedDesigns" total={summary.savedDesigns} accent="#bc7b2c" />
+              <AdminTimelineChart title="Time spent" icon={<Clock3 size={16} />} points={payload.timeline?.points || []} metric="totalSeconds" total={summary.totalSeconds} formatValue={formatUsageTime} accent="#5966a7" />
+              <AdminTimelineChart title="Active users" icon={<Activity size={16} />} points={payload.timeline?.points || []} metric="activeUsers" total={summary.activeUsers} accent="#a14f58" />
+            </div>
+          </section>
+
+          <section className="admin-insight-grid">
+            <article className="admin-plan-card">
+              <div className="admin-card-heading"><div><p className="landing-eyebrow">Membership</p><h2>Plan distribution</h2></div><strong>{paidPercent}% paid</strong></div>
+              <div className="admin-plan-bar"><span style={{ width: `${paidPercent}%` }} /></div>
+              <div className="admin-plan-legend">
+                <span><i className="paid" />Paid <strong>{summary.paidUsers}</strong></span>
+                <span><i className="free" />Free <strong>{summary.freeUsers}</strong></span>
+                <span><i className="admin" />Admin <strong>{summary.adminUsers}</strong></span>
+              </div>
+            </article>
+            <article className="admin-summary-card">
+              <p className="landing-eyebrow">At a glance</p>
+              <h2>Community summary</h2>
+              <p>{summary.activeUsers} of {summary.totalUsers} users were active {rangePhrase}. During this period, the community saved {summary.savedDesigns} designs and created {summary.marketplaceListings} marketplace listings, of which {summary.publishedListings} are currently published.</p>
+            </article>
+          </section>
+
+          <section className="admin-users-panel">
+            <div className="admin-users-title"><div><p className="landing-eyebrow">Directory</p><h2>All users</h2></div><span>{users.length} of {summary.totalUsers}</span></div>
+            <div className="admin-user-filters">
+              <label className="admin-user-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or email" /></label>
+              <select value={plan} onChange={(event) => setPlan(event.target.value)} aria-label="Filter by plan"><option value="all">All plans</option><option value="paid">Paid</option><option value="free">Free</option><option value="admin">Admin</option></select>
+              <select value={activity} onChange={(event) => setActivity(event.target.value)} aria-label="Filter by activity"><option value="all">All activity</option><option value="online">Online now</option><option value="active">Active ({rangeLabel})</option><option value="inactive">No activity ({rangeLabel})</option></select>
+              <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort users"><option value="joined">Newest first</option><option value="active">Last active</option><option value="usage">Most time</option><option value="designs">Most designs</option></select>
+            </div>
+            <div className="admin-users-table-wrap">
+              <table className="admin-users-table">
+                <thead><tr><th>User</th><th>Plan</th><th>Activity</th><th>Time in app ({rangeLabel})</th><th>Saved ({rangeLabel})</th><th>Marketplace ({rangeLabel})</th><th>Joined</th></tr></thead>
+                <tbody>{users.map((item) => <tr key={item.id}>
+                  <td><div className="admin-user-identity"><span>{item.name.slice(0, 1).toUpperCase()}</span><div><strong>{item.name}</strong><small>{item.email}</small></div></div></td>
+                  <td><span className={`admin-role-pill role-${item.role}`}>{item.role}</span></td>
+                  <td><div className="admin-activity-cell"><strong className={item.isOnline ? 'online' : ''}>{item.isOnline ? 'Online now' : item.isActive ? 'Active' : 'Inactive'}</strong><small>{item.lastActiveAt ? formatAdminDate(item.lastActiveAt, true) : 'No activity recorded'}</small></div></td>
+                  <td><strong>{formatUsageTime(item.totalSeconds)}</strong><small className="admin-table-subline">{item.sessionCount} session{item.sessionCount === 1 ? '' : 's'}</small></td>
+                  <td><strong>{item.savedDesigns}</strong></td>
+                  <td><strong>{item.marketplaceListings}</strong><small className="admin-table-subline">{item.publishedListings} published</small></td>
+                  <td>{formatAdminDate(item.joinedAt)}</td>
+                </tr>)}</tbody>
+              </table>
+              {!users.length && <div className="admin-empty-users">No users match these filters.</div>}
+            </div>
+          </section>
+        </>}
+      </main>
+    </div>
+  );
+}
+
+function MarketplaceCard({ listing, onBuy, owned = false, listingHref = '' }) {
+  const previewHref = listingHref || `/profile/${listing.sellerId || ''}`;
+  return (
+    <article className={`marketplace-card ${listing.category === 'Stickers' ? 'marketplace-sticker-card' : ''}`} id={`listing-${listing.id}`}>
+      <a className="marketplace-card-image" href={previewHref} aria-label={listingHref ? `Open ${listing.title}` : `Open ${listing.sellerName || 'artist'} profile`}>
+        <img
+          src={listing.previewImage}
+          alt={`${listing.title} ${listing.category === 'Stickers' ? 'watermarked sticker' : 'pattern'} preview`}
+          draggable={listing.category !== 'Stickers'}
+          onContextMenu={listing.category === 'Stickers' ? (event) => event.preventDefault() : undefined}
+        />
+      </a>
+      <div className="marketplace-card-body">
+        <div className="marketplace-card-meta"><span>{listing.category}</span><span>{listing.category === 'Stickers' ? 'Surface PNG' : `${listing.pieceCount} pieces`}</span></div>
+        <h2>{listingHref ? <a className="marketplace-card-title-link" href={listingHref}>{listing.title}</a> : listing.title}</h2>
+        <a className="marketplace-seller" href={`/profile/${listing.sellerId || ''}`}>{listing.sellerName || 'Girih artist'}</a>
+        {listing.description && <p className="marketplace-card-description">{listing.description}</p>}
+        <div className="marketplace-card-footer">
+          <strong>{marketplaceMoney(listing.priceCents, listing.currency)}</strong>
+          {onBuy && <button type="button" onClick={() => onBuy(listing)} disabled={owned}>{owned ? 'Owned' : 'Buy pattern'}</button>}
+          {listingHref && !onBuy && <a className="marketplace-card-open" href={listingHref}>View pattern <ArrowRight size={14} /></a>}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MarketplacePage() {
+  const [user, setUser] = useState(null);
+  const [listings, setListings] = useState([]);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('Loading patterns...');
+  const [busyId, setBusyId] = useState('');
+  const directListingId = new URLSearchParams(window.location.search).get('listing') || '';
+
+  useEffect(() => {
+    let active = true;
+    if (supabase) supabase.auth.getSession().then(async ({ data }) => {
+      if (!active || !data.session?.user) return;
+      setUser(await loadAuthenticatedUser(data.session.user));
+    });
+    marketplaceRequest('/api/marketplace-listings')
+      .then((payload) => {
+        if (!active) return;
+        setListings(payload.listings || []);
+        setStatus('');
+      })
+      .catch((error) => active && setStatus(error.message));
+    return () => { active = false; };
+  }, []);
+
+  const filteredListings = listings.filter((listing) =>
+    (!directListingId || listing.id === directListingId) &&
+    (!search.trim() || `${listing.title} ${listing.sellerName} ${listing.description}`.toLowerCase().includes(search.trim().toLowerCase())),
+  );
+  const categorySections = [
+    ...MARKETPLACE_CATEGORIES.map((name) => ({ name, listings: filteredListings.filter((listing) => listing.category === name) })),
+    ...(filteredListings.some((listing) => listing.category === 'Mixed')
+      ? [{ name: 'Mixed', listings: filteredListings.filter((listing) => listing.category === 'Mixed') }]
+      : []),
+  ];
+
+  async function buyListing(listing) {
+    if (!user) {
+      window.location.href = '/app?mode=login';
+      return;
+    }
+    try {
+      setBusyId(listing.id);
+      const payload = await marketplaceRequest('/api/create-marketplace-checkout', {
+        method: 'POST',
+        body: JSON.stringify({ listingId: listing.id }),
+      });
+      window.location.href = payload.url;
+    } catch (error) {
+      setStatus(error.message);
+      setBusyId('');
+    }
+  }
+
+  return (
+    <div className="marketplace-page">
+      <MarketplaceHeader user={user} />
+      <main className="marketplace-main">
+        <section className="marketplace-heading">
+          <p className="landing-eyebrow">Girih Pattern Marketplace</p>
+          <h1>Patterns made by the Girih Studio community.</h1>
+          <p>Discover editable 3D compositions and surface stickers, support their makers, and add purchases directly to your Studio library.</p>
+          {directListingId && <a className="marketplace-back-link" href="/marketplace"><ArrowRight size={15} /> Browse all patterns</a>}
+        </section>
+        <div className="marketplace-toolbar">
+          <label><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search patterns or artists" /></label>
+          <a href="/profile"><Store size={16} /> Sell a pattern</a>
+        </div>
+        {!directListingId && <nav className="marketplace-category-nav" aria-label="Pattern categories">
+          {MARKETPLACE_CATEGORIES.map((item) => <a key={item} href={`#category-${item.toLowerCase().replace(/\s+/g, '-')}`}>{item}</a>)}
+        </nav>}
+        {status && <p className="marketplace-status">{status}</p>}
+        {!status && <div className="marketplace-category-sections">
+          {categorySections.filter((section) => !directListingId || section.listings.length).map((section) => (
+            <section className="marketplace-category-section" id={`category-${section.name.toLowerCase().replace(/\s+/g, '-')}`} key={section.name}>
+              <header><div><p className="landing-eyebrow">Puzzle family</p><h2>{section.name}</h2></div><span>{section.listings.length} pattern{section.listings.length === 1 ? '' : 's'}</span></header>
+              {section.listings.length ? <div className="marketplace-grid">
+                {section.listings.map((listing) => <MarketplaceCard key={listing.id} listing={listing} onBuy={busyId ? null : buyListing} />)}
+              </div> : <div className="marketplace-category-empty">No published {section.name} patterns yet.</div>}
+            </section>
+          ))}
+        </div>}
+      </main>
+    </div>
+  );
+}
+
+function marketplaceTransferModel(model) {
+  const compact = compactSceneModelForStorage(model);
+  const globalSettings = readAdminPieceSettings();
+  const sources = (Array.isArray(compact?.sources) ? compact.sources : []).map((source) => {
+    const rawSourceId = normalizeMoroccoPieceId(source.sourceId || source.sourceKey || '');
+    const baseSourceId = typeof rawSourceId === 'string' ? rawSourceId.replace(/-frame-slice$/i, '') : rawSourceId;
+    const globalSticker = globalSettings[rawSourceId]?.surfaceSticker || globalSettings[baseSourceId]?.surfaceSticker;
+    const surfaceSticker = hasSurfaceStickerContent(globalSticker)
+      ? normalizeSurfaceSticker(globalSticker)
+      : hasSurfaceStickerContent(source.surfaceSticker)
+        ? normalizeSurfaceSticker(source.surfaceSticker)
+        : undefined;
+    return { ...source, surfaceSticker };
+  });
+  return {
+    ...compact,
+    version: Math.max(2, Number(compact?.version) || 1),
+    surfaceStickerFormat: 1,
+    sources,
+  };
+}
+
+async function modelMarketplacePreview(model) {
+  const pieces = rehydrateScenePieces(model);
+  const stickerTextures = new Map();
+  pieces.forEach((piece) => {
+    if (!hasSurfaceStickerContent(piece.surfaceSticker)) return;
+    const signature = surfaceStickerSignature(piece.surfaceSticker);
+    if (!stickerTextures.has(signature)) stickerTextures.set(signature, createSurfaceStickerTexture(piece.surfaceSticker));
+  });
+  await Promise.all([...stickerTextures.values()].map((texture) => texture.userData.readyPromise || Promise.resolve()));
+  const canvas = renderFlatColorTopCanvas(pieces, {
+    modelTransform: DEFAULT_MODEL_TRANSFORM,
+    orientation: 'landscape',
+    paperSize: 'a4',
+    renderSettings: normalizeRenderSettings(model.renderSettings),
+  });
+  const thumbnail = document.createElement('canvas');
+  thumbnail.width = 900;
+  thumbnail.height = 650;
+  const context = thumbnail.getContext('2d');
+  context.drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+  return thumbnail.toDataURL('image/jpeg', 0.82);
+}
+
+function readLocalMarketplaceModels() {
+  try {
+    const models = JSON.parse(localStorage.getItem(MODELS_STORAGE_KEY));
+    return Array.isArray(models) ? models : [];
+  } catch {
+    return [];
+  }
+}
+
+function openSavedModelOnStudioStage(modelId) {
+  try {
+    sessionStorage.setItem(PENDING_STUDIO_MODEL_ID_KEY, String(modelId));
+  } catch {
+    return false;
+  }
+  window.location.href = '/app';
+  return true;
+}
+
+const SHARED_LIBRARY_LABELS = Object.freeze({
+  girih_pattern: 'Girih App pattern',
+  brick_bond: 'Bricks App bond',
+  muqarnas_assembly: 'Muqarnas App assembly',
+  surface_sticker: 'Surface sticker',
+  mehraz_project: 'Mehraz App project',
+});
+
+const SHARED_LIBRARY_APP_LINKS = Object.freeze({
+  girih_pattern: '/app',
+  brick_bond: 'https://bricks.girihstudio.com',
+  muqarnas_assembly: 'https://muqarnas.girihstudio.com',
+  surface_sticker: '/app',
+  mehraz_project: 'https://mehraz.girihstudio.com',
+});
+
+const PROFILE_LIBRARY_APP_GROUPS = Object.freeze([
+  { app: 'girih', name: 'Girih App', assetTypes: ['girih_pattern', 'surface_sticker'], emptyMessage: 'No Girih patterns or stickers in the shared library.' },
+  { app: 'bricks', name: 'Bricks App', assetTypes: ['brick_bond'], emptyMessage: 'No brick bonds in the shared library.' },
+  { app: 'muqarnas', name: 'Muqarnas App', assetTypes: ['muqarnas_assembly'], emptyMessage: 'No Muqarnas assemblies in the shared library.' },
+  { app: 'mehraz', name: 'Mehraz App', assetTypes: ['mehraz_project'], emptyMessage: 'No Mehraz projects in the shared library.' },
+]);
+
+function sharedLibraryPreviewImage(asset, version, fallbackImage = '') {
+  const artifacts = version?.artifacts || asset?.currentVersion?.artifacts || {};
+  const payload = version?.payload || asset?.currentVersion?.payload || {};
+  return artifacts.preview_png
+    || artifacts.watermarked_preview_png
+    || artifacts.source_png
+    || payload.previewImage
+    || payload.preview
+    || payload.imageDataUrl
+    || payload.surfaceSticker?.imageDataUrl
+    || fallbackImage
+    || '';
+}
+
+function sharedLibraryStats(asset, version) {
+  const payload = version?.payload || asset?.currentVersion?.payload || {};
+  const metadata = version?.metadata || asset?.currentVersion?.metadata || {};
+  const stats = [];
+  if (Array.isArray(payload.pieces)) stats.push(`${payload.pieces.length} pieces`);
+  if (Array.isArray(payload.placements)) stats.push(`${payload.placements.length} placements`);
+  if (Array.isArray(payload.modules)) stats.push(`${payload.modules.length} modules`);
+  if (Array.isArray(payload.pattern?.bricks)) stats.push(`${payload.pattern.bricks.length} bricks`);
+  if (Array.isArray(payload.shapes)) stats.push(`${payload.shapes.length} shapes`);
+  if (metadata.pieceCount) stats.push(`${metadata.pieceCount} pieces`);
+  if (metadata.brickCount) stats.push(`${metadata.brickCount} bricks`);
+  if (metadata.moduleCount) stats.push(`${metadata.moduleCount} modules`);
+  return [...new Set(stats)].join(' / ') || 'Library asset';
+}
+
+function drawSharedLibraryPreview(canvas, asset, version) {
+  const context = canvas?.getContext?.('2d');
+  if (!context || !asset) return;
+  const width = canvas.width;
+  const height = canvas.height;
+  const payload = version?.payload || asset.currentVersion?.payload || {};
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = '#f9f2e5';
+  context.fillRect(0, 0, width, height);
+  context.strokeStyle = 'rgba(47, 81, 76, 0.13)';
+  for (let x = 0; x < width; x += 28) {
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+    context.stroke();
+  }
+  for (let y = 0; y < height; y += 28) {
+    context.beginPath();
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+    context.stroke();
+  }
+  const pieces = Array.isArray(payload.pieces) ? payload.pieces : [];
+  if (pieces.length) {
+    const bounds = pieces.reduce((box, piece) => {
+      const points = Array.isArray(piece.points) ? piece.points : Array.isArray(piece.vertices) ? piece.vertices : [];
+      points.forEach((point) => {
+        const x = Array.isArray(point) ? Number(point[0]) : Number(point.x);
+        const y = Array.isArray(point) ? Number(point[1]) : Number(point.y);
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          box.minX = Math.min(box.minX, x);
+          box.maxX = Math.max(box.maxX, x);
+          box.minY = Math.min(box.minY, y);
+          box.maxY = Math.max(box.maxY, y);
+        }
+      });
+      return box;
+    }, { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+    const spanX = Math.max(1, bounds.maxX - bounds.minX);
+    const spanY = Math.max(1, bounds.maxY - bounds.minY);
+    const scale = Math.min((width - 44) / spanX, (height - 44) / spanY);
+    pieces.slice(0, 700).forEach((piece) => {
+      const points = Array.isArray(piece.points) ? piece.points : Array.isArray(piece.vertices) ? piece.vertices : [];
+      if (points.length < 3) return;
+      context.beginPath();
+      points.forEach((point, index) => {
+        const rawX = Array.isArray(point) ? Number(point[0]) : Number(point.x);
+        const rawY = Array.isArray(point) ? Number(point[1]) : Number(point.y);
+        const x = 22 + (rawX - bounds.minX) * scale;
+        const y = height - 22 - (rawY - bounds.minY) * scale;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      });
+      context.closePath();
+      context.fillStyle = piece.color || piece.fill || '#2f514c';
+      context.fill();
+      context.strokeStyle = 'rgba(20, 28, 24, 0.42)';
+      context.lineWidth = 1;
+      context.stroke();
+    });
+    return;
+  }
+  const bricks = Array.isArray(payload.pattern?.bricks) ? payload.pattern.bricks : [];
+  if (bricks.length) {
+    const cell = Math.max(14, Math.min(34, width / 12));
+    bricks.slice(0, 160).forEach((brick, index) => {
+      const x = 18 + ((Number(brick.x) || index % 8) * cell) % (width - 42);
+      const y = 20 + ((Number(brick.y) || Math.floor(index / 8)) * cell * 0.55) % (height - 45);
+      const vertical = brick.orientation === 'vertical' || brick.type === 'vertical';
+      context.fillStyle = brick.color || (vertical ? '#d8c347' : '#114c9d');
+      context.fillRect(x, y, vertical ? cell * 0.45 : cell, vertical ? cell : cell * 0.42);
+      context.strokeStyle = '#1d211f';
+      context.strokeRect(x, y, vertical ? cell * 0.45 : cell, vertical ? cell : cell * 0.42);
+    });
+    return;
+  }
+  context.fillStyle = '#2f514c';
+  context.font = '700 18px serif';
+  context.textAlign = 'center';
+  context.fillText(SHARED_LIBRARY_LABELS[asset.asset_type] || 'Library item', width / 2, height / 2 - 4);
+  context.fillStyle = '#756b5f';
+  context.font = '12px sans-serif';
+  context.fillText(sharedLibraryStats(asset, version), width / 2, height / 2 + 18);
+}
+
+function SharedLibraryThumbnail({ asset, version, fallbackImage = '' }) {
+  const canvasRef = useRef(null);
+  const image = sharedLibraryPreviewImage(asset, version, fallbackImage);
+  useEffect(() => {
+    if (!image) drawSharedLibraryPreview(canvasRef.current, asset, version);
+  }, [asset?.id, version?.id, image]);
+  if (image) return <img className="shared-library-thumbnail" src={image} alt="" loading="lazy" />;
+  return <canvas ref={canvasRef} className="shared-library-thumbnail" width="180" height="120" aria-hidden="true" />;
+}
+
+function MarketplaceProfilePage({ publicProfileId = '' }) {
+  const isPublic = Boolean(publicProfileId);
+  const profileSourceApp = new URLSearchParams(window.location.search).get('app') || '';
+  const showMarketplaceTab = !profileSourceApp || profileSourceApp === 'girih';
+  const [user, setUser] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
+  const [publicProfile, setPublicProfile] = useState(null);
+  const [publicListings, setPublicListings] = useState([]);
+  const [localModels, setLocalModels] = useState(readLocalMarketplaceModels);
+  const [cloudPatterns, setCloudPatterns] = useState([]);
+  const [marketplaceSourcesLoaded, setMarketplaceSourcesLoaded] = useState(false);
+  const [form, setForm] = useState({ publicName: '', bio: '', listingType: 'model', modelId: '', stickerDataUrl: '', title: '', description: '', category: 'Mixed', price: '10.00' });
+  const [editingListing, setEditingListing] = useState(null);
+  const [listingEditForm, setListingEditForm] = useState({ title: '', description: '', category: 'Mixed', price: '10.00' });
+  const [status, setStatus] = useState('Loading profile...');
+  const [listingStatus, setListingStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sharedLibrary, setSharedLibrary] = useState([]);
+  const [selectedSharedAssetId, setSelectedSharedAssetId] = useState('');
+  const [sharedVersions, setSharedVersions] = useState([]);
+  const [selectedSharedVersionId, setSelectedSharedVersionId] = useState('');
+  const [sharedEditForm, setSharedEditForm] = useState({ name: '', description: '' });
+  const [libraryManageStatus, setLibraryManageStatus] = useState('');
+  const [collapsedSharedLibraryGroups, setCollapsedSharedLibraryGroups] = useState({ girih: true, bricks: true, muqarnas: true, mehraz: true });
+  const [trainingPayload, setTrainingPayload] = useState(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [profileTab, setProfileTab] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    const allowedTabs = showMarketplaceTab ? ['account', 'assets', 'academy', 'marketplace'] : ['account', 'assets', 'academy'];
+    return allowedTabs.includes(requested) ? requested : 'account';
+  });
+
+  function openProfileTab(tab) {
+    setProfileTab(tab);
+    if (tab !== 'marketplace') setEditingListing(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', tab);
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  async function loadDashboard() {
+    const payload = await marketplaceRequest('/api/marketplace-dashboard');
+    setDashboard(payload);
+    setForm((current) => ({
+      ...current,
+      publicName: payload.profile.publicName,
+      bio: payload.profile.bio,
+    }));
+    setStatus('');
+  }
+
+  async function loadMarketplaceSources() {
+    const [patternPayload, models] = await Promise.all([
+      marketplaceRequest('/api/marketplace-patterns'),
+      readModelsFromDevice(),
+    ]);
+    const patterns = patternPayload.patterns || [];
+    setCloudPatterns(patterns);
+    setLocalModels(models);
+    setForm((current) => ({
+      ...current,
+      modelId: current.modelId || (patterns[0] ? `cloud:${patterns[0].id}` : models[0] ? `local:${models[0].id}` : ''),
+    }));
+    setMarketplaceSourcesLoaded(true);
+  }
+
+  async function loadTrainingProgress() {
+    if (!supabase) return;
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch('/api/training', {
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Academy progress could not be loaded.');
+    setTrainingPayload(payload);
+  }
+
+  async function openProfileBilling() {
+    if (!supabase || billingBusy || !user) return;
+    setBillingBusy(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) throw new Error('Please sign in again.');
+      const endpoint = user.role === USER_ROLES.PAID ? '/api/create-portal-session' : '/api/create-checkout-session';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.url) throw new Error(payload.error || 'Billing could not be opened.');
+      window.location.assign(payload.url);
+    } catch (error) {
+      setStatus(error.message);
+      setBillingBusy(false);
+    }
+  }
+
+  async function refreshSharedLibrary(preferredAssetId = selectedSharedAssetId) {
+    if (!supabase) return;
+    try {
+      const assets = await listLibraryAssets(supabase);
+      setSharedLibrary(assets);
+      const nextId = assets.some((asset) => asset.id === preferredAssetId)
+        ? preferredAssetId
+        : assets[0]?.id || '';
+      setSelectedSharedAssetId(nextId);
+      if (!assets.length) {
+        setSharedVersions([]);
+        setSelectedSharedVersionId('');
+        setSharedEditForm({ name: '', description: '' });
+      }
+      setLibraryManageStatus('');
+    } catch (error) {
+      setLibraryManageStatus(error.message);
+    }
+  }
+
+  async function loadSharedVersions(asset) {
+    if (!asset || !supabase) return;
+    try {
+      const versions = await listLibraryAssetVersions(supabase, asset.id);
+      setSharedVersions(versions);
+      setSelectedSharedVersionId((current) => {
+        if (versions.some((version) => version.id === current)) return current;
+        return asset.current_version_id || versions[0]?.id || '';
+      });
+      setLibraryManageStatus('');
+    } catch (error) {
+      setLibraryManageStatus(error.message);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    if (isPublic) {
+      Promise.all([
+        marketplaceRequest(`/api/marketplace-public-profile?id=${encodeURIComponent(publicProfileId)}`),
+        marketplaceRequest(`/api/marketplace-listings?seller=${encodeURIComponent(publicProfileId)}`),
+      ]).then(([profilePayload, listingPayload]) => {
+        if (!active) return;
+        setPublicProfile(profilePayload.profile);
+        setPublicListings(listingPayload.listings || []);
+        setStatus('');
+      }).catch((error) => active && setStatus(error.message));
+      return () => { active = false; };
+    }
+    if (!supabase) {
+      setStatus('Sign in to open your marketplace profile.');
+      return undefined;
+    }
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (!active) return;
+      if (!data.session?.user) {
+        window.location.href = '/app?mode=login';
+        return;
+      }
+      setUser(await loadAuthenticatedUser(data.session.user));
+      await Promise.all([
+        loadDashboard().catch((error) => setStatus(error.message)),
+        refreshSharedLibrary().catch((error) => setLibraryManageStatus(error.message)),
+        loadTrainingProgress().catch(() => setTrainingPayload(null)),
+      ]);
+    });
+    return () => { active = false; };
+  }, [publicProfileId]);
+
+  useEffect(() => {
+    if (isPublic) return;
+    const asset = sharedLibrary.find((item) => item.id === selectedSharedAssetId);
+    setSharedEditForm({
+      name: asset?.name || '',
+      description: asset?.description || '',
+    });
+    if (asset) loadSharedVersions(asset);
+  }, [selectedSharedAssetId, sharedLibrary, isPublic]);
+
+  useEffect(() => {
+    if (isPublic || profileTab !== 'marketplace' || marketplaceSourcesLoaded) return;
+    loadMarketplaceSources().catch((error) => setStatus(error.message));
+  }, [isPublic, marketplaceSourcesLoaded, profileTab]);
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    try {
+      setBusy(true);
+      await marketplaceRequest('/api/marketplace-dashboard', { method: 'PATCH', body: JSON.stringify({ publicName: form.publicName, bio: form.bio }) });
+      await loadDashboard();
+      setStatus('Profile updated.');
+    } catch (error) { setStatus(error.message); } finally { setBusy(false); }
+  }
+
+  async function setupSeller() {
+    try {
+      setBusy(true);
+      const payload = await marketplaceRequest('/api/marketplace-connect', { method: 'POST', body: '{}' });
+      window.location.href = payload.url;
+    } catch (error) { setStatus(error.message); setBusy(false); }
+  }
+
+  async function openStripePayouts() {
+    try {
+      setBusy(true);
+      const payload = await marketplaceRequest('/api/marketplace-connect?mode=dashboard', { method: 'POST', body: '{}' });
+      window.location.href = payload.url;
+    } catch (error) { setStatus(error.message); setBusy(false); }
+  }
+
+  async function createListing(event) {
+    event.preventDefault();
+    const isStickerListing = form.listingType === 'sticker';
+    const [source, modelId] = form.modelId.split(':');
+    const model = isStickerListing
+      ? createSurfaceStickerPackage(form.title, { imageDataUrl: form.stickerDataUrl, imageCentered: true, imageX: 0.5, imageY: 0.5, imageScale: 1, imageRotation: 0 })
+      : source === 'cloud'
+        ? cloudPatterns.find((item) => item.id === modelId)?.modelData
+        : localModels.find((item) => item.id === modelId);
+    if (isStickerListing && !form.stickerDataUrl) { setListingStatus('Choose a PNG sticker before publishing.'); return; }
+    if (!model) { setListingStatus('Save a model in the Studio or your profile before creating a listing.'); return; }
+    try {
+      setBusy(true);
+      setListingStatus(`Preparing and publishing ${isStickerListing ? 'sticker' : 'listing'}...`);
+      const transferModel = isStickerListing ? model : marketplaceTransferModel(model);
+      await marketplaceRequest('/api/marketplace-listings', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: form.title,
+          description: form.description,
+          category: isStickerListing ? 'Stickers' : form.category,
+          priceCents: Math.round(Number(form.price) * 100),
+          currency: 'usd',
+          previewImage: isStickerListing ? form.stickerDataUrl : await modelMarketplacePreview(transferModel),
+          modelData: transferModel,
+        }),
+      });
+      setForm((current) => ({ ...current, title: '', description: '', stickerDataUrl: '' }));
+      await loadDashboard();
+      setListingStatus(`${isStickerListing ? 'Sticker' : 'Pattern'} published successfully.`);
+      setStatus(`${isStickerListing ? 'Sticker' : 'Pattern'} published in the marketplace.`);
+    } catch (error) { setListingStatus(error.message); setStatus(error.message); } finally { setBusy(false); }
+  }
+
+  async function uploadMarketplaceSticker(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setBusy(true);
+      setListingStatus('Preparing high-quality sticker...');
+      const stickerDataUrl = await readSurfaceStickerPng(file);
+      setForm((current) => ({ ...current, stickerDataUrl, title: current.title || file.name.replace(/\.png$/i, '') }));
+      setListingStatus('Sticker ready to publish.');
+    } catch (error) {
+      setListingStatus(error.message || 'The sticker could not be prepared.');
+    } finally {
+      setBusy(false);
+      event.target.value = '';
+    }
+  }
+
+  async function archiveListing(id) {
+    try {
+      setBusy(true);
+      await marketplaceRequest('/api/marketplace-listings', { method: 'PATCH', body: JSON.stringify({ id, status: 'archived' }) });
+      await loadDashboard();
+    } catch (error) { setStatus(error.message); } finally { setBusy(false); }
+  }
+
+  function openListingEditor(listing) {
+    setEditingListing(listing);
+    setListingEditForm({
+      title: listing.title || '',
+      description: listing.description || '',
+      category: normalizePieceGroupName(listing.category || 'Mixed'),
+      price: ((Number(listing.priceCents) || 0) / 100).toFixed(2),
+    });
+  }
+
+  async function saveListingEdits(event) {
+    event.preventDefault();
+    if (!editingListing) return;
+    try {
+      setBusy(true);
+      await marketplaceRequest('/api/marketplace-listings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          id: editingListing.id,
+          title: listingEditForm.title,
+          description: listingEditForm.description,
+          category: listingEditForm.category,
+          priceCents: Math.round(Number(listingEditForm.price) * 100),
+        }),
+      });
+      await loadDashboard();
+      setEditingListing(null);
+      setStatus('Listing details updated.');
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveLocalPattern(model) {
+    try {
+      setBusy(true);
+      setStatus('Saving pattern to your profile...');
+      const transferModel = marketplaceTransferModel(model);
+      await marketplaceRequest('/api/marketplace-patterns', {
+        method: 'POST',
+        body: JSON.stringify({ title: model.name || 'Saved pattern', previewImage: await modelMarketplacePreview(transferModel), modelData: transferModel }),
+      });
+      await loadMarketplaceSources();
+      setStatus('Pattern saved to your profile.');
+    } catch (error) { setStatus(error.message); } finally { setBusy(false); }
+  }
+
+  async function deleteCloudPattern(id) {
+    try {
+      setBusy(true);
+      await marketplaceRequest(`/api/marketplace-patterns?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await loadMarketplaceSources();
+    } catch (error) { setStatus(error.message); } finally { setBusy(false); }
+  }
+
+  async function addCloudPatternToStudio(pattern) {
+    if (!pattern.modelData) return;
+    const models = await readModelsFromDevice();
+    const imported = { ...pattern.modelData, id: `profile-${pattern.id}-${crypto.randomUUID()}`, name: pattern.name };
+    if (!await writeModelsToDevice([imported, ...models].slice(0, 20))) {
+      setStatus('This pattern could not be added because browser storage is unavailable.');
+      return;
+    }
+    if (!openSavedModelOnStudioStage(imported.id)) setStatus('The model was saved, but the Studio could not open it automatically.');
+  }
+
+  async function addPurchaseToStudio(purchase) {
+    if (!purchase.modelData) return;
+    if (isSurfaceStickerPackage(purchase.modelData)) {
+      const library = await readSurfaceStickerLibrary();
+      const installed = normalizeSurfaceStickerLibraryItem({
+        id: `market-sticker-${purchase.listingId}`,
+        listingId: purchase.listingId,
+        name: purchase.title,
+        previewImage: purchase.previewImage,
+        surfaceSticker: purchase.modelData.surfaceSticker,
+        installedAt: Date.now(),
+      });
+      const nextLibrary = [installed, ...library.filter((item) => item.listingId !== purchase.listingId)];
+      if (!await writeSurfaceStickerLibrary(nextLibrary)) {
+        setStatus('This sticker could not be installed because browser storage is unavailable.');
+        return;
+      }
+      window.location.href = '/app';
+      return;
+    }
+    const models = await readModelsFromDevice();
+    const imported = { ...purchase.modelData, id: `market-${purchase.listingId}-${crypto.randomUUID()}`, name: purchase.title };
+    if (!await writeModelsToDevice([imported, ...models].slice(0, 20))) {
+      setStatus('This purchase could not be added because browser storage is unavailable.');
+      return;
+    }
+    if (!openSavedModelOnStudioStage(imported.id)) setStatus('The model was saved, but the Studio could not open it automatically.');
+  }
+
+  async function renameSharedAsset(event) {
+    event.preventDefault();
+    if (!selectedSharedAssetId) return;
+    try {
+      setBusy(true);
+      await updateLibraryAssetMetadata(supabase, selectedSharedAssetId, sharedEditForm);
+      await refreshSharedLibrary(selectedSharedAssetId);
+      setLibraryManageStatus('Library item renamed.');
+    } catch (error) {
+      setLibraryManageStatus(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function archiveSharedAsset(asset) {
+    if (!asset) return;
+    if (!window.confirm(`Remove "${asset.name}" from your active library? Its saved versions will stay archived.`)) return;
+    try {
+      setBusy(true);
+      await archiveLibraryAsset(supabase, asset.id);
+      await refreshSharedLibrary('');
+      setLibraryManageStatus('Library item archived.');
+    } catch (error) {
+      setLibraryManageStatus(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makeSharedVersionCurrent(version) {
+    if (!version || !selectedSharedAssetId) return;
+    try {
+      setBusy(true);
+      await setCurrentLibraryAssetVersion(supabase, selectedSharedAssetId, version.id);
+      await refreshSharedLibrary(selectedSharedAssetId);
+      setSelectedSharedVersionId(version.id);
+      setLibraryManageStatus(`Version ${version.version_number} is now current.`);
+    } catch (error) {
+      setLibraryManageStatus(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openSharedAssetInApp(asset) {
+    if (!asset) return;
+    const target = SHARED_LIBRARY_APP_LINKS[asset.asset_type] || '/app';
+    const versionId = selectedSharedVersionId || asset.current_version_id || '';
+    try {
+      localStorage.setItem('girihstudio.openLibraryAsset', JSON.stringify({
+        assetId: asset.id,
+        assetType: asset.asset_type,
+        versionId,
+        source: 'profile',
+        at: Date.now(),
+      }));
+    } catch {
+      // The target app can still open even if local handoff storage is unavailable.
+    }
+    try {
+      const url = new URL(target, window.location.origin);
+      url.searchParams.set('libraryAsset', asset.id);
+      if (versionId) url.searchParams.set('version', versionId);
+      window.location.href = url.toString();
+    } catch {
+      window.location.href = target;
+    }
+  }
+
+  const currentListings = dashboard?.listings?.filter((listing) => listing.status !== 'archived') || [];
+  const archivedListings = dashboard?.listings?.filter((listing) => listing.status === 'archived') || [];
+  const selectedSharedAsset = sharedLibrary.find((asset) => asset.id === selectedSharedAssetId) || sharedLibrary[0] || null;
+  const selectedSharedVersion = sharedVersions.find((version) => version.id === selectedSharedVersionId) || selectedSharedAsset?.currentVersion || null;
+  const groupedSharedLibrary = PROFILE_LIBRARY_APP_GROUPS.map((group) => ({
+    ...group,
+    assets: sharedLibrary.filter((asset) => group.assetTypes.includes(asset.asset_type)),
+  }));
+  const accountPlanLabel = user?.role === USER_ROLES.PAID || user?.role === USER_ROLES.ADMIN ? 'Paid' : 'Free';
+  const trainingAssignments = trainingPayload?.assignments || [];
+  const completedTraining = trainingAssignments.filter((assignment) => assignment.status === 'completed').length;
+  const trainingLessonTotal = trainingAssignments.reduce((total, assignment) => {
+    const module = trainingPayload?.modules?.find((item) => item.id === assignment.module_id);
+    return total + (module?.lessons?.length || 0);
+  }, 0);
+  const completedLessonTotal = trainingAssignments.reduce((total, assignment) => total + (assignment.completed_lessons?.length || 0), 0);
+  const trainingPercent = trainingLessonTotal ? Math.round((completedLessonTotal / trainingLessonTotal) * 100) : 0;
+  const trainingModulesById = Object.fromEntries((trainingPayload?.modules || []).map((module) => [module.id, module]));
+  const profileAcademyApps = GIRIH_APPS.filter((app) => ['girih', 'bricks', 'muqarnas', 'mehraz'].includes(app.id));
+
+  if (isPublic) {
+    return (
+      <div className="marketplace-page">
+        <MarketplaceHeader />
+        <main className="marketplace-main">
+          {status && <p className="marketplace-status">{status}</p>}
+          {publicProfile && <section className="seller-profile-heading"><Store size={30} /><div><p className="landing-eyebrow">Artist storefront</p><h1>{publicProfile.publicName}</h1><p>{publicProfile.bio || 'Girih Studio pattern maker.'}</p></div></section>}
+          <div className="marketplace-grid">{publicListings.map((listing) => <MarketplaceCard key={listing.id} listing={listing} />)}</div>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="marketplace-page">
+      <MarketplaceHeader user={user} />
+      <main className="marketplace-main profile-main">
+        <section className="profile-compact-heading">
+          <div><p className="landing-eyebrow">Girih Studio profile</p><h1>Your profile</h1><p>See your plan, assets, and Academy progress in one place.</p></div>
+          {dashboard && <div className="profile-compact-stats"><span><strong>{sharedLibrary.length}</strong> shared library items</span></div>}
+        </section>
+        {status && <p className="marketplace-status">{status}</p>}
+        {dashboard && <>
+          <nav className="profile-tabs" aria-label="Profile sections" role="tablist">
+            <button type="button" role="tab" className={profileTab === 'account' ? 'active' : ''} aria-selected={profileTab === 'account'} onClick={() => openProfileTab('account')}><User size={17} /><span><strong>Account</strong><small>{user?.role === USER_ROLES.PAID ? 'Paid' : user?.role === USER_ROLES.ADMIN ? 'Admin' : 'Free'} plan</small></span></button>
+            <button type="button" role="tab" className={profileTab === 'assets' ? 'active' : ''} aria-selected={profileTab === 'assets'} onClick={() => openProfileTab('assets')}><FolderOpen size={17} /><span><strong>Assets</strong><small>{sharedLibrary.length} library items</small></span></button>
+            <button type="button" role="tab" className={profileTab === 'academy' ? 'active' : ''} aria-selected={profileTab === 'academy'} onClick={() => openProfileTab('academy')}><GraduationCap size={17} /><span><strong>Academy</strong><small>{trainingPayload?.profile?.mode === 'teacher' ? `${trainingPayload.students?.length || 0} students` : `${trainingPercent}% complete`}</small></span></button>
+            {showMarketplaceTab && <button type="button" role="tab" className={profileTab === 'marketplace' ? 'active' : ''} aria-selected={profileTab === 'marketplace'} onClick={() => openProfileTab('marketplace')}><Store size={17} /><span><strong>Marketplace</strong><small>{currentListings.length} active listings</small></span></button>}
+          </nav>
+
+          <div className={`profile-workspace tab-${profileTab}`}>
+            <div className="profile-library-column">
+              <section className="profile-market-section profile-library-section profile-account-section">
+                <div className="profile-section-heading"><div><p className="landing-eyebrow">Subscription</p><h2>Your plan</h2></div></div>
+                <div className="profile-subscription-card">
+                  <div><span className={accountPlanLabel === 'Paid' ? 'paid' : 'free'} /><div><small>Current account status</small><strong>{accountPlanLabel}</strong></div></div>
+                  <p>{accountPlanLabel === 'Paid' ? 'Your paid Girih Studio access is active across the connected apps.' : 'Your account currently uses the free Girih Studio plan.'}</p>
+                  {user?.role !== USER_ROLES.ADMIN && <button type="button" onClick={openProfileBilling} disabled={billingBusy}>{billingBusy ? 'Opening...' : user?.role === USER_ROLES.PAID ? 'Manage billing' : 'Upgrade plan'}</button>}
+                </div>
+              </section>
+              {profileTab === 'academy' && <section className="profile-academy-tab">
+                <header className="profile-tab-heading"><div><p className="landing-eyebrow">Training progress</p><h2>Academy by app</h2></div><a href="/training">Open Academy <ArrowRight size={15} /></a></header>
+                <div className="profile-academy-summary"><strong>{trainingPayload?.profile?.mode === 'teacher' ? `${trainingAssignments.length} class assignments` : `${trainingPercent}% overall progress`}</strong><span>{trainingPayload?.profile?.mode === 'teacher' ? `${trainingPayload.students?.length || 0} students in your class` : `${completedTraining} of ${trainingAssignments.length} modules completed`}</span></div>
+                <div className="profile-academy-apps">{profileAcademyApps.map((app) => {
+                  const assignments = trainingAssignments.filter((assignment) => trainingModulesById[assignment.module_id]?.app_id === app.id);
+                  const completed = assignments.filter((assignment) => assignment.status === 'completed').length;
+                  const lessonCount = assignments.reduce((total, assignment) => total + (trainingModulesById[assignment.module_id]?.lessons?.length || 0), 0);
+                  const lessonsDone = assignments.reduce((total, assignment) => total + (assignment.completed_lessons?.length || 0), 0);
+                  const progress = lessonCount ? Math.round((lessonsDone / lessonCount) * 100) : 0;
+                  return <article key={app.id}><girih-app-icon app={app.id}></girih-app-icon><div><strong>{app.shortName}</strong><small>{assignments.length} module{assignments.length === 1 ? '' : 's'} · {completed} complete</small></div><span>{trainingPayload?.profile?.mode === 'teacher' ? `${assignments.length} assigned` : `${progress}%`}</span><a href={`/training?app=${app.id}`}>View training <ArrowRight size={13} /></a></article>;
+                })}</div>
+              </section>}
+              <section id="library" className="profile-market-section profile-library-section shared-library-manager profile-assets-section">
+                <div className="profile-section-heading">
+                  <div><p className="landing-eyebrow">Shared asset library</p><h2>All app assets</h2></div>
+                  <span>{sharedLibrary.length}</span>
+                </div>
+                <div className="shared-library-toolbar">
+                  <p>Manage Girih patterns, brick bonds, Muqarnas assemblies, Mehraz projects, and surface stickers in one library.</p>
+                  <button type="button" className="profile-muted-action" onClick={() => refreshSharedLibrary()} disabled={busy}>Refresh</button>
+                </div>
+                {libraryManageStatus && <p className="marketplace-listing-inline-status">{libraryManageStatus}</p>}
+                {!sharedLibrary.length ? (
+                  <div className="marketplace-empty">No shared assets yet. Save work from any Girih Studio app and it will appear here.</div>
+                ) : (
+                  <div className="shared-library-layout">
+                    <div className="shared-library-groups" aria-label="Shared library items grouped by app">
+                      {groupedSharedLibrary.map((group) => {
+                        const collapsed = collapsedSharedLibraryGroups[group.app] === true;
+                        const groupId = `profile-library-group-${group.app}`;
+                        return <section className={`shared-library-group app-${group.app}`} key={group.app}>
+                          <button type="button" className="shared-library-group-toggle" aria-expanded={!collapsed} aria-controls={groupId} onClick={() => setCollapsedSharedLibraryGroups((current) => ({ ...current, [group.app]: !collapsed }))}>
+                            <girih-app-icon app={group.app} small=""></girih-app-icon>
+                            <span><strong>{group.name}</strong><small>{group.assets.length} {group.assets.length === 1 ? 'item' : 'items'}</small></span>
+                            <i aria-hidden="true">{collapsed ? <Plus size={14} /> : <Minus size={14} />}</i>
+                          </button>
+                          {!collapsed && <div className="shared-library-group-items" id={groupId}>
+                            {group.assets.map((asset) => <button type="button" key={asset.id} className={asset.id === selectedSharedAsset?.id ? 'active' : ''} onClick={() => setSelectedSharedAssetId(asset.id)}>
+                              <span><strong>{asset.name}</strong><small>{SHARED_LIBRARY_LABELS[asset.asset_type] || asset.asset_type} · v{asset.currentVersion?.version_number || '—'}</small></span>
+                            </button>)}
+                            {!group.assets.length && <p>{group.emptyMessage}</p>}
+                          </div>}
+                        </section>;
+                      })}
+                    </div>
+                    <div className="shared-library-detail">
+                      {selectedSharedAsset && (
+                        <>
+                          <figure className="shared-library-selected-preview">
+                            <SharedLibraryThumbnail asset={selectedSharedAsset} version={selectedSharedVersion} />
+                            <figcaption><strong>{selectedSharedAsset.name}</strong><span>{SHARED_LIBRARY_LABELS[selectedSharedAsset.asset_type] || selectedSharedAsset.asset_type} · selected version {selectedSharedVersion?.version_number || '—'}</span></figcaption>
+                          </figure>
+                          <div className="shared-library-meta">
+                            <strong>{SHARED_LIBRARY_LABELS[selectedSharedAsset.asset_type] || selectedSharedAsset.asset_type}</strong>
+                            <span>{sharedLibraryStats(selectedSharedAsset, selectedSharedVersion)}</span>
+                            <span>Updated {selectedSharedAsset.updated_at ? new Date(selectedSharedAsset.updated_at).toLocaleDateString() : '—'}</span>
+                          </div>
+                          <form className="shared-library-edit-form" onSubmit={renameSharedAsset}>
+                            <label>Name<input value={sharedEditForm.name} onChange={(event) => setSharedEditForm({ ...sharedEditForm, name: event.target.value })} required /></label>
+                            <label>Description<textarea rows="2" value={sharedEditForm.description} onChange={(event) => setSharedEditForm({ ...sharedEditForm, description: event.target.value })} /></label>
+                            <div className="shared-library-actions">
+                              <button type="submit" disabled={busy}>Rename</button>
+                              <button type="button" onClick={() => openSharedAssetInApp(selectedSharedAsset)}>Open in app</button>
+                              <button type="button" className="profile-muted-action danger" onClick={() => archiveSharedAsset(selectedSharedAsset)} disabled={busy}>Archive</button>
+                            </div>
+                          </form>
+                          <div className="shared-library-versions">
+                            <h3>Versions</h3>
+                            {!sharedVersions.length && <p>No versions found for this item.</p>}
+                            <div className="shared-library-version-list">
+                              {sharedVersions.map((version) => {
+                                const isCurrent = version.id === selectedSharedAsset.current_version_id;
+                                const isSelected = version.id === selectedSharedVersion?.id;
+                                return (
+                                  <button
+                                    type="button"
+                                    key={version.id}
+                                    className={isSelected ? 'active' : ''}
+                                    onClick={() => setSelectedSharedVersionId(version.id)}
+                                  >
+                                    <span><strong>Version {version.version_number}</strong>{isCurrent ? ' · current' : ''}</span>
+                                    <small>{version.created_at ? new Date(version.created_at).toLocaleString() : ''}</small>
+                                    {!isCurrent && <em onClick={(event) => { event.stopPropagation(); makeSharedVersionCurrent(version); }}>Make current</em>}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+              <section className="profile-market-section profile-library-section profile-marketplace-section">
+                <div className="profile-section-heading"><div><p className="landing-eyebrow">Storefront</p><h2>Registered listings</h2></div><span>{currentListings.length}</span></div>
+                {!currentListings.length && <div className="marketplace-empty">Patterns you publish will appear here.</div>}
+                <div className="profile-listing-grid">{currentListings.map((listing) => <article key={listing.id}><img src={listing.previewImage} alt="" /><div><strong>{listing.title}</strong><span>{listing.status} / {marketplaceMoney(listing.priceCents, listing.currency)} / {listing.salesCount} sales</span></div><button type="button" onClick={() => openListingEditor(listing)}>Edit details</button>{listing.status === 'published' && <button type="button" className="profile-muted-action" onClick={() => archiveListing(listing.id)} disabled={busy}>Archive</button>}</article>)}</div>
+              </section>
+            </div>
+
+            <aside className="profile-form-sidebar" aria-label="Profile and listing forms">
+              <section className="marketplace-panel profile-sidebar-panel profile-account-panel profile-account-only">
+                <div><p className="landing-eyebrow">Signed in as</p><h2>Profile</h2></div>
+                <div className="profile-user-summary"><span>{(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}</span><div><strong>{user?.name || 'Girih Studio user'}</strong><small>{user?.email || ''}</small></div></div>
+                <p className="profile-account-status"><span className={accountPlanLabel === 'Paid' ? 'paid' : 'free'} /> <strong>{accountPlanLabel} account</strong></p>
+                <small>Your identity and plan are shared across Girih Studio apps.</small>
+              </section>
+              <form className="marketplace-panel profile-sidebar-panel profile-account-only" onSubmit={saveProfile}>
+                <div><p className="landing-eyebrow">Public details</p><h2>Profile</h2></div>
+                <label>Display name<input value={form.publicName} onChange={(event) => setForm({ ...form, publicName: event.target.value })} required /></label>
+                <label>Artist bio<textarea rows="3" value={form.bio} onChange={(event) => setForm({ ...form, bio: event.target.value })} /></label>
+                <button disabled={busy}>Save profile</button>
+              </form>
+              <section className="marketplace-panel profile-sidebar-panel seller-payout-panel profile-account-only">
+                <div><p className="landing-eyebrow">Payments</p><h2>Seller payouts</h2></div>
+                {dashboard.profile.sellerReady ? (
+                  <div className="seller-account-live"><p><span aria-hidden="true" /> Stripe is live</p><button type="button" onClick={openStripePayouts} disabled={busy}>Open payouts</button></div>
+                ) : (
+                  <><p>Connect Stripe before publishing patterns for sale.</p><button type="button" onClick={setupSeller} disabled={busy}>Set up payouts</button></>
+                )}
+              </section>
+              <form className="marketplace-panel profile-sidebar-panel profile-sidebar-listing profile-marketplace-only" onSubmit={createListing}>
+                <div><p className="landing-eyebrow">New listing</p><h2>Sell a model or sticker</h2></div>
+                <label>Product type<select value={form.listingType} onChange={(event) => setForm({ ...form, listingType: event.target.value, category: event.target.value === 'sticker' ? 'Stickers' : form.category === 'Stickers' ? 'Mixed' : form.category })}><option value="model">Pattern model</option><option value="sticker">Surface sticker</option></select></label>
+                {form.listingType === 'model' ? (
+                  <label>Saved model<select value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>{!localModels.length && !cloudPatterns.length && <option value="">No saved models</option>}{cloudPatterns.map((pattern) => <option key={`cloud-${pattern.id}`} value={`cloud:${pattern.id}`}>{pattern.name} (profile)</option>)}{localModels.map((model) => <option key={`local-${model.id}`} value={`local:${model.id}`}>{model.name} (device)</option>)}</select></label>
+                ) : (
+                  <><label>Sticker PNG<input type="file" accept="image/png,.png" onChange={uploadMarketplaceSticker} /></label>{form.stickerDataUrl && <div className="marketplace-sticker-upload-preview"><img src={form.stickerDataUrl} alt="Sticker ready to publish" /><span>Transparent PNG ready</span></div>}</>
+                )}
+                <label>Listing title<input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required /></label>
+                <div className="profile-sidebar-field-row">
+                  <label>Category<select value={form.listingType === 'sticker' ? 'Stickers' : form.category} disabled={form.listingType === 'sticker'} onChange={(event) => setForm({ ...form, category: event.target.value })}>{[...MARKETPLACE_CATEGORIES.filter((item) => item !== 'Stickers'), ...(form.listingType === 'sticker' ? ['Stickers'] : ['Mixed'])].map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>Price (USD)<input type="number" min="1" step="0.5" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} required /></label>
+                </div>
+                <label>Description<textarea rows="3" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+                {listingStatus && <p className="marketplace-listing-inline-status" role="status">{listingStatus}</p>}
+                <button disabled={busy || !dashboard.profile.sellerReady || (form.listingType === 'sticker' ? !form.stickerDataUrl : (!localModels.length && !cloudPatterns.length))}>Publish {form.listingType === 'sticker' ? 'sticker' : 'pattern'}</button>
+              </form>
+            </aside>
+          </div>
+          <section className={`profile-market-section profile-library-section profile-archived-section ${profileTab === 'marketplace' ? '' : 'profile-tab-hidden'}`}>
+            <div className="profile-section-heading"><div><p className="landing-eyebrow">Archive</p><h2>Archived models</h2></div><span>{archivedListings.length}</span></div>
+            {!archivedListings.length && <div className="marketplace-empty">Archived marketplace models will appear here.</div>}
+            <div className="profile-listing-grid">{archivedListings.map((listing) => <article key={listing.id}><img src={listing.previewImage} alt="" /><div><strong>{listing.title}</strong><span>Archived / {marketplaceMoney(listing.priceCents, listing.currency)} / {listing.salesCount} sales</span></div><button type="button" onClick={() => openListingEditor(listing)}>Edit details</button></article>)}</div>
+          </section>
+          {editingListing && <div className="marketplace-edit-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditingListing(null); }}>
+            <form className="marketplace-panel marketplace-edit-dialog" onSubmit={saveListingEdits}>
+              <div className="marketplace-edit-heading"><div><p className="landing-eyebrow">Marketplace listing</p><h2>Edit details</h2></div><button type="button" aria-label="Close listing editor" onClick={() => setEditingListing(null)}><X size={16} /></button></div>
+              <div className="marketplace-edit-preview"><img src={editingListing.previewImage} alt="" /><span>The registered model and preview stay unchanged.</span></div>
+              <label>Listing title<input value={listingEditForm.title} onChange={(event) => setListingEditForm({ ...listingEditForm, title: event.target.value })} required /></label>
+              <div className="profile-sidebar-field-row">
+                <label>Category<select value={listingEditForm.category} disabled={editingListing.category === 'Stickers'} onChange={(event) => setListingEditForm({ ...listingEditForm, category: event.target.value })}>{(editingListing.category === 'Stickers' ? ['Stickers'] : [...MARKETPLACE_CATEGORIES.filter((item) => item !== 'Stickers'), 'Mixed']).map((item) => <option key={item}>{item}</option>)}</select></label>
+                <label>Price (USD)<input type="number" min="1" max="100000" step="0.5" value={listingEditForm.price} onChange={(event) => setListingEditForm({ ...listingEditForm, price: event.target.value })} required /></label>
+              </div>
+              <label>Description<textarea rows="4" maxLength="2000" value={listingEditForm.description} onChange={(event) => setListingEditForm({ ...listingEditForm, description: event.target.value })} /></label>
+              <div className="marketplace-edit-actions"><button type="submit" disabled={busy}>{busy ? 'Saving...' : 'Save changes'}</button><button type="button" className="profile-muted-action" onClick={() => setEditingListing(null)}>Cancel</button></div>
+            </form>
+          </div>}
+        </>}
+      </main>
+    </div>
+  );
+}
+
+function InfoPage({ type }) {
+  const [contactStatus, setContactStatus] = useState({ state: 'idle', message: '' });
+  const isContact = type === 'contact';
+  const supportArticles = [
+    {
+      category: 'Getting started',
+      title: 'Make your first Girih pattern',
+      summary: 'Choose a puzzle set, place pieces, snap edges, and navigate the stage.',
+      steps: [
+        'Open Piece Library and expand one of the available puzzle sets.',
+        'Click a piece to add it near the center of the stage. On mobile, open Shapes and tap a piece.',
+        'Drag the piece toward another piece. Keep the Magnet toggle on to snap compatible edges together.',
+        'Click an individual piece to select it. Use Ctrl or Command while clicking to add or remove pieces from the selection.',
+        'Use Top view for precise composition and an isometric view to inspect depth and material.',
+      ],
+      tip: 'Start from a Shamseh or another central star, then build outward in repeating rings.',
+    },
+    {
+      category: 'Getting started',
+      title: 'Rebuild a pattern from a template',
+      summary: 'Open a reference image for the active puzzle set and reproduce it on the stage.',
+      steps: [
+        'Open the template button beside a puzzle-set name in Piece Library.',
+        'Choose a template from the list. Its large preview opens in the right panel.',
+        'Close the panel to keep a smaller reference preview over the stage.',
+        'Pan or zoom the template preview, then place matching pieces on the stage.',
+        'Close the floating preview when the pattern is complete.',
+      ],
+      tip: 'Templates are part of paid access and only show for their correct puzzle set.',
+    },
+    {
+      category: 'Getting started',
+      title: 'Select, move, and transform pieces',
+      summary: 'Work with one piece, several pieces, or a permanent group.',
+      steps: [
+        'Click a piece to select it, Ctrl or Command-click to build a multi-selection, or drag a blue selection window in desktop Top view.',
+        'Drag any selected piece to move the complete selection together.',
+        'Use the arrow keys for precise movement and Delete or Backspace to remove the selection.',
+        'Enter position, rotation, or scale values in Model Transformation for exact changes.',
+        'Keep aspect ratio enabled when you want all scale axes to change together.',
+      ],
+      tip: 'On mobile Top view, use one-finger placement and normal pinch or pan gestures for navigation.',
+    },
+    {
+      category: 'Color and appearance',
+      title: 'Edit pattern colors',
+      summary: 'Change individual instances without altering the source piece for every user.',
+      steps: [
+        'Select a piece and open its context menu with right-click, or long-press it on mobile.',
+        'Choose Instance color and select the new color.',
+        'For several pieces, keep them selected before opening the context menu.',
+        'Repeat colors across related shapes to establish a clear visual hierarchy.',
+        'Preview the result in 2D and 3D materials before export.',
+      ],
+      tip: 'Instance colors are stored with saved models and motifs, so later Back stage defaults do not disturb the design.',
+    },
+    {
+      category: 'Color and appearance',
+      title: 'Create and reuse a color palette',
+      summary: 'Build a consistent set of colors for a puzzle family and reuse it in future patterns.',
+      steps: [
+        'Open Back stage. This area is available to paid users and administrators.',
+        'Set the inline color for each shape in the selected puzzle group.',
+        'Use a limited set of repeated colors for the main field, accents, and negative-space pieces.',
+        'Save the group palette when palette controls are available for your account.',
+        'Apply the palette before placing new pieces, then adjust individual instances when needed.',
+      ],
+      tip: 'A useful starting palette has one dominant color, one neutral, and one bright accent for Shamseh pieces.',
+    },
+    {
+      category: 'Composition tools',
+      title: 'Group pieces as one object',
+      summary: 'Turn a selection into a unit that moves, copies, mirrors, and transforms together.',
+      steps: [
+        'Select at least two pieces with Ctrl or Command-click or the desktop selection window.',
+        'Right-click any piece already in the selection. The full selection remains active.',
+        'Choose Group selection. A single collective selection boundary remains visible.',
+        'Move, copy, paste, scale, or mirror the grouped composition as one object.',
+        'Right-click the group and choose Ungroup when individual editing is needed again.',
+      ],
+      tip: 'Grouping preserves every piece and its properties; it does not merge the underlying geometry.',
+    },
+    {
+      category: 'Composition tools',
+      title: 'Save a reusable motif',
+      summary: 'Store a selected arrangement as a repeatable building block.',
+      steps: [
+        'Select the pieces that form one complete repeat unit.',
+        'Group them first if you want the motif to remain easy to move as one object.',
+        'Open Motif and choose Save selection as motif.',
+        'Give the motif a clear name that describes its family or repeat direction.',
+        'Load or add the saved motif later; its positions, colors, dimensions, and piece properties are retained.',
+      ],
+      tip: 'Choose the smallest complete repeat unit. Smaller motifs tessellate faster and produce fewer duplicate pieces.',
+    },
+    {
+      category: 'Composition tools',
+      title: 'Tessellate a motif',
+      summary: 'Repeat a saved motif horizontally and vertically to build a larger field.',
+      steps: [
+        'Create or load a motif and select it in the Motif section.',
+        'Set the number of rows and columns.',
+        'Adjust horizontal and vertical gaps until neighboring edges meet correctly.',
+        'Generate the tessellation and inspect the repeat in Top view.',
+        'Group or frame the result before saving and exporting the finished field.',
+      ],
+      tip: 'Test a 2 by 2 repeat first. It exposes spacing or rotation errors before a large tessellation is generated.',
+    },
+    {
+      category: 'Composition tools',
+      title: 'Frame and crop a design',
+      summary: 'Draw a closed boundary through selected piece centers and trim the pattern to it.',
+      steps: [
+        'Switch to Top view and select the pieces that may be cut by the frame.',
+        'Activate Frame. Click piece centers in the order required for the boundary.',
+        'Click the first piece again to close the polyline loop.',
+        'Review the preview line, then confirm the frame operation.',
+        'Pieces crossing the boundary are sliced, inside geometry is kept, and outside geometry is removed.',
+      ],
+      tip: 'Use a simple clockwise or counter-clockwise route without crossing the boundary over itself.',
+    },
+    {
+      category: 'Save and continue',
+      title: 'Save a complete model for later',
+      summary: 'Store the whole stage and restore its exact design properties in another session.',
+      steps: [
+        'Finish the arrangement and confirm its colors, groups, dimensions, and transforms.',
+        'Open Models and choose Save model.',
+        'Name the model clearly, then confirm the save.',
+        'Use Load to replace the current stage with the saved model, or Add to insert it into the current stage.',
+        'Save important work periodically and export a separate deliverable as a backup.',
+      ],
+      tip: 'Saved models retain instance properties instead of re-reading changed source dimensions or colors from Back stage.',
+    },
+    {
+      category: 'Export and print',
+      title: 'Export a clean 2D design',
+      summary: 'Create flat artwork, transparent graphics, vectors, paper-cut gaps, pencil shading, or hatching.',
+      steps: [
+        'Select Export in the top bar, then choose 2D.',
+        'Choose the output format and a graphical style: Standard, Color pencil, Paper cut, or 45-degree hatch.',
+        'Adjust contextual controls such as edge color, pencil intensity, polygon offset, hatch spacing, or outline width.',
+        'Set paper size, orientation, and transparent background where supported.',
+        'Check the live preview, then choose Export or Print.',
+      ],
+      tip: 'Use PNG for images, SVG or EPS for scalable artwork, and DXF for line-based fabrication workflows.',
+    },
+    {
+      category: 'Export and print',
+      title: 'Prepare files for laser cutting or CNC',
+      summary: 'Export closed, fabrication-friendly paths and verify them before production.',
+      steps: [
+        'Use Top view and inspect the outer boundary, framed cuts, and any internal openings.',
+        'Open Export, choose 2D, and select SVG, EPS, or DXF according to the machine software.',
+        'Use Standard style for clean paths. Avoid decorative pencil or hatch styles for cutting.',
+        'Import the file into the machine software and confirm document units, scale, duplicate paths, and closed loops.',
+        'Run a small material test before producing the full design.',
+      ],
+      tip: 'SVG and EPS suit laser and vector software; DXF is often the most direct option for CNC/CAD workflows.',
+    },
+    {
+      category: 'Export and print',
+      title: 'Export a 3D view or printable model',
+      summary: 'Choose material, camera, lighting, and a practical 3D output.',
+      steps: [
+        'Open Export and choose 3D.',
+        'Select Plastic or Glass, choose a camera view, and enable Shadow when a floor is included.',
+        'Use the preview to confirm framing, transparency, reflections, color, and orientation.',
+        'Choose PNG for a rendered view or STL for a 3D-printing workflow.',
+        'Open STL files in slicer software and verify physical dimensions, manifold geometry, layer height, and supports.',
+      ],
+      tip: 'Transparent background removes the stage and therefore cannot retain floor shadows or reflections.',
+    },
+    {
+      category: 'Export and print',
+      title: 'Create and export a camera video',
+      summary: 'Preview a preset camera move and export it as an MP4 clip.',
+      steps: [
+        'Use the Play control and choose a camera preset from the menu beneath it.',
+        'Play the movement and watch the orange progress fill on the control.',
+        'Open Export, choose 3D, and select the video output and the same camera preset.',
+        'Keep the browser tab active while frames are rendered and encoded.',
+        'Review the MP4 after export to confirm motion, framing, and quality.',
+      ],
+      tip: 'Video export works best in a current Chrome, Edge, or Safari version with WebCodecs support.',
+    },
+    {
+      category: 'Plans and access',
+      title: 'Free and Paid features',
+      summary: 'Compare the tools, puzzle libraries, templates, saving options, and exports included with each account.',
+      freeFeatures: [
+        'Access to the complete 10 Tond puzzle-piece library.',
+        'Add, select, move, rotate, and delete individual pieces on the stage.',
+        'Change the color of each placed piece instance.',
+        'Use snapping, Top view, isometric views, camera navigation, undo, and redo.',
+        'Use Model Transformation on the active selection.',
+        'Export standard PNG and 2D Color PNG.',
+        'Preview and print the available output from the export dialog.',
+        'Use day and night interface modes.',
+      ],
+      paidFeatures: [
+        'Everything included with Free access.',
+        'All four puzzle families: 10 Tond, 10 Kond, 8 Morocco, and 8 Persian.',
+        'The full pattern-template collection for every puzzle family.',
+        'Multi-piece grouping, ungrouping, copying, pasting, and group mirroring.',
+        'Save and load complete models with their exact colors, dimensions, groups, and transforms.',
+        'Save selections as reusable motifs and generate horizontal or vertical tessellations.',
+        'Frame and crop patterns by drawing a closed boundary through the design.',
+        'Full Back stage access for piece colors, heights, dimensions, visibility, and group controls.',
+        'All 2D graphical styles, including pencil, paper cut, and 45-degree hatch.',
+        'Full PNG, SVG, EPS, DXF, PDF, fabrication, 3D, and supported MP4 export options.',
+        'Plastic and Glass 3D materials, camera presets, shadows, transparent backgrounds, and advanced print preparation.',
+      ],
+      tip: 'After Stripe confirms a subscription, Paid access activates automatically. Use the Billing button in your profile to manage the subscription.',
+    },
+  ];
+  const supportCategories = [...new Set(supportArticles.map((article) => article.category))];
+
+  useEffect(() => {
+    if (isContact || !window.location.hash) return undefined;
+    const revealArticle = () => {
+      const target = document.getElementById(window.location.hash.slice(1));
+      if (!target) return;
+      if (target.tagName === 'DETAILS') target.open = true;
+      target.scrollIntoView({ block: 'start' });
+    };
+    const frame = window.requestAnimationFrame(revealArticle);
+    window.addEventListener('hashchange', revealArticle);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('hashchange', revealArticle);
+    };
+  }, [isContact]);
+
+  async function submitContact(event) {
+    event.preventDefault();
+    setContactStatus({ state: 'sending', message: '' });
+    const form = event.currentTarget;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Your message could not be sent.');
+      form.reset();
+      setContactStatus({ state: 'sent', message: 'Thank you. Your message has been sent.' });
+    } catch (error) {
+      setContactStatus({ state: 'error', message: error.message || 'Your message could not be sent.' });
+    }
+  }
+
+  return (
+    <div className="landing-page info-page">
+      <header className="info-page-nav">
+        <a className="landing-brand" href="/" aria-label="Girih Studio home">
+          <img className="landing-brand-logo" src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+          <span>Girih Studio</span>
+        </a>
+        <div className="info-page-nav-actions"><girih-app-switcher current-app="girih" compact></girih-app-switcher></div>
+      </header>
+      <main className="info-page-main">
+        <div className="info-page-heading">
+          <p className="landing-eyebrow">{isContact ? 'Contact Girih Studio' : 'Girih Studio Support'}</p>
+          <h1>{isContact ? 'Let’s talk about your pattern project.' : 'Help for every stage of the pattern.'}</h1>
+          <p>{isContact
+            ? 'Send a message about the app, education, licensing, fabrication, or collaboration.'
+            : 'Practical, step-by-step guides for composing, editing, repeating, saving, printing, and fabricating Girih patterns.'}</p>
+        </div>
+        {isContact ? (
+          <form className="contact-form" onSubmit={submitContact}>
+            <label>Name<input name="name" type="text" autoComplete="name" maxLength="120" required /></label>
+            <label>Email<input name="email" type="email" autoComplete="email" maxLength="320" required /></label>
+            <label className="contact-form-wide">Subject<input name="subject" type="text" maxLength="160" required /></label>
+            <label className="contact-form-wide">Message<textarea name="message" rows="7" minLength="10" maxLength="5000" required /></label>
+            <label className="contact-form-trap" aria-hidden="true">Website<input name="website" type="text" tabIndex="-1" autoComplete="off" /></label>
+            <div className="contact-form-footer contact-form-wide">
+              <button type="submit" disabled={contactStatus.state === 'sending'}>
+                {contactStatus.state === 'sending' ? 'Sending…' : 'Send message'} <ArrowRight size={15} />
+              </button>
+              {contactStatus.message && <p className={`contact-form-status ${contactStatus.state}`}>{contactStatus.message}</p>}
+            </div>
+          </form>
+        ) : (
+          <div className="support-library">
+            <nav className="support-category-nav" aria-label="Support categories">
+              {supportCategories.map((category) => <a key={category} href={`#support-${slugify(category)}`}>{category}</a>)}
+            </nav>
+            {supportCategories.map((category) => (
+              <section className="support-category" id={`support-${slugify(category)}`} key={category}>
+                <div className="support-category-heading">
+                  <span>{String(supportCategories.indexOf(category) + 1).padStart(2, '0')}</span>
+                  <h2>{category}</h2>
+                </div>
+                <div className="support-article-list">
+                  {supportArticles.filter((article) => article.category === category).map((article) => (
+                    <details className="support-article" id={`article-${slugify(article.title)}`} key={article.title}>
+                      <summary>
+                        <span><strong>{article.title}</strong><small>{article.summary}</small></span>
+                        <Plus size={18} aria-hidden="true" />
+                      </summary>
+                      <div className="support-article-body">
+                        {article.steps && <ol>{article.steps.map((step) => <li key={step}>{step}</li>)}</ol>}
+                        {article.freeFeatures && article.paidFeatures && (
+                          <div className="support-plan-comparison">
+                            <section>
+                              <h3>Free</h3>
+                              <ul>{article.freeFeatures.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+                            </section>
+                            <section className="paid">
+                              <h3>Paid</h3>
+                              <ul>{article.paidFeatures.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+                            </section>
+                          </div>
+                        )}
+                        <p><strong>Tip:</strong> {article.tip}</p>
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
+        <a className="info-page-back" href="/">Back to Girih Studio</a>
+      </main>
+      <footer className="info-page-footer">
+        <span>Girih Studio</span>
+        <nav aria-label="Footer navigation">
+          <a href="/contact">Contact</a>
+          <a href="/support">Support</a>
+        </nav>
+      </footer>
+    </div>
+  );
+}
+
+function LoginScreen({
+  ready,
+  configured,
+  mode,
+  name,
+  email,
+  password,
+  error,
+  message,
+  busy,
+  onModeChange,
+  onNameChange,
+  onEmailChange,
+  onPasswordChange,
+  onSubmit,
+  onGoogleLogin,
+}) {
+  const signingUp = mode === 'signup';
+  const loginParams = new URLSearchParams(window.location.search);
+  const nextApp = loginParams.get('nextApp') || '';
+  const nextPath = loginParams.get('next') || '';
+  let targetAppId = nextPath.startsWith('/training') ? 'academy' : 'girih';
+  try {
+    const host = new URL(nextApp).hostname;
+    if (host.startsWith('bricks.')) targetAppId = 'bricks';
+    else if (host.startsWith('muqarnas.')) targetAppId = 'muqarnas';
+    else if (host.startsWith('mehraz.')) targetAppId = 'mehraz';
+  } catch {}
+  const targetApp = GIRIH_APPS.find((app) => app.id === targetAppId) || GIRIH_APPS[0];
+  return (
+    <main className={`login-shell girih-theme-${targetAppId}`}>
+      <form className="login-card" onSubmit={onSubmit}>
+        <div className="login-brand">
+          <img src="/landing/brand/girih-logo-color.png" alt="" aria-hidden="true" />
+          <div>
+            <h1>Girih Studio</h1>
+            <p>{signingUp ? 'Create your global puzzle account.' : 'Sign in to open your puzzle workspace.'}</p>
+          </div>
+        </div>
+        <div className="login-product"><girih-app-icon app={targetAppId}></girih-app-icon><span><small>Continue to</small><strong>{targetApp.shortName}</strong></span></div>
+        <div className="login-mode-switch" role="tablist" aria-label="Account action">
+          <button type="button" className={!signingUp ? 'active' : ''} onClick={() => onModeChange('login')}>Log in</button>
+          <button type="button" className={signingUp ? 'active' : ''} onClick={() => onModeChange('signup')}>Create account</button>
+        </div>
+        <button type="button" className="google-auth-button" disabled={!ready || !configured || busy} onClick={onGoogleLogin}>
+          <span aria-hidden="true">G</span>
+          Continue with Google
+        </button>
+        <div className="login-divider"><span>or use email</span></div>
+        {signingUp && (
+          <label>
+            Name
+            <input type="text" value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="Your name" autoComplete="name" />
+          </label>
+        )}
+        <label>
+          Email
+          <input type="email" value={email} onChange={(event) => onEmailChange(event.target.value)} placeholder="you@example.com" autoComplete="email" />
+        </label>
+        <label>
+          Password
+          <input
+            type="password"
+            minLength="8"
+            value={password}
+            onChange={(event) => onPasswordChange(event.target.value)}
+            placeholder="At least 8 characters"
+            autoComplete={signingUp ? 'new-password' : 'current-password'}
+          />
+        </label>
+        {error && <div className="login-error">{error}</div>}
+        {message && <div className="login-message">{message}</div>}
+        {!configured && <div className="login-error">Global login needs Supabase environment variables before it can be used.</div>}
+        <button type="submit" disabled={!ready || !configured || busy}>
+          <User size={16} /> {busy ? 'Please wait...' : signingUp ? 'Create account' : 'Log in'}
+        </button>
+        <div className="login-help">Accounts start with free access. Paid access activates automatically after Stripe Checkout confirms the subscription.</div>
+      </form>
+    </main>
   );
 }
 
@@ -2275,14 +6846,16 @@ function GroupPaletteList({ group, palettes, selectedPaletteId, onSelect, onDele
                 ))}
               </span>
             </button>
-            <button
-              type="button"
-              className="admin-palette-delete"
-              aria-label={`Delete ${palette.name}`}
-              onClick={() => onDelete(palette.id)}
-            >
-              <Trash2 size={13} />
-            </button>
+            {!palette.builtIn && (
+              <button
+                type="button"
+                className="admin-palette-delete"
+                aria-label={`Delete ${palette.name}`}
+                onClick={() => onDelete(palette.id)}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         );
       })}
@@ -2290,30 +6863,39 @@ function GroupPaletteList({ group, palettes, selectedPaletteId, onSelect, onDele
   );
 }
 
-function ModelTransformControls({ modelTransform, onChange }) {
+function ModelTransformControls({ modelTransform, keepAspectRatio, onKeepAspectRatioChange, onChange, disabled = false }) {
   const scaleFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('scale'));
   const rotationFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('rotation'));
   const positionFields = MODEL_TRANSFORM_FIELDS.filter((field) => field.id.startsWith('position'));
   return (
     <>
+      <label className="checkbox-field transform-aspect-field">
+        <input
+          type="checkbox"
+          checked={keepAspectRatio}
+          onChange={(event) => onKeepAspectRatioChange(event.target.checked)}
+        />
+        <span>Keep aspect ratio</span>
+      </label>
       <div className="transform-row">
         <span>Scale</span>
         {scaleFields.map((field) => (
-          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} disabled={disabled} />
         ))}
       </div>
       <div className="transform-row">
         <span>Rotation</span>
         {rotationFields.map((field) => (
-          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} disabled={disabled} />
         ))}
       </div>
       <div className="transform-row">
         <span>Position</span>
         {positionFields.map((field) => (
-          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} />
+          <TransformInput key={field.id} field={field} modelTransform={modelTransform} onChange={onChange} disabled={disabled} />
         ))}
       </div>
+      {disabled && <div className="field-note">Select one item or a group to transform.</div>}
     </>
   );
 }
@@ -2330,7 +6912,7 @@ function CollapsibleControlGroup({ title, collapsed, onToggle, children }) {
   );
 }
 
-function TransformInput({ field, modelTransform, onChange }) {
+function TransformInput({ field, modelTransform, onChange, disabled = false }) {
   return (
     <label className="transform-field">
       {field.label.replace(/^(Scale|Rotate|Position) /, '')}
@@ -2340,6 +6922,7 @@ function TransformInput({ field, modelTransform, onChange }) {
         step={field.step}
         value={modelTransform[field.id]}
         onChange={(event) => onChange(field.id, event.target.value)}
+        disabled={disabled}
       />
     </label>
   );
@@ -2422,7 +7005,9 @@ function applyLibraryPieceToInstance(piece, instance) {
     x: instance.x,
     y: instance.y,
     rotation: instance.rotation,
+    mirrorHorizontal: !!instance.mirrorHorizontal,
     mirrorVertical: !!instance.mirrorVertical,
+    hidden: !!instance.hidden,
     groupInstanceId: instance.groupInstanceId || null,
     snappedTo: instance.snappedTo,
   };
@@ -2437,9 +7022,12 @@ function pieceGeometrySignature(piece) {
   }
   const signature = JSON.stringify({
     type: piece.type || 'shape',
+    isFrameSlice: !!piece.isFrameSlice,
     height: Number(piece.height) || 0.18,
     stageWidth: Number(piece.stageWidth) || null,
     stageLength: Number(piece.stageLength) || null,
+    mirrorHorizontal: !!piece.mirrorHorizontal,
+    mirrorVertical: !!piece.mirrorVertical,
     keepAspectRatio: piece.keepAspectRatio !== false,
     sourceHeightPx: Number(piece.sourceHeightPx) || null,
     sourceWidthPx: Number(piece.sourceWidthPx) || null,
@@ -2452,6 +7040,7 @@ function pieceGeometrySignature(piece) {
     objText: piece.objText || '',
     glbDataUrl: piece.glbDataUrl || '',
     glbUrl: piece.glbUrl || '',
+    surfaceStickerUvTransform: piece.surfaceStickerUvTransform || null,
   });
   if (piece && typeof piece === 'object') PIECE_GEOMETRY_SIGNATURE_CACHE.set(piece, signature);
   return signature;
@@ -2463,6 +7052,7 @@ function GirihStage({
   selectedIds,
   activeGroupId,
   material,
+  glassSettings,
   style,
   cameraMode,
   backgroundColor,
@@ -2474,9 +7064,14 @@ function GirihStage({
   liveShadowsEnabled,
   modelTransform,
   mobileViewport,
+  cameraVideoPlaying,
+  cameraVideoPreset,
+  cameraVideoDurationMs,
+  cameraVideoProgressRef,
   frameMode,
   framePoints,
   onSelect,
+  onToggleSelect,
   onFramePick,
   onSelectionChange,
   onMove,
@@ -2486,6 +7081,8 @@ function GirihStage({
   onContextMenu,
   onViewBoundsChange,
   onCameraChange,
+  onCameraVideoProgress,
+  onCameraVideoEnd,
 }) {
   const mountRef = useRef(null);
   const [selectionBox, setSelectionBox] = useState(null);
@@ -2495,6 +7092,7 @@ function GirihStage({
     selectedIds,
     activeGroupId,
     material,
+    glassSettings,
     style,
     cameraMode,
     backgroundColor,
@@ -2506,9 +7104,14 @@ function GirihStage({
     liveShadowsEnabled,
     modelTransform,
     mobileViewport,
+    cameraVideoPlaying,
+    cameraVideoPreset,
+    cameraVideoDurationMs,
+    cameraVideoProgressRef,
     frameMode,
     framePoints,
     onSelect,
+    onToggleSelect,
     onFramePick,
     onSelectionChange,
     onMove,
@@ -2518,6 +7121,8 @@ function GirihStage({
     onContextMenu,
     onViewBoundsChange,
     onCameraChange,
+    onCameraVideoProgress,
+    onCameraVideoEnd,
   });
   const rendererRef = useRef(null);
   const stageSyncDirtyRef = useRef(true);
@@ -2529,6 +7134,7 @@ function GirihStage({
       selectedIds,
       activeGroupId,
       material,
+      glassSettings,
       style,
       cameraMode,
       backgroundColor,
@@ -2540,9 +7146,14 @@ function GirihStage({
       liveShadowsEnabled,
       modelTransform,
       mobileViewport,
+      cameraVideoPlaying,
+      cameraVideoPreset,
+      cameraVideoDurationMs,
+      cameraVideoProgressRef,
       frameMode,
       framePoints,
       onSelect,
+      onToggleSelect,
       onFramePick,
       onSelectionChange,
       onMove,
@@ -2552,12 +7163,14 @@ function GirihStage({
       onContextMenu,
       onViewBoundsChange,
       onCameraChange,
+      onCameraVideoProgress,
+      onCameraVideoEnd,
     };
   });
 
   useEffect(() => {
     stageSyncDirtyRef.current = true;
-  }, [placed, selectedId, selectedIds, activeGroupId, material, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform, mobileViewport, frameMode, framePoints]);
+  }, [placed, selectedId, selectedIds, activeGroupId, material, glassSettings, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform, mobileViewport, frameMode, framePoints]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -2582,12 +7195,54 @@ function GirihStage({
     updatePaperCameraProjection();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    let rendererPixelRatio = Math.min(window.devicePixelRatio, 2);
+    let rendererUsingExportSize = false;
+    renderer.setPixelRatio(rendererPixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setClearColor(initialBackground, 1);
     renderer.shadowMap.enabled = !!stateRef.current.liveShadowsEnabled;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
+    if ('physicallyCorrectLights' in renderer) renderer.physicallyCorrectLights = false;
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    let pmremGenerator = null;
+    let hdrEnvironmentTarget = null;
+    let hdrLoadStarted = false;
+    let stageDisposed = false;
+
+    function ensureGlassEnvironment() {
+      if (hdrLoadStarted || hdrEnvironmentTarget || stageDisposed) return;
+      hdrLoadStarted = true;
+      pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileEquirectangularShader();
+      new RGBELoader().load(
+        GLASS_HDR_ENVIRONMENT_URL,
+        (texture) => {
+          if (stageDisposed) {
+            texture.dispose();
+            pmremGenerator?.dispose();
+            pmremGenerator = null;
+            return;
+          }
+          texture.mapping = THREE.EquirectangularReflectionMapping;
+          hdrEnvironmentTarget = pmremGenerator.fromEquirectangular(texture);
+          texture.dispose();
+          pmremGenerator.dispose();
+          pmremGenerator = null;
+          scene.environment = normalizeMaterialName(stateRef.current.material) === 'glass' ? hdrEnvironmentTarget.texture : null;
+          stageSyncDirtyRef.current = true;
+        },
+        undefined,
+        (error) => {
+          pmremGenerator?.dispose();
+          pmremGenerator = null;
+          console.warn('The architectural glass HDR environment could not be loaded.', error);
+        },
+      );
+    }
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -2597,6 +7252,7 @@ function GirihStage({
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.target.set(0, 0, 0);
     const cameraView = { mode: null };
+    const cameraOrbit = { startTime: null, completed: false, lastReportedProgress: -1 };
 
     function applyStageCameraView(mode, force = false, orthographic = false) {
       if (!force && cameraView.mode === mode && cameraView.orthographic === orthographic) return;
@@ -2608,8 +7264,13 @@ function GirihStage({
       controls.target.set(0, 0, 0);
       camera.up.set(...view.up);
       camera.position.set(...view.position);
-      controls.enableRotate = (!orthographic && stateRef.current.mobileViewport) || !view.lockRotate;
+      const lockMobileTopView = stateRef.current.mobileViewport && mode === 'top';
+      controls.enabled = true;
+      controls.enableRotate = !lockMobileTopView && !view.lockRotate;
       controls.enablePan = true;
+      controls.enableZoom = true;
+      controls.touches.ONE = lockMobileTopView ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+      controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
       controls.minDistance = view.lockRotate ? 4 : 3;
       controls.maxDistance = view.lockRotate ? 80 : 24;
       controls.minZoom = 0.08;
@@ -2622,11 +7283,187 @@ function GirihStage({
 
     applyStageCameraView(stateRef.current.cameraMode || 'top', true);
 
+    function cameraOrbitTarget() {
+      const bounds = getPiecesWorldBounds(stateRef.current.placed);
+      if (!bounds) {
+        return {
+          center: new THREE.Vector3(0, 0.1, 0),
+          radius: 8,
+        };
+      }
+      const width = Math.max(0.001, bounds.maxX - bounds.minX);
+      const depth = Math.max(0.001, bounds.maxY - bounds.minY);
+      const targetHeight = Math.max(0.08, (bounds.top || 0.1) * 0.35);
+      return {
+        center: new THREE.Vector3((bounds.minX + bounds.maxX) / 2, targetHeight, (bounds.minY + bounds.maxY) / 2),
+        radius: Math.max(width, depth, 3) * 1.45 + 2,
+      };
+    }
+
+    function assemblyOrderedIds() {
+      const current = stateRef.current.placed || [];
+      if (!current.length) return [];
+      const bounds = getPiecesWorldBounds(current);
+      const centerX = bounds ? (bounds.minX + bounds.maxX) / 2 : current.reduce((sum, item) => sum + (Number(item.x) || 0), 0) / current.length;
+      const centerY = bounds ? (bounds.minY + bounds.maxY) / 2 : current.reduce((sum, item) => sum + (Number(item.y) || 0), 0) / current.length;
+      return current
+        .map((item, index) => {
+          const x = Number(item.x) || 0;
+          const y = Number(item.y) || 0;
+          return {
+            id: item.id,
+            distance: Math.hypot(x - centerX, y - centerY),
+            angle: Math.atan2(y - centerY, x - centerX),
+            index,
+          };
+        })
+        .sort((a, b) => a.distance - b.distance || a.angle - b.angle || a.index - b.index)
+        .map((item) => item.id);
+    }
+
+    function applyAssemblyVisibility(progress) {
+      if (!meshes.size) return;
+      if (!Number.isFinite(progress)) {
+        meshes.forEach((mesh) => {
+          mesh.visible = true;
+          if (mesh.userData.assemblyBasePosition) mesh.position.copy(mesh.userData.assemblyBasePosition);
+          if (mesh.userData.assemblyBaseScale) mesh.scale.copy(mesh.userData.assemblyBaseScale);
+        });
+        groupHitMeshes.forEach((mesh) => {
+          mesh.visible = true;
+        });
+        return;
+      }
+      const orderedIds = assemblyOrderedIds();
+      const orderById = new Map(orderedIds.map((id, index) => [id, index]));
+      const total = Math.max(1, orderedIds.length);
+      const cursor = THREE.MathUtils.clamp(progress, 0, 1) * (total + 0.85);
+      camera.updateMatrixWorld(true);
+      group.updateMatrixWorld(true);
+      const cameraRightWorld = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      const groupWorldQuaternion = new THREE.Quaternion();
+      const groupWorldScale = new THREE.Vector3();
+      group.getWorldQuaternion(groupWorldQuaternion);
+      group.getWorldScale(groupWorldScale);
+      const worldToGroupRotation = groupWorldQuaternion.clone().invert();
+      const { radius: assemblyRadius } = cameraOrbitTarget();
+      const leftTravelWorld = Math.max(4.5, assemblyRadius * 1.2);
+      const leftTravelLocal = cameraRightWorld
+        .clone()
+        .multiplyScalar(-leftTravelWorld)
+        .applyQuaternion(worldToGroupRotation);
+      leftTravelLocal.x /= Math.max(0.001, Math.abs(groupWorldScale.x));
+      leftTravelLocal.y /= Math.max(0.001, Math.abs(groupWorldScale.y));
+      leftTravelLocal.z /= Math.max(0.001, Math.abs(groupWorldScale.z));
+      meshes.forEach((mesh, id) => {
+        const index = orderById.get(id) ?? total;
+        const local = THREE.MathUtils.clamp(cursor - index, 0, 1);
+        const eased = local * local * (3 - 2 * local);
+        const visible = local > 0.001 || progress >= 1;
+        mesh.visible = visible;
+        const basePosition = mesh.userData.assemblyBasePosition;
+        const baseScale = mesh.userData.assemblyBaseScale;
+        if (basePosition) {
+          mesh.position.copy(basePosition);
+          if (visible && progress < 1) {
+            mesh.position.addScaledVector(leftTravelLocal, 1 - eased);
+            mesh.position.y += (1 - eased) * 1.35 + Math.sin(eased * Math.PI) * 0.28;
+          }
+        }
+        if (baseScale) {
+          const arrivalScale = 0.72 + eased * 0.28;
+          mesh.scale.set(
+            baseScale.x * arrivalScale,
+            baseScale.y * arrivalScale,
+            baseScale.z * arrivalScale,
+          );
+        }
+      });
+      groupHitMeshes.forEach((mesh) => {
+        mesh.visible = progress >= 1;
+      });
+    }
+
+    function applyCameraVideoOrbit(now) {
+      if (!stateRef.current.cameraVideoPlaying) {
+        cameraOrbit.startTime = null;
+        cameraOrbit.completed = false;
+        cameraOrbit.lastReportedProgress = -1;
+        applyAssemblyVisibility(null);
+        return false;
+      }
+      if (!cameraOrbit.startTime) cameraOrbit.startTime = now;
+      const forcedProgress = stateRef.current.cameraVideoProgressRef?.current;
+      const exportingFrame = Number.isFinite(forcedProgress);
+      const preset = CAMERA_VIDEO_PRESET_MAP.get(stateRef.current.cameraVideoPreset) || CAMERA_VIDEO_PRESETS[0];
+      const durationMs = preset.type === 'assembly'
+        ? Math.max(2000, Number(stateRef.current.cameraVideoDurationMs) || preset.durationMs)
+        : preset.durationMs;
+      const progress = exportingFrame
+        ? THREE.MathUtils.clamp(forcedProgress, 0, 1)
+        : Math.min((now - cameraOrbit.startTime) / durationMs, 1);
+      if (preset.type === 'assembly') {
+        controls.object = camera;
+        controls.enabled = false;
+        controls.enableRotate = false;
+        controls.enablePan = false;
+        applyAssemblyVisibility(progress);
+        if (!exportingFrame && (progress >= 1 || progress - cameraOrbit.lastReportedProgress >= 0.02)) {
+          cameraOrbit.lastReportedProgress = progress;
+          stateRef.current.onCameraVideoProgress?.(progress);
+        }
+        if (!exportingFrame && progress >= 1 && !cameraOrbit.completed) {
+          cameraOrbit.completed = true;
+          stateRef.current.onCameraVideoEnd?.();
+        }
+        return true;
+      }
+      camera = perspectiveCamera;
+      controls.object = camera;
+      controls.enabled = false;
+      controls.enableRotate = false;
+      controls.enablePan = false;
+      applyAssemblyVisibility(null);
+      const eased = 1 - Math.pow(1 - progress, 2);
+      const { center, radius } = cameraOrbitTarget();
+      if (preset.id === 'top-spin-zoom') {
+        const angle = progress * Math.PI * 0.5;
+        const smoothProgress = progress * progress * (3 - 2 * progress);
+        const height = THREE.MathUtils.lerp(radius * 1.12, radius * 0.68, smoothProgress);
+        camera.up.set(Math.sin(angle), 0, -Math.cos(angle));
+        camera.position.set(center.x, center.y + height, center.z + 0.001);
+      } else {
+        const angle = -Math.PI / 2 + progress * Math.PI * 2 * CAMERA_VIDEO_ROTATIONS;
+        const elevation = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(88, 36, eased));
+        const horizontalRadius = Math.max(0.04, Math.cos(elevation) * radius);
+        const height = Math.sin(elevation) * radius;
+        camera.up.set(0, 1, 0);
+        camera.position.set(
+          center.x + Math.cos(angle) * horizontalRadius,
+          center.y + height,
+          center.z + Math.sin(angle) * horizontalRadius,
+        );
+      }
+      controls.target.copy(center);
+      camera.lookAt(center);
+      camera.updateProjectionMatrix();
+      if (!exportingFrame && (progress >= 1 || progress - cameraOrbit.lastReportedProgress >= 0.02)) {
+        cameraOrbit.lastReportedProgress = progress;
+        stateRef.current.onCameraVideoProgress?.(progress);
+      }
+      if (!exportingFrame && progress >= 1 && !cameraOrbit.completed) {
+        cameraOrbit.completed = true;
+        stateRef.current.onCameraVideoEnd?.();
+      }
+      return true;
+    }
+
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const drag = { id: null, ids: [], offset: new THREE.Vector3(), startPoint: new THREE.Vector3(), startX: 0, startY: 0, active: false, previous: null, previousItems: [], current: null, delta: { x: 0, y: 0 } };
     const selectionDrag = { active: false, selecting: false, startX: 0, startY: 0, currentX: 0, currentY: 0 };
+    const longPress = { timer: null, pointerId: null, triggered: false, startX: 0, startY: 0, id: null };
     const meshes = new Map();
     const groupHitMeshes = new Map();
     const group = new THREE.Group();
@@ -2638,7 +7475,12 @@ function GirihStage({
     group.add(selectionOutline);
     group.add(framePreviewLine);
 
-    scene.add(new THREE.HemisphereLight(STAGE_HEMISPHERE_LIGHT.sky, STAGE_HEMISPHERE_LIGHT.ground, STAGE_HEMISPHERE_LIGHT.intensity));
+    const ambientLight = new THREE.HemisphereLight(
+      STAGE_HEMISPHERE_LIGHT.sky,
+      STAGE_HEMISPHERE_LIGHT.ground,
+      STAGE_HEMISPHERE_LIGHT.intensity,
+    );
+    scene.add(ambientLight);
     const light = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
     light.position.set(...STAGE_KEY_LIGHT.position);
     light.castShadow = !!stateRef.current.liveShadowsEnabled;
@@ -2656,12 +7498,47 @@ function GirihStage({
     const grid = new THREE.GridHelper(12, 24, '#d0c3a7', '#e5dac6');
     grid.position.y = 0.006;
     scene.add(grid);
+    const glassColorCastGroup = new THREE.Group();
+    glassColorCastGroup.name = 'stage-glass-color-cast';
+    scene.add(glassColorCastGroup);
+
+    const composer = new EffectComposer(renderer);
+    composer.setPixelRatio(rendererPixelRatio);
+    composer.setSize(mount.clientWidth, mount.clientHeight);
+    const renderPass = new RenderPass(scene, camera);
+    const ssrPass = new SSRPass({
+      renderer,
+      scene,
+      camera,
+      width: mount.clientWidth,
+      height: mount.clientHeight,
+      selects: [],
+    });
+    ssrPass.opacity = 0.2;
+    ssrPass.maxDistance = 3.5;
+    ssrPass.thickness = 0.018;
+    ssrPass.blur = true;
+    ssrPass.enabled = false;
+    const ssaoPass = new SSAOPass(scene, camera, mount.clientWidth, mount.clientHeight, 16);
+    ssaoPass.kernelRadius = 7;
+    ssaoPass.minDistance = 0.002;
+    ssaoPass.maxDistance = 0.085;
+    ssaoPass.enabled = false;
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(mount.clientWidth, mount.clientHeight), 0.16, 0.3, 0.92);
+    bloomPass.enabled = false;
+    const outputPass = new OutputPass();
+    composer.addPass(renderPass);
+    composer.addPass(ssrPass);
+    composer.addPass(ssaoPass);
+    composer.addPass(bloomPass);
+    composer.addPass(outputPass);
 
     function syncMeshes() {
       const {
         placed: current,
         selectedId: selected,
         material: materialName,
+        glassSettings: stageGlassSettings,
         style: styleName,
         backgroundColor: stageBackgroundColor,
         edgeColor: stageEdgeColor,
@@ -2699,7 +7576,8 @@ function GirihStage({
           meshes.delete(id);
         }
       }
-      current.forEach((item) => {
+      const orderById = new Map(current.map((item, index) => [item.id, index]));
+      current.forEach((item, orderIndex) => {
         let mesh = meshes.get(item.id);
         const renderSignature = pieceGeometrySignature(item);
         if (mesh && mesh.userData.renderSignature !== renderSignature) {
@@ -2710,6 +7588,7 @@ function GirihStage({
         }
         if (!mesh) {
           mesh = createPieceObject(item, () => {
+            if (mesh) mesh.userData.materialSignature = '';
             stageSyncDirtyRef.current = true;
           });
           mesh.userData.id = item.id;
@@ -2717,12 +7596,48 @@ function GirihStage({
           meshes.set(item.id, mesh);
           group.add(mesh);
         }
-        mesh.position.set(item.x, 0, item.y);
-        mesh.rotation.y = -item.rotation;
-        mesh.scale.set(1, styleName === 'pattern' ? 0.35 : 1, item.mirrorVertical ? -1 : 1);
-        applyPieceMaterial(mesh, item, materialName, selectedSet.has(item.id), stageLiveShadowsEnabled);
+        mesh.position.set(item.x, Number(item.elevation) || 0, item.y);
+        mesh.rotation.set(Number(item.tiltX) || 0, -item.rotation, Number(item.tiltZ) || 0);
+        const baseHeight = Math.max(0.02, Number(item.height) || 0.18);
+        const glassHeightScale = normalizeMaterialName(materialName) === 'glass' ? glassOpticalThickness(item, stageGlassSettings) / baseHeight : 1;
+        mesh.scale.set(
+          item.mirrorHorizontal ? -1 : 1,
+          styleName === 'pattern' ? 0.35 : glassHeightScale,
+          item.mirrorVertical ? -1 : 1,
+        );
+        mesh.userData.assemblyBasePosition = mesh.position.clone();
+        mesh.userData.assemblyBaseScale = mesh.scale.clone();
+        const stageOrder = Math.min(orderIndex * 0.001, 1);
+        mesh.renderOrder = stageOrder;
+        mesh.traverse((child) => {
+          if (child.userData?.isStageEdge) child.renderOrder = 8 + stageOrder;
+          else if (child.userData?.isSurfaceSticker) child.renderOrder = 7 + stageOrder;
+          else if (child.isMesh) child.renderOrder = stageOrder;
+        });
+        applyPieceMaterial(mesh, item, materialName, selectedSet.has(item.id), stageLiveShadowsEnabled, stageGlassSettings);
         updateStageEdgeOverlay(mesh, item, styleName, materialName, stageRenderSettings, renderSignature);
+        updatePieceSurfaceStickerOverlay(mesh, item, renderSignature);
       });
+      const reflectiveGlassMeshes = [];
+      if (normalizeMaterialName(materialName) === 'glass') {
+        meshes.forEach((object) => object.traverse((child) => {
+          if (child.isMesh && child.material?.isMeshPhysicalMaterial) reflectiveGlassMeshes.push(child);
+        }));
+      }
+      ssrPass.selects = reflectiveGlassMeshes;
+      const causticsEnabled = normalizeMaterialName(materialName) === 'glass' && !stateRef.current.mobileViewport && current.length <= 120;
+      try {
+        updateGlassColorCast(
+          glassColorCastGroup,
+          current,
+          causticsEnabled ? 'glass' : 'plastic',
+          stageModelTransform,
+          stageGlassSettings,
+        );
+      } catch (error) {
+        console.warn('The live glass color cast was skipped.', error);
+        glassColorCastGroup.visible = false;
+      }
       const pieceGroups = new Map();
       current.forEach((item) => {
         if (!item.groupInstanceId) return;
@@ -2761,6 +7676,7 @@ function GirihStage({
         }
         hitMesh.userData.id = items[0].id;
         hitMesh.userData.groupInstanceId = groupId;
+        hitMesh.userData.stageOrder = Math.max(...items.map((item) => orderById.get(item.id) ?? 0));
       }
       updateSelectionOutline(selectionOutline, current.filter((item) => selectedSet.has(item.id)));
       updateFramePreviewLine(framePreviewLine, stateRef.current.framePoints || []);
@@ -2851,6 +7767,20 @@ function GirihStage({
         .map(([id]) => id);
     }
 
+    function hitStageOrder(hit) {
+      const root = getPieceRoot(hit.object);
+      if (root.userData.groupInstanceId) return root.userData.stageOrder || 0;
+      return stateRef.current.placed.findIndex((item) => item.id === root.userData.id);
+    }
+
+    function orderedHits(hits) {
+      return hits.slice().sort((a, b) => {
+        const distanceDelta = a.distance - b.distance;
+        if (Math.abs(distanceDelta) > 0.0001) return distanceDelta;
+        return hitStageOrder(b) - hitStageOrder(a);
+      });
+    }
+
     function groupedPiecesAtPoint(point) {
       const groups = new Map();
       stateRef.current.placed.forEach((item) => {
@@ -2902,12 +7832,46 @@ function GirihStage({
       stateRef.current.onCameraChange?.(snapshot);
     }
 
+    function restoreControlsEnabled() {
+      controls.enabled = true;
+    }
+
+    function cancelLongPress(resetTriggered = false) {
+      if (longPress.timer) window.clearTimeout(longPress.timer);
+      longPress.timer = null;
+      longPress.pointerId = null;
+      longPress.id = null;
+      if (resetTriggered) longPress.triggered = false;
+    }
+
+    function startLongPress(event, id) {
+      if (!stateRef.current.mobileViewport || event.pointerType !== 'touch' || !id) return;
+      cancelLongPress(true);
+      longPress.pointerId = event.pointerId;
+      longPress.startX = event.clientX;
+      longPress.startY = event.clientY;
+      longPress.id = id;
+      longPress.timer = window.setTimeout(() => {
+        longPress.timer = null;
+        longPress.triggered = true;
+        const currentSelectedIds = stateRef.current.selectedIds || [];
+        if (!currentSelectedIds.includes(id)) stateRef.current.onSelect(id);
+        stateRef.current.onContextMenu({
+          id,
+          x: Math.max(8, Math.min(event.clientX, window.innerWidth - 178)),
+          y: Math.max(8, Math.min(event.clientY, window.innerHeight - 310)),
+        });
+        controls.enabled = false;
+      }, 550);
+    }
+
     function pointerDown(event) {
       if (event.button !== 0) return;
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const groupHits = raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true);
-      const hits = groupHits.length ? groupHits : raycaster.intersectObjects(Array.from(meshes.values()), true);
+      const groupHits = orderedHits(raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true));
+      const pieceHits = orderedHits(raycaster.intersectObjects(Array.from(meshes.values()), true));
+      const hits = pieceHits.length ? pieceHits : groupHits;
       if (stateRef.current.frameMode) {
         if (!hits.length) return;
         const mesh = getPieceRoot(hits[0].object);
@@ -2915,6 +7879,7 @@ function GirihStage({
         return;
       }
       if (!hits.length) {
+        if (event.ctrlKey || event.metaKey) return;
         const point = groundPoint();
         const groupItems = groupedPiecesAtPoint(point);
         if (groupItems) {
@@ -2930,6 +7895,8 @@ function GirihStage({
           drag.previousItems = groupItems.map((item) => ({ ...item }));
           drag.current = { x: point.x, y: point.z };
           stateRef.current.onSelect(drag.id);
+          if (stateRef.current.mobileViewport) controls.enabled = false;
+          startLongPress(event, drag.id);
           renderer.domElement.setPointerCapture(event.pointerId);
           return;
         }
@@ -2953,11 +7920,15 @@ function GirihStage({
       const point = groundPoint();
       const current = stateRef.current.placed.find((item) => item.id === mesh.userData.id);
       if (!current) return;
+      if (event.ctrlKey || event.metaKey) {
+        stateRef.current.onToggleSelect?.(current.id);
+        return;
+      }
       const currentSelectedIds = stateRef.current.selectedIds || [];
-      const dragIds = current.groupInstanceId
-        ? stateRef.current.placed.filter((item) => item.groupInstanceId === current.groupInstanceId).map((item) => item.id)
-        : currentSelectedIds.includes(current.id) && currentSelectedIds.length > 1
-          ? currentSelectedIds
+      const dragIds = currentSelectedIds.includes(current.id) && currentSelectedIds.length > 1
+        ? currentSelectedIds
+        : current.groupInstanceId
+          ? stateRef.current.placed.filter((item) => item.groupInstanceId === current.groupInstanceId).map((item) => item.id)
           : [current.id];
       drag.id = mesh.userData.id;
       drag.ids = dragIds;
@@ -2970,11 +7941,20 @@ function GirihStage({
       drag.previous = current ? { x: current.x, y: current.y, rotation: current.rotation } : null;
       drag.previousItems = stateRef.current.placed.filter((item) => dragIds.includes(item.id)).map((item) => ({ ...item }));
       drag.current = current ? { x: current.x, y: current.y } : null;
-      stateRef.current.onSelect(drag.id);
+      if (dragIds.length > 1) stateRef.current.onSelectionChange?.(dragIds);
+      else stateRef.current.onSelect(drag.id);
+      if (stateRef.current.mobileViewport) controls.enabled = false;
+      startLongPress(event, drag.id);
       renderer.domElement.setPointerCapture(event.pointerId);
     }
 
     function pointerMove(event) {
+      if (
+        longPress.pointerId === event.pointerId &&
+        Math.hypot(event.clientX - longPress.startX, event.clientY - longPress.startY) > 8
+      ) {
+        cancelLongPress();
+      }
       if (selectionDrag.active) {
         selectionDrag.currentX = event.clientX;
         selectionDrag.currentY = event.clientY;
@@ -3003,19 +7983,21 @@ function GirihStage({
       drag.ids.forEach((id) => {
         const previous = previousById.get(id);
         const mesh = meshes.get(id);
-        if (previous && mesh) mesh.position.set((previous.x || 0) + delta.x, 0, (previous.y || 0) + delta.y);
+        if (previous && mesh) mesh.position.set((previous.x || 0) + delta.x, Number(previous.elevation) || 0, (previous.y || 0) + delta.y);
       });
       updateSelectionOutline(selectionOutline, drag.previousItems.map((item) => ({ ...item, x: (item.x || 0) + delta.x, y: (item.y || 0) + delta.y })));
     }
 
     function pointerUp(event) {
+      const longPressTriggered = longPress.triggered && longPress.pointerId === event.pointerId;
+      cancelLongPress(true);
       if (selectionDrag.active) {
         const box = selectionBoxFromDrag();
         const ids = selectionDrag.selecting ? selectedIdsInBox(box) : [];
         stateRef.current.onSelectionChange?.(ids);
         selectionDrag.active = false;
         selectionDrag.selecting = false;
-        controls.enabled = true;
+        restoreControlsEnabled();
         setSelectionBox(null);
         renderer.domElement.releasePointerCapture(event.pointerId);
         return;
@@ -3024,13 +8006,13 @@ function GirihStage({
       const current = stateRef.current.placed.find((item) => item.id === drag.id);
       if (current && drag.active) {
         if (drag.ids.length > 1) {
-          stateRef.current.onSettleSelection?.(drag.ids, drag.delta, drag.previousItems);
+          stateRef.current.onSettleSelection?.(drag.ids, drag.delta, drag.previousItems, drag.id);
         } else {
           const nextPosition = drag.current || { x: current.x, y: current.y };
           stateRef.current.onSettle(drag.id, { x: nextPosition.x, y: nextPosition.y, previous: drag.previous });
         }
       }
-      if (current && !drag.active && drag.ids.length === 1 && !current.groupInstanceId) stateRef.current.onRotate(drag.id);
+      if (current && !drag.active && !longPressTriggered && drag.ids.length === 1 && !current.groupInstanceId) stateRef.current.onRotate(drag.id);
       stageSyncDirtyRef.current = true;
       drag.id = null;
       drag.ids = [];
@@ -3039,7 +8021,7 @@ function GirihStage({
       drag.previousItems = [];
       drag.current = null;
       drag.delta = { x: 0, y: 0 };
-      controls.enabled = true;
+      restoreControlsEnabled();
       renderer.domElement.releasePointerCapture(event.pointerId);
     }
 
@@ -3047,20 +8029,36 @@ function GirihStage({
       event.preventDefault();
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const groupHits = raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true);
-      const hits = groupHits.length ? groupHits : raycaster.intersectObjects(Array.from(meshes.values()), true);
+      const groupHits = orderedHits(raycaster.intersectObjects(Array.from(groupHitMeshes.values()), true));
+      const hits = groupHits.length ? groupHits : orderedHits(raycaster.intersectObjects(Array.from(meshes.values()), true));
       if (!hits.length) {
         stateRef.current.onContextMenu(null);
         return;
       }
       const mesh = getPieceRoot(hits[0].object);
-      stateRef.current.onSelect(mesh.userData.id);
-      stateRef.current.onContextMenu({ id: mesh.userData.id, x: event.clientX, y: event.clientY });
+      const id = mesh.userData.id;
+      const currentSelectedIds = stateRef.current.selectedIds || [];
+      if (!currentSelectedIds.includes(id)) stateRef.current.onSelect(id);
+      stateRef.current.onContextMenu({ id, x: event.clientX, y: event.clientY });
+    }
+
+    function pointerCancel(event) {
+      if (longPress.pointerId === event.pointerId) cancelLongPress(true);
+      drag.id = null;
+      drag.ids = [];
+      drag.active = false;
+      drag.previous = null;
+      drag.previousItems = [];
+      selectionDrag.active = false;
+      selectionDrag.selecting = false;
+      setSelectionBox(null);
+      restoreControlsEnabled();
     }
 
     renderer.domElement.addEventListener('pointerdown', pointerDown);
     renderer.domElement.addEventListener('pointermove', pointerMove);
     renderer.domElement.addEventListener('pointerup', pointerUp);
+    renderer.domElement.addEventListener('pointercancel', pointerCancel);
     renderer.domElement.addEventListener('contextmenu', contextMenu);
 
     function resize() {
@@ -3068,6 +8066,8 @@ function GirihStage({
       perspectiveCamera.updateProjectionMatrix();
       updatePaperCameraProjection();
       renderer.setSize(mount.clientWidth, mount.clientHeight);
+      composer.setPixelRatio(rendererPixelRatio);
+      composer.setSize(mount.clientWidth, mount.clientHeight);
     }
     window.addEventListener('resize', resize);
 
@@ -3077,29 +8077,96 @@ function GirihStage({
         syncMeshes();
         stageSyncDirtyRef.current = false;
       }
-      const isPaper = normalizeMaterialName(stateRef.current.material) === 'paper';
-      applyStageCameraView(isPaper ? 'top' : stateRef.current.cameraMode || 'top', false, isPaper);
+      const isCameraVideo = !!stateRef.current.cameraVideoPlaying;
+      const exportingCameraVideo = Number.isFinite(stateRef.current.cameraVideoProgressRef?.current);
+      const isGlass = !isCameraVideo && normalizeMaterialName(stateRef.current.material) === 'glass';
+      const glassPerformanceMode = isGlass && (stateRef.current.mobileViewport || stateRef.current.placed.length > GLASS_POSTPROCESS_PIECE_LIMIT);
+      const interactivePixelRatio = glassPerformanceMode
+        ? Math.min(window.devicePixelRatio, 1.25)
+        : Math.min(window.devicePixelRatio, 2);
+      if (exportingCameraVideo && !rendererUsingExportSize) {
+        rendererUsingExportSize = true;
+        rendererPixelRatio = 1;
+        renderer.setPixelRatio(1);
+        renderer.setSize(CAMERA_VIDEO_WIDTH, CAMERA_VIDEO_HEIGHT, false);
+        composer.setPixelRatio(1);
+        composer.setSize(CAMERA_VIDEO_WIDTH, CAMERA_VIDEO_HEIGHT);
+        perspectiveCamera.aspect = CAMERA_VIDEO_WIDTH / CAMERA_VIDEO_HEIGHT;
+        perspectiveCamera.updateProjectionMatrix();
+      } else if (!exportingCameraVideo && rendererUsingExportSize) {
+        rendererUsingExportSize = false;
+        rendererPixelRatio = isCameraVideo ? 1 : interactivePixelRatio;
+        renderer.setPixelRatio(rendererPixelRatio);
+        renderer.setSize(mount.clientWidth, mount.clientHeight, false);
+        composer.setPixelRatio(rendererPixelRatio);
+        composer.setSize(mount.clientWidth, mount.clientHeight);
+        perspectiveCamera.aspect = mount.clientWidth / Math.max(mount.clientHeight, 1);
+        perspectiveCamera.updateProjectionMatrix();
+      } else if (!exportingCameraVideo) {
+        const desiredPixelRatio = isCameraVideo ? 1 : interactivePixelRatio;
+        if (rendererPixelRatio !== desiredPixelRatio) {
+          rendererPixelRatio = desiredPixelRatio;
+          renderer.setPixelRatio(rendererPixelRatio);
+          renderer.setSize(mount.clientWidth, mount.clientHeight, false);
+          composer.setPixelRatio(rendererPixelRatio);
+          composer.setSize(mount.clientWidth, mount.clientHeight);
+        }
+      }
+      const isPaper = !isCameraVideo && normalizeMaterialName(stateRef.current.material) === 'paper';
+      if (!isCameraVideo) {
+        applyStageCameraView(isPaper ? 'top' : stateRef.current.cameraMode || 'top', false, isPaper);
+        if (!drag.active && !selectionDrag.active) controls.enabled = true;
+      }
       const backgroundColor = isPaper ? PAPER_BACKGROUND_COLOR : stateRef.current.backgroundColor;
       applyStageBackground(scene, renderer, backgroundColor);
       applyStageFloorColor(stageFloor, backgroundColor);
-      grid.visible = !isPaper;
-      applyLiveShadowState(renderer, light, stageFloor, !isPaper && stateRef.current.liveShadowsEnabled);
-      controls.update();
+      grid.visible = !isPaper && !isGlass;
+      const glassQualityEligible = isGlass && !stateRef.current.mobileViewport && !exportingCameraVideo && stateRef.current.placed.length <= GLASS_POSTPROCESS_PIECE_LIMIT;
+      const activeGlassSettings = normalizeGlassSettings(stateRef.current.glassSettings);
+      if (isGlass) ensureGlassEnvironment();
+      scene.environment = isGlass && hdrEnvironmentTarget ? hdrEnvironmentTarget.texture : null;
+      renderer.toneMapping = isGlass ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+      renderer.toneMappingExposure = isGlass ? 0.9 : 1;
+      if ('physicallyCorrectLights' in renderer) renderer.physicallyCorrectLights = isGlass;
+      ambientLight.intensity = isGlass ? 0.82 : STAGE_HEMISPHERE_LIGHT.intensity;
+      ssaoPass.enabled = glassQualityEligible;
+      bloomPass.enabled = glassQualityEligible;
+      ssrPass.enabled = glassQualityEligible && renderer.capabilities.isWebGL2 && stateRef.current.placed.length <= GLASS_SSR_PIECE_LIMIT;
+      ssrPass.opacity = 0.05 + activeGlassSettings.reflection * 0.28;
+      bloomPass.strength = 0.03 + activeGlassSettings.highlight * 0.18;
+      bloomPass.radius = 0.18 + activeGlassSettings.frosted * 0.18;
+      renderPass.camera = camera;
+      ssaoPass.camera = camera;
+      ssrPass.camera = camera;
+      light.shadow.intensity = isGlass ? 0.3 : 1;
+      applyLiveShadowState(renderer, light, stageFloor, !isPaper && stateRef.current.liveShadowsEnabled && !isGlass);
+      if (!applyCameraVideoOrbit(performance.now())) controls.update();
       reportViewBounds();
       reportCameraSnapshot();
-      renderer.render(scene, camera);
+      if (ssaoPass.enabled || bloomPass.enabled || ssrPass.enabled) composer.render();
+      else renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     }
     animate();
 
     return () => {
+      stageDisposed = true;
       cancelAnimationFrame(frame);
       window.removeEventListener('resize', resize);
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
       renderer.domElement.removeEventListener('pointermove', pointerMove);
       renderer.domElement.removeEventListener('pointerup', pointerUp);
+      renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       renderer.domElement.removeEventListener('contextmenu', contextMenu);
+      cancelLongPress(true);
       controls.dispose();
+      composer.dispose();
+      ssrPass.dispose();
+      ssaoPass.dispose();
+      bloomPass.dispose();
+      disposeObject(glassColorCastGroup);
+      hdrEnvironmentTarget?.dispose();
+      pmremGenerator?.dispose();
       mount.removeChild(renderer.domElement);
       renderer.dispose();
     };
@@ -3165,24 +8232,27 @@ function applyLiveShadowState(renderer, light, floor, enabled) {
   if (floor.receiveShadow !== nextEnabled) floor.receiveShadow = nextEnabled;
 }
 
-function updateGlassColorCast(group, placed, materialName, modelTransform = DEFAULT_MODEL_TRANSFORM) {
+function updateGlassColorCast(group, placed, materialName, modelTransform = DEFAULT_MODEL_TRANSFORM, glassSettings = DEFAULT_GLASS_SETTINGS) {
   const isGlass = normalizeMaterialName(materialName) === 'glass';
   const normalizedTransform = normalizeModelTransform(modelTransform);
+  const normalizedGlassSettings = normalizeGlassSettings(glassSettings);
   const transformSignature = JSON.stringify(normalizedTransform);
   if (
     group.userData.placedRef === placed &&
     group.userData.materialName === materialName &&
-    group.userData.transformSignature === transformSignature
+    group.userData.transformSignature === transformSignature &&
+    group.userData.glassSettingsSignature === glassSettingsSignature(normalizedGlassSettings)
   ) {
     return;
   }
   group.userData.placedRef = placed;
   group.userData.materialName = materialName;
   group.userData.transformSignature = transformSignature;
+  group.userData.glassSettingsSignature = glassSettingsSignature(normalizedGlassSettings);
   const signature = isGlass
     ? placed
         .map(glassCastPieceSignature)
-        .join('|') + `|transform:${transformSignature}`
+        .join('|') + `|transform:${transformSignature}|glass:${glassSettingsSignature(normalizedGlassSettings)}`
     : 'hidden';
   if (group.userData.signature === signature) return;
   group.userData.signature = signature;
@@ -3192,7 +8262,7 @@ function updateGlassColorCast(group, placed, materialName, modelTransform = DEFA
   }
   group.visible = isGlass;
   if (!isGlass || !placed.length) return;
-  const cast = createGlassColorCastTextureMesh(placed, normalizedTransform);
+  const cast = createGlassColorCastTextureMesh(placed, normalizedTransform, normalizedGlassSettings);
   if (cast) group.add(cast);
 }
 
@@ -3204,6 +8274,9 @@ function glassCastPieceSignature(piece) {
     piece.x,
     piece.y,
     piece.rotation,
+    piece.elevation,
+    piece.tiltX,
+    piece.tiltZ,
     piece.height,
     piece.stageWidth,
     piece.stageLength,
@@ -3241,8 +8314,9 @@ function createGlassColorCastMesh(piece, modelTransform = DEFAULT_MODEL_TRANSFOR
   return mesh;
 }
 
-function createGlassColorCastTextureMesh(placed, modelTransform = DEFAULT_MODEL_TRANSFORM) {
-  const canvasSize = 1600;
+function createGlassColorCastTextureMesh(placed, modelTransform = DEFAULT_MODEL_TRANSFORM, glassSettings = DEFAULT_GLASS_SETTINGS) {
+  const settings = normalizeGlassSettings(glassSettings);
+  const canvasSize = isConstrainedExportDevice() ? 512 : 1024;
   const floorSize = 80;
   const halfFloor = floorSize / 2;
   const canvas = document.createElement('canvas');
@@ -3251,7 +8325,7 @@ function createGlassColorCastTextureMesh(placed, modelTransform = DEFAULT_MODEL_
   const context = canvas.getContext('2d');
   if (!context) return null;
   context.clearRect(0, 0, canvasSize, canvasSize);
-  context.globalAlpha = 0.5;
+  context.globalAlpha = 0.22 + settings.shadow * 0.42;
 
   const toCanvas = ([x, z]) => [
     ((x + halfFloor) / floorSize) * canvasSize,
@@ -3281,9 +8355,10 @@ function createGlassColorCastTextureMesh(placed, modelTransform = DEFAULT_MODEL_
     new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
-      opacity: 1,
+      opacity: 0.3 + settings.shadow * 0.62,
       depthWrite: false,
       depthTest: true,
+      blending: THREE.AdditiveBlending,
       toneMapped: false,
     }),
   );
@@ -3298,11 +8373,14 @@ function projectedGlassFootprintPoints(piece, modelTransform) {
   const footprint = worldFootprintPoints(piece);
   if (footprint.length < 3) return [];
   const height = Math.max(0.02, Number(piece.height) || 0.18);
+  // Extend the optical projection so thin universal-height pieces still cast
+  // a visible pool of color beyond their own footprint.
+  const projectedHeight = height * 5;
   const transformMatrix = modelTransformMatrix(modelTransform);
   const lightDirection = stageLightDirection();
   const points = footprint.flatMap(([x, z]) => [
     projectPointToStageFloor(new THREE.Vector3(x, 0, z).applyMatrix4(transformMatrix), lightDirection),
-    projectPointToStageFloor(new THREE.Vector3(x, height, z).applyMatrix4(transformMatrix), lightDirection),
+    projectPointToStageFloor(new THREE.Vector3(x, projectedHeight, z).applyMatrix4(transformMatrix), lightDirection),
   ]);
   const unique = uniquePoints(points);
   return convexHull(unique);
@@ -3330,6 +8408,166 @@ function glassCastOffset(height) {
   };
 }
 
+const SURFACE_STICKER_TEXTURE_CACHE = new Map();
+const SURFACE_STICKER_PREVIEW_TEXTURE_CACHE = { signature: '', texture: null };
+
+function drawSurfaceStickerShape(context, shape, size) {
+  const x = shape.x * size;
+  const y = shape.y * size;
+  const shapeSize = shape.size * size;
+  context.save();
+  context.globalAlpha = shape.opacity;
+  context.fillStyle = shape.color;
+  context.strokeStyle = shape.color;
+  context.translate(x, y);
+  context.rotate(THREE.MathUtils.degToRad(shape.rotation || 0));
+  if (shape.type === 'circle') {
+    context.beginPath();
+    context.arc(0, 0, shapeSize / 2, 0, Math.PI * 2);
+    context.fill();
+  } else if (shape.type === 'triangle') {
+    context.beginPath();
+    context.moveTo(0, -shapeSize / 2);
+    context.lineTo(shapeSize / 2, shapeSize / 2);
+    context.lineTo(-shapeSize / 2, shapeSize / 2);
+    context.closePath();
+    context.fill();
+  } else if (shape.type === 'line') {
+    context.lineWidth = Math.max(2, shapeSize * 0.16);
+    context.lineCap = 'round';
+    context.beginPath();
+    context.moveTo(-shapeSize / 2, 0);
+    context.lineTo(shapeSize / 2, 0);
+    context.stroke();
+  } else {
+    const height = shapeSize * 0.68;
+    context.fillRect(-shapeSize / 2, -height / 2, shapeSize, height);
+  }
+  context.restore();
+}
+
+function createSurfaceStickerTexture(sticker, shared = true) {
+  const normalized = normalizeSurfaceSticker(sticker);
+  const signature = surfaceStickerSignature(normalized);
+  if (shared && SURFACE_STICKER_TEXTURE_CACHE.has(signature)) return SURFACE_STICKER_TEXTURE_CACHE.get(signature);
+  if (!shared && SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.signature === signature) {
+    return SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.texture;
+  }
+  if (!shared && SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.texture) {
+    SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.texture.dispose();
+    SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.signature = '';
+    SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.texture = null;
+  }
+  const size = SURFACE_STICKER_TEXTURE_SIZE;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 8;
+  // Preview textures are shared by all matching stage instances and replaced as one unit.
+  texture.userData.sharedSurfaceStickerTexture = true;
+  const paint = (image = null) => {
+    context.clearRect(0, 0, size, size);
+    if (image) {
+      context.save();
+      context.globalAlpha = normalized.imageOpacity;
+      context.translate(normalized.imageX * size, normalized.imageY * size);
+      context.rotate(THREE.MathUtils.degToRad(normalized.imageRotation));
+      const imageSize = size * normalized.imageScale;
+      context.drawImage(image, -imageSize / 2, -imageSize / 2, imageSize, imageSize);
+      context.restore();
+    }
+    normalized.shapes.forEach((shape) => drawSurfaceStickerShape(context, shape, size));
+    texture.needsUpdate = true;
+  };
+  paint();
+  texture.userData.readyPromise = normalized.imageDataUrl
+    ? new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          paint(image);
+          resolve();
+        };
+        image.onerror = () => resolve();
+        image.src = normalized.imageDataUrl;
+      })
+    : Promise.resolve();
+  if (shared) SURFACE_STICKER_TEXTURE_CACHE.set(signature, texture);
+  else {
+    SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.signature = signature;
+    SURFACE_STICKER_PREVIEW_TEXTURE_CACHE.texture = texture;
+  }
+  return texture;
+}
+
+function createPieceSurfaceStickerOverlay(piece) {
+  if (!hasSurfaceStickerContent(piece.surfaceSticker)) return null;
+  const points = getLocalCollisionPoints(piece);
+  if (points.length < 3) return null;
+  const shape = new THREE.Shape();
+  points.forEach(([x, y], index) => {
+    if (index === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  });
+  shape.closePath();
+  const geometry = new THREE.ShapeGeometry(shape);
+  const position = geometry.getAttribute('position');
+  const uvs = new Float32Array(position.count * 2);
+  for (let index = 0; index < position.count; index += 1) {
+    const [u, v] = surfaceStickerUvAtLocalPoint(piece, position.getX(index), position.getY(index));
+    uvs[index * 2] = u;
+    uvs[index * 2 + 1] = v;
+  }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, Math.max(0.02, Number(piece.height) || 0.18) + 0.0025, 0);
+  const texture = createSurfaceStickerTexture(piece.surfaceSticker, !piece.surfaceStickerPreview);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 1,
+    alphaTest: 0.01,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const overlay = new THREE.Mesh(geometry, material);
+  overlay.name = 'piece-surface-sticker';
+  overlay.userData.isSurfaceSticker = true;
+  overlay.renderOrder = 7;
+  return overlay;
+}
+
+function updatePieceSurfaceStickerOverlay(object, piece, signature = pieceGeometrySignature(piece)) {
+  const stickerSignature = `${signature}|${piece.surfaceStickerPreview ? 'preview' : 'saved'}|${surfaceStickerSignature(piece.surfaceSticker)}`;
+  if (object.userData.surfaceStickerSignature === stickerSignature) return object.userData.surfaceStickerOverlay || null;
+  if (object.userData.surfaceStickerOverlay) {
+    object.remove(object.userData.surfaceStickerOverlay);
+    disposeObject(object.userData.surfaceStickerOverlay);
+    object.userData.surfaceStickerOverlay = null;
+  }
+  object.userData.surfaceStickerSignature = stickerSignature;
+  const overlay = createPieceSurfaceStickerOverlay(piece);
+  if (overlay) {
+    object.add(overlay);
+    object.userData.surfaceStickerOverlay = overlay;
+  }
+  return overlay;
+}
+
 function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSettings, geometrySignature = pieceGeometrySignature(piece)) {
   const normalizedMaterial = normalizeMaterialName(materialName);
   const isGlass = normalizedMaterial === 'glass';
@@ -3344,6 +8582,7 @@ function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSe
     renderSettings.edgeMode,
     renderSettings.edgeOffsetCount,
     renderSettings.edgeOffsetDistance,
+    piece.offsetLinesEnabled !== false ? 'offset-on' : 'offset-off',
   ].join('|');
   if (object.userData.stageEdgeSignature === signature) return;
   if (object.userData.stageEdgeOverlay) {
@@ -3353,6 +8592,7 @@ function updateStageEdgeOverlay(object, piece, styleName, materialName, renderSe
   }
   object.userData.stageEdgeSignature = signature;
   if (thickness <= 0) return;
+  if (renderSettings.edgeMode === 'offset' && piece.offsetLinesEnabled === false) return;
   const overlay = isPaper ? createPaperStageEdgeOverlay(piece, renderSettings) : createStageEdgeOverlay(piece, renderSettings, isGlass);
   if (!overlay) return;
   object.userData.stageEdgeOverlay = overlay;
@@ -3387,9 +8627,13 @@ function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
   if (!segments.length) return null;
   const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
-  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings);
-  const verticalPoints = renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
-  const instanceCount = edgeSegments.length * 2 + verticalPoints.length;
+  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings, {
+    joinedSegmentOffsets: !!piece.isFrameSlice,
+    boundaryPoints: piece.isFrameSlice ? getLocalCollisionPoints(piece) : undefined,
+  });
+  const topOnly = !!piece.isFrameSlice;
+  const verticalPoints = topOnly || renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
+  const instanceCount = edgeSegments.length * (topOnly ? 1 : 2) + verticalPoints.length;
   if (!instanceCount) return null;
   const material = new THREE.MeshBasicMaterial({
     color: renderSettings.edgeColor,
@@ -3409,8 +8653,10 @@ function createStageEdgeOverlay(piece, renderSettings, isGlass = false) {
   edgeSegments.forEach(([start, end]) => {
     setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, 0, interiorPoint);
     matrixIndex += 1;
-    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
-    matrixIndex += 1;
+    if (!topOnly) {
+      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
+      matrixIndex += 1;
+    }
   });
   verticalPoints.forEach(([x, y]) => {
     const matrix = new THREE.Matrix4();
@@ -3451,8 +8697,19 @@ function edgeLineInteriorOffsets(thickness, mode, count = DEFAULT_RENDER_SETTING
   return [0];
 }
 
-function edgeOverlaySegments(segments, thickness, renderSettings) {
+function edgeOverlaySegments(segments, thickness, renderSettings, options = {}) {
   const mode = renderSettings.edgeMode;
+  if (options.joinedSegmentOffsets) {
+    const boundary = options.boundaryPoints?.length >= 3
+      ? dedupeSequentialPoints(options.boundaryPoints)
+      : orderedBoundaryPoints(segments);
+    if (boundary.length >= 3) {
+      return edgeLineInteriorOffsets(thickness, mode, renderSettings.edgeOffsetCount, renderSettings.edgeOffsetDistance)
+        .map((distance) => offsetClosedBoundary(boundary, distance))
+        .filter((points) => points.length >= 3)
+        .flatMap((points) => polygonToEdges(points));
+    }
+  }
   if (mode === 'offset') {
     const boundary = orderedBoundaryPoints(segments);
     if (boundary.length >= 3) {
@@ -3472,7 +8729,7 @@ function edgeOverlaySegments(segments, thickness, renderSettings) {
 
 function offsetClosedBoundary(points, distance) {
   const clean = dedupeSequentialPoints(points);
-  if (clean.length < 3 || distance <= 0) return clean;
+  if (clean.length < 3 || Math.abs(distance) <= 0.000001) return clean;
   const signedArea = polygonArea2(clean);
   if (Math.abs(signedArea) < 0.0001) return clean;
   const inwardSign = signedArea > 0 ? 1 : -1;
@@ -3484,7 +8741,7 @@ function offsetClosedBoundary(points, distance) {
     const intersection = intersectInsetLines(prevLine, nextLine);
     if (!intersection) return fallbackInsetPoint(current, prevLine.normal, nextLine.normal, distance);
     const miterDistance = Math.hypot(intersection[0] - current[0], intersection[1] - current[1]);
-    if (miterDistance > distance * 5) return fallbackInsetPoint(current, prevLine.normal, nextLine.normal, distance);
+    if (miterDistance > Math.abs(distance) * 5) return fallbackInsetPoint(current, prevLine.normal, nextLine.normal, distance);
     return intersection;
   });
 }
@@ -3762,7 +9019,7 @@ function updateSelectionOutline(outline, pieces) {
       [start, end].flatMap((point) => {
         const [x, y] = mirrorLocalPointForPiece(piece, point);
         const [rx, ry] = rotatePoint(x, y, piece.rotation);
-        return [rx + piece.x, piece.height + 0.08, ry + piece.y];
+        return [rx + piece.x, (Number(piece.elevation) || 0) + piece.height + 0.08, ry + piece.y];
       }),
     ),
   );
@@ -3780,15 +9037,17 @@ function createShapePieceObject(piece) {
     else shape.lineTo(x, y);
   });
   shape.closePath();
+  const height = Math.max(0.02, Number(piece.height) || 0.18);
+  const bevelEnabled = !piece.isFrameSlice;
   const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: piece.height,
-    bevelEnabled: true,
-    bevelThickness: 0.035,
-    bevelSize: 0.035,
-    bevelSegments: 2,
+    depth: height,
+    bevelEnabled,
+    bevelThickness: bevelEnabled ? Math.min(0.018, height * 0.18) : 0,
+    bevelSize: bevelEnabled ? 0.018 : 0,
+    bevelSegments: bevelEnabled ? 3 : 0,
   });
   geometry.rotateX(Math.PI / 2);
-  geometry.translate(0, piece.height, 0);
+  geometry.translate(0, height, 0);
   const material = new THREE.MeshStandardMaterial({
     color: piece.color,
     metalness: 0.08,
@@ -3885,7 +9144,7 @@ function normalizeImportedObject(object, piece) {
   object.position.set(-center.x * scaleX, -bounds.min.y * verticalScale, -center.z * scaleZ);
 }
 
-function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEnabled = false) {
+function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEnabled = false, glassSettings = DEFAULT_GLASS_SETTINGS) {
   const normalizedMaterial = normalizeMaterialName(materialName);
   const isGlass = normalizedMaterial === 'glass';
   const isPaper = normalizedMaterial === 'paper';
@@ -3895,31 +9154,175 @@ function applyPieceMaterial(object, piece, materialName, selected, liveShadowsEn
     isPaper ? 'paper' : isGlass ? 'glass' : 'plastic',
     selected ? 'selected' : 'normal',
     castsLiveShadow ? 'live-shadows' : 'no-live-shadows',
+    isGlass ? glassSettingsSignature(glassSettings) : '',
   ].join('|');
   if (object.userData.materialSignature === signature) return;
   object.userData.materialSignature = signature;
   object.traverse((child) => {
-    if (child.userData?.isStageEdge) return;
+    if (child.userData?.isStageEdge || child.userData?.isSurfaceSticker) return;
     if (!child.isMesh || !child.material) return;
     child.castShadow = castsLiveShadow;
     child.receiveShadow = castsLiveShadow;
+    if (isGlass) {
+      child.material.dispose?.();
+      child.material = createArchitecturalGlassMaterial(piece, selected, glassSettings);
+      return;
+    }
+    if (child.material.isMeshPhysicalMaterial) {
+      child.material.dispose?.();
+      child.material = new THREE.MeshStandardMaterial();
+    }
     child.material.color.set(isPaper ? PAPER_BACKGROUND_COLOR : piece.color);
-    child.material.metalness = isGlass || isPaper ? 0 : 0.08;
-    child.material.roughness = isPaper ? 0.72 : isGlass ? 0.06 : 0.42;
-    child.material.transparent = isGlass;
-    child.material.opacity = isGlass ? 0.68 : 1;
-    child.material.depthWrite = !isGlass;
+    child.material.metalness = isPaper ? 0 : 0.08;
+    child.material.roughness = isPaper ? 0.72 : 0.42;
+    child.material.transparent = false;
+    child.material.opacity = 1;
+    child.material.depthWrite = true;
     child.material.side = THREE.FrontSide;
-    if ('clearcoat' in child.material) child.material.clearcoat = isGlass ? 0.65 : 0;
-    if ('clearcoatRoughness' in child.material) child.material.clearcoatRoughness = isGlass ? 0.05 : 0;
+    if ('clearcoat' in child.material) child.material.clearcoat = 0;
+    if ('clearcoatRoughness' in child.material) child.material.clearcoatRoughness = 0;
     if ('transmission' in child.material) child.material.transmission = 0;
     if ('thickness' in child.material) child.material.thickness = 0;
-    if ('ior' in child.material) child.material.ior = isGlass ? 1.48 : 1.5;
-    if ('attenuationColor' in child.material) child.material.attenuationColor.set(isGlass ? glassTintColor(piece.color) : '#ffffff');
+    if ('ior' in child.material) child.material.ior = 1.5;
+    if ('attenuationColor' in child.material) child.material.attenuationColor.set('#ffffff');
     if ('attenuationDistance' in child.material) child.material.attenuationDistance = Infinity;
     child.material.emissive?.set(isPaper ? PAPER_BACKGROUND_COLOR : selected ? '#362000' : '#000000');
-    child.material.emissiveIntensity = isPaper ? 0.18 : selected ? 0.12 : isGlass ? 0.05 : 0;
+    child.material.emissiveIntensity = isPaper ? 0.18 : selected ? 0.12 : 0;
     child.material.needsUpdate = true;
+  });
+}
+
+function GlassAppearanceControls({ settings, onChange }) {
+  const normalized = normalizeGlassSettings(settings);
+  const displayValue = (field) => normalized[field.id] * 100;
+  const update = (field, rawValue) => {
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) return;
+    onChange({
+      ...normalized,
+      [field.id]: numericValue / 100,
+    });
+  };
+  return (
+    <div className="glass-appearance-controls" aria-label="Glass appearance controls">
+      <div className="glass-controls-heading">
+        <span>Glass appearance</span>
+        <button type="button" onClick={() => onChange({ ...DEFAULT_GLASS_SETTINGS })}>Reset</button>
+      </div>
+      {GLASS_CONTROL_FIELDS.map((field) => (
+        <label className="glass-slider" key={field.id}>
+          <span>{field.label}</span>
+          <input
+            type="range"
+            min={field.min}
+            max={field.max}
+            step={field.step}
+            value={displayValue(field)}
+            onChange={(event) => update(field, event.target.value)}
+          />
+          <output>{Math.round(displayValue(field) * (field.id === 'thickness' ? 10 : 1)) / (field.id === 'thickness' ? 10 : 1)}{field.unit}</output>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function glassOpticalThickness(piece, glassSettings = DEFAULT_GLASS_SETTINGS) {
+  return clamp(
+    normalizeGlassSettings(glassSettings).thickness,
+    GLASS_MIN_OPTICAL_THICKNESS,
+    GLASS_MAX_OPTICAL_THICKNESS,
+  );
+}
+
+const GLASS_SURFACE_TEXTURE_CACHE = new Map();
+
+function createGlassSurfaceTexture(color, glassSettings = DEFAULT_GLASS_SETTINGS) {
+  const baseColor = normalizeHexColor(color, '#1c7c74');
+  const settings = normalizeGlassSettings(glassSettings);
+  const cacheKey = `${baseColor}|${glassSettingsSignature(settings)}`;
+  if (GLASS_SURFACE_TEXTURE_CACHE.has(cacheKey)) return GLASS_SURFACE_TEXTURE_CACHE.get(cacheKey);
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+  context.fillStyle = baseColor;
+  context.fillRect(0, 0, size, size);
+
+  const lightColor = new THREE.Color(baseColor).lerp(new THREE.Color('#ffffff'), 0.08 + settings.highlight * 0.2).getStyle();
+  const darkColor = new THREE.Color(baseColor).lerp(new THREE.Color('#05070a'), 0.08 + settings.edgeDarkness * 0.34).getStyle();
+  const directional = context.createLinearGradient(0, 0, size, size);
+  directional.addColorStop(0, lightColor);
+  directional.addColorStop(0.38, baseColor);
+  directional.addColorStop(1, darkColor);
+  context.globalAlpha = 0.7;
+  context.fillStyle = directional;
+  context.fillRect(0, 0, size, size);
+
+  const centerGlow = context.createRadialGradient(size * 0.38, size * 0.34, 0, size * 0.5, size * 0.5, size * 0.72);
+  centerGlow.addColorStop(0, `rgba(255,255,255,${0.05 + settings.highlight * 0.13})`);
+  centerGlow.addColorStop(0.58, 'rgba(255,255,255,0)');
+  centerGlow.addColorStop(1, `rgba(3,5,8,${0.05 + settings.edgeDarkness * 0.2})`);
+  context.globalAlpha = 1;
+  context.fillStyle = centerGlow;
+  context.fillRect(0, 0, size, size);
+
+  if (settings.frosted > 0.01) {
+    let seed = Number.parseInt(baseColor.slice(1), 16) || 1;
+    context.globalAlpha = 0.018 + settings.frosted * 0.075;
+    for (let index = 0; index < 54; index += 1) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      const x = (seed & 0xffff) / 0xffff * size;
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      const y = (seed & 0xffff) / 0xffff * size;
+      const radius = 0.5 + ((seed >>> 16) / 0xffff) * 2.2;
+      context.fillStyle = index % 3 ? '#ffffff' : '#0b1015';
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+  context.globalAlpha = 1;
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.anisotropy = 4;
+  texture.userData.sharedGlassTexture = true;
+  texture.needsUpdate = true;
+  GLASS_SURFACE_TEXTURE_CACHE.set(cacheKey, texture);
+  return texture;
+}
+
+function createArchitecturalGlassMaterial(piece, selected = false, glassSettings = DEFAULT_GLASS_SETTINGS) {
+  const settings = normalizeGlassSettings(glassSettings);
+  const baseColor = normalizeHexColor(piece.color, '#1c7c74');
+  const tint = glassTintColor(baseColor);
+  const roughness = clamp(0.16 - settings.glossiness * 0.135 + settings.frosted * 0.24, 0.015, 0.36);
+  return new THREE.MeshPhysicalMaterial({
+    color: '#ffffff',
+    map: createGlassSurfaceTexture(baseColor, settings),
+    metalness: 0,
+    roughness,
+    transmission: settings.transparency,
+    thickness: glassOpticalThickness(piece, settings),
+    ior: GLASS_IOR,
+    specularIntensity: 0.35 + settings.reflection * 0.65,
+    specularColor: '#ffffff',
+    clearcoat: 0.2 + settings.highlight * 0.8,
+    clearcoatRoughness: clamp((1 - settings.glossiness) * 0.1 + settings.frosted * 0.18, 0.008, 0.24),
+    attenuationColor: tint,
+    attenuationDistance: 0.42 - settings.edgeDarkness * 0.3,
+    envMapIntensity: 0.4 + settings.reflection * 1.45,
+    transparent: false,
+    opacity: 1,
+    depthWrite: true,
+    depthTest: true,
+    side: THREE.FrontSide,
+    emissive: new THREE.Color(selected ? '#2c1b08' : '#000000'),
+    emissiveIntensity: selected ? 0.045 : 0,
   });
 }
 
@@ -3934,11 +9337,11 @@ function disposeObject(object) {
     if (child.geometry && !child.geometry.userData?.cachedGlbSource) child.geometry.dispose();
     if (Array.isArray(child.material)) {
       child.material.forEach((material) => {
-        material.map?.dispose();
+        if (!material.map?.userData?.sharedGlassTexture && !material.map?.userData?.sharedSurfaceStickerTexture) material.map?.dispose();
         material.dispose();
       });
     } else if (child.material) {
-      child.material.map?.dispose();
+      if (!child.material.map?.userData?.sharedGlassTexture && !child.material.map?.userData?.sharedSurfaceStickerTexture) child.material.map?.dispose();
       child.material.dispose();
     }
   });
@@ -3949,7 +9352,7 @@ function findBestSnap(moving, others, options = {}) {
   const isColliding = collided.length > 0;
   const snapTargets = isColliding ? collided : nearbySnapTargets(moving, others);
   const blockerScope = relevantSnapBlockers(moving, others, snapTargets);
-  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope]);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope, ...(options.edgeBlockers || [])]);
   let best = null;
   snapTargets.forEach((target) => {
     if (moving.sourceId && target.sourceId && moving.sourceId === target.sourceId) return;
@@ -3997,7 +9400,7 @@ function findBestCollisionPlacement(moving, others, options = {}) {
   if (!collided.length) return null;
   const snapTargets = closestCollisionTargets(moving, collided);
   const blockerScope = relevantSnapBlockers(moving, others, snapTargets);
-  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope]);
+  const movingEdges = visibleWorldEdges(moving, [moving, ...blockerScope, ...(options.edgeBlockers || [])]);
   let best = null;
 
   snapTargets.forEach((target) => {
@@ -4274,9 +9677,10 @@ function framePlacedPieces(pieces, frameLoop) {
     const clippedPolygons = loopIsConvex
       ? [clipPolygonToConvexFrame(polygon, loop)]
       : clipPolygonToFrameTriangles(polygon, frameTriangles);
-    return clippedPolygons
+    const validClippedPolygons = clippedPolygons
       .map((clipped) => cleanClippedPolygon(clipped))
-      .filter((clipped) => clipped.length >= 3 && polygonArea(clipped) >= 0.0001)
+      .filter((clipped) => clipped.length >= 3 && polygonArea(clipped) >= 0.0001);
+    return mergeAdjacentClippedPolygons(validClippedPolygons)
       .map((clipped) => createFramedSlicePiece(piece, clipped));
   });
 }
@@ -4342,8 +9746,164 @@ function triangulateFrameLoop(frame) {
 }
 
 function cleanClippedPolygon(points) {
-  const clean = dedupeVectorPoints(points);
+  let clean = dedupeVectorPoints(points);
   if (clean.length > 1 && clean[0].distanceTo(clean[clean.length - 1]) < 0.0001) clean.pop();
+  clean = simplifyFrameSlicePolygon(clean);
+  return polygonSignedArea(clean) < 0 ? [...clean].reverse() : clean;
+}
+
+function mergeAdjacentClippedPolygons(polygons) {
+  const boundaryLoops = mergeClippedPolygonBoundaryLoops(polygons);
+  if (boundaryLoops.length) return boundaryLoops;
+  const merged = polygons.map((polygon) => cleanClippedPolygon(polygon));
+  let didMerge = true;
+  while (didMerge && merged.length > 1) {
+    didMerge = false;
+    const candidatePoints = merged.flat();
+    const splitPolygons = merged.map((polygon) => splitPolygonEdgesAtPoints(polygon, candidatePoints));
+    for (let firstIndex = 0; firstIndex < splitPolygons.length && !didMerge; firstIndex += 1) {
+      for (let secondIndex = firstIndex + 1; secondIndex < splitPolygons.length; secondIndex += 1) {
+        const combined = mergePolygonsAlongSharedEdge(splitPolygons[firstIndex], splitPolygons[secondIndex]);
+        if (!combined) continue;
+        merged[firstIndex] = cleanClippedPolygon(combined);
+        merged.splice(secondIndex, 1);
+        didMerge = true;
+        break;
+      }
+    }
+  }
+  return merged.filter((polygon) => polygon.length >= 3 && polygonArea(polygon) >= 0.0001);
+}
+
+function frameBoundaryPointKey(point) {
+  return `${Math.round(point.x * 10000)},${Math.round(point.y * 10000)}`;
+}
+
+function frameBoundaryEdgeKey(start, end) {
+  const startKey = frameBoundaryPointKey(start);
+  const endKey = frameBoundaryPointKey(end);
+  return startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+}
+
+function mergeClippedPolygonBoundaryLoops(polygons) {
+  if (!polygons.length) return [];
+  const cleanPolygons = polygons.map((polygon) => cleanClippedPolygon(polygon));
+  const candidatePoints = cleanPolygons.flat();
+  const splitPolygons = cleanPolygons.map((polygon) => splitPolygonEdgesAtPoints(polygon, candidatePoints));
+  const boundaryEdges = new Map();
+  splitPolygons.forEach((polygon) => {
+    polygon.forEach((start, index) => {
+      const end = polygon[(index + 1) % polygon.length];
+      if (start.distanceTo(end) <= 0.0001) return;
+      const key = frameBoundaryEdgeKey(start, end);
+      if (boundaryEdges.has(key)) boundaryEdges.delete(key);
+      else boundaryEdges.set(key, { start: start.clone(), end: end.clone() });
+    });
+  });
+  const remaining = [...boundaryEdges.values()];
+  const loops = [];
+  while (remaining.length) {
+    const first = remaining.shift();
+    const loop = [first.start.clone(), first.end.clone()];
+    const startKey = frameBoundaryPointKey(first.start);
+    let currentKey = frameBoundaryPointKey(first.end);
+    for (let guard = 0; guard <= boundaryEdges.size + 2 && currentKey !== startKey; guard += 1) {
+      let nextIndex = remaining.findIndex((edge) => frameBoundaryPointKey(edge.start) === currentKey);
+      let reverse = false;
+      if (nextIndex < 0) {
+        nextIndex = remaining.findIndex((edge) => frameBoundaryPointKey(edge.end) === currentKey);
+        reverse = nextIndex >= 0;
+      }
+      if (nextIndex < 0) break;
+      const [next] = remaining.splice(nextIndex, 1);
+      const nextPoint = reverse ? next.start : next.end;
+      loop.push(nextPoint.clone());
+      currentKey = frameBoundaryPointKey(nextPoint);
+    }
+    if (currentKey !== startKey) continue;
+    if (loop.length > 1 && frameBoundaryPointKey(loop[loop.length - 1]) === startKey) loop.pop();
+    const cleanLoop = cleanClippedPolygon(loop);
+    if (cleanLoop.length >= 3 && polygonArea(cleanLoop) >= 0.0001) loops.push(cleanLoop);
+  }
+  return loops;
+}
+
+function splitPolygonEdgesAtPoints(polygon, candidatePoints) {
+  const split = [];
+  polygon.forEach((start, index) => {
+    const end = polygon[(index + 1) % polygon.length];
+    const edge = end.clone().sub(start);
+    const edgeLengthSquared = edge.lengthSq();
+    const interiorPoints = edgeLengthSquared <= 0.00000001
+      ? []
+      : candidatePoints
+          .filter((point) => point.distanceTo(start) > 0.0001 && point.distanceTo(end) > 0.0001 && pointOnSegment(point, start, end))
+          .map((point) => ({ point, position: point.clone().sub(start).dot(edge) / edgeLengthSquared }))
+          .filter(({ position }) => position > 0.00001 && position < 0.99999)
+          .sort((a, b) => a.position - b.position);
+    split.push(start.clone(), ...interiorPoints.map(({ point }) => point.clone()));
+  });
+  return dedupeVectorPoints(split);
+}
+
+function mergePolygonsAlongSharedEdge(first, second) {
+  for (let firstEdge = 0; firstEdge < first.length; firstEdge += 1) {
+    const firstStart = first[firstEdge];
+    const firstEnd = first[(firstEdge + 1) % first.length];
+    for (let secondEdge = 0; secondEdge < second.length; secondEdge += 1) {
+      const secondStart = second[secondEdge];
+      const secondEnd = second[(secondEdge + 1) % second.length];
+      if (firstStart.distanceTo(secondEnd) > 0.0002 || firstEnd.distanceTo(secondStart) > 0.0002) continue;
+      const firstBoundary = polygonVertexPath(first, (firstEdge + 1) % first.length, firstEdge);
+      const secondBoundary = polygonVertexPath(second, (secondEdge + 1) % second.length, secondEdge);
+      return dedupeVectorPoints([
+        ...firstBoundary,
+        ...secondBoundary.slice(1, -1),
+      ]);
+    }
+  }
+  return null;
+}
+
+function polygonVertexPath(polygon, startIndex, endIndex) {
+  const path = [];
+  let index = startIndex;
+  for (let guard = 0; guard <= polygon.length; guard += 1) {
+    path.push(polygon[index].clone());
+    if (index === endIndex) break;
+    index = (index + 1) % polygon.length;
+  }
+  return path;
+}
+
+function simplifyFrameSlicePolygon(points) {
+  let clean = points.filter((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return !next || point.distanceTo(next) > 0.001;
+  });
+  let changed = true;
+  while (changed && clean.length > 3) {
+    changed = false;
+    clean = clean.filter((point, index) => {
+      const previous = clean[(index - 1 + clean.length) % clean.length];
+      const next = clean[(index + 1) % clean.length];
+      const prevVector = point.clone().sub(previous);
+      const nextVector = next.clone().sub(point);
+      const prevLength = prevVector.length();
+      const nextLength = nextVector.length();
+      if (prevLength < 0.001 || nextLength < 0.001) {
+        changed = true;
+        return false;
+      }
+      const cross = Math.abs(prevVector.x * nextVector.y - prevVector.y * nextVector.x);
+      const turnArea = cross / Math.max(prevLength * nextLength, 0.000001);
+      if (turnArea < 0.002 && previous.distanceTo(next) > 0.001) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+  }
   return clean;
 }
 
@@ -4391,21 +9951,85 @@ function dedupeVectorPoints(points) {
   return points.filter((point, index) => index === 0 || point.distanceTo(points[index - 1]) > 0.0001);
 }
 
+function pieceLocalPointFromWorld(piece, worldX, worldY) {
+  const dx = worldX - (Number(piece.x) || 0);
+  const dy = worldY - (Number(piece.y) || 0);
+  const rotation = Number(piece.rotation) || 0;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const mirroredX = cos * dx + sin * dy;
+  const mirroredY = -sin * dx + cos * dy;
+  return [piece.mirrorHorizontal ? -mirroredX : mirroredX, piece.mirrorVertical ? -mirroredY : mirroredY];
+}
+
+function centeredSquareBounds(points) {
+  if (!Array.isArray(points) || !points.length) return { minX: 0, minY: 0, size: 1 };
+  const xs = points.map(([x]) => Number(x)).filter(Number.isFinite);
+  const ys = points.map(([, y]) => Number(y)).filter(Number.isFinite);
+  if (!xs.length || !ys.length) return { minX: 0, minY: 0, size: 1 };
+  const rawMinX = Math.min(...xs);
+  const rawMaxX = Math.max(...xs);
+  const rawMinY = Math.min(...ys);
+  const rawMaxY = Math.max(...ys);
+  const size = Math.max(0.0001, rawMaxX - rawMinX, rawMaxY - rawMinY);
+  return {
+    minX: (rawMinX + rawMaxX - size) / 2,
+    minY: (rawMinY + rawMaxY - size) / 2,
+    size,
+  };
+}
+
+function surfaceStickerUvAtLocalPoint(piece, x, y) {
+  const transform = piece.surfaceStickerUvTransform;
+  if (transform && Object.values(transform).every((value) => Number.isFinite(Number(value)))) {
+    return [
+      Number(transform.uX) * x + Number(transform.uY) * y + Number(transform.uOffset),
+      Number(transform.vX) * x + Number(transform.vY) * y + Number(transform.vOffset),
+    ];
+  }
+  const sourcePoints = getLocalCollisionPoints(piece);
+  if (sourcePoints.length < 3) return [0.5, 0.5];
+  const bounds = centeredSquareBounds(sourcePoints);
+  return [(x - bounds.minX) / bounds.size, 1 - (y - bounds.minY) / bounds.size];
+}
+
+function framedSliceStickerUvTransform(piece, center) {
+  if (!hasSurfaceStickerContent(piece.surfaceSticker)) return undefined;
+  const sample = (sliceX, sliceY) => {
+    const [localX, localY] = pieceLocalPointFromWorld(piece, center.x + sliceX, center.y + sliceY);
+    return surfaceStickerUvAtLocalPoint(piece, localX, localY);
+  };
+  const origin = sample(0, 0);
+  const horizontal = sample(1, 0);
+  const vertical = sample(0, 1);
+  return {
+    uX: horizontal[0] - origin[0],
+    uY: vertical[0] - origin[0],
+    uOffset: origin[0],
+    vX: horizontal[1] - origin[1],
+    vY: vertical[1] - origin[1],
+    vOffset: origin[1],
+  };
+}
+
 function createFramedSlicePiece(piece, worldPolygon) {
   const center = polygonCenter(worldPolygon);
   const localPoints = worldPolygon.map((point) => [Number((point.x - center.x).toFixed(5)), Number((point.y - center.y).toFixed(5))]);
   return {
     ...piece,
     id: `${piece.id}-frame-${crypto.randomUUID()}`,
+    sourceId: `${piece.sourceId || piece.id}-frame-slice`,
     name: `${piece.name} slice`,
     type: 'shape',
+    isFrameSlice: true,
     objText: '',
     glbDataUrl: '',
     glbUrl: '',
     points: localPoints,
     snapEdges: polygonToEdges(localPoints),
     verticalEdges: [],
-    displayEdges: polygonToEdges(localPoints),
+    displayEdges: [],
+    surfaceStickerUvTransform: framedSliceStickerUvTransform(piece, center),
     sourceHeightPx: '',
     sourceWidthPx: '',
     sourceLengthPx: '',
@@ -4416,6 +10040,7 @@ function createFramedSlicePiece(piece, worldPolygon) {
     x: center.x,
     y: center.y,
     rotation: 0,
+    mirrorHorizontal: false,
     mirrorVertical: false,
     snappedTo: null,
     groupInstanceId: null,
@@ -4646,7 +10271,7 @@ function scaleLocalPointForPiece(piece, [x, y]) {
 }
 
 function mirrorLocalPointForPiece(piece, [x, y]) {
-  return [x, piece.mirrorVertical ? -y : y];
+  return [piece.mirrorHorizontal ? -x : x, piece.mirrorVertical ? -y : y];
 }
 
 function footprintScaleForPiece(piece) {
@@ -4681,6 +10306,215 @@ function pieceStageDimensions(piece) {
     length: base.length * scale.y,
     height: Number(piece.height) || 0.18,
   };
+}
+
+function originalPieceStageDimensions(piece) {
+  const universal = universalDefaultStageDimensions(piece);
+  if (universal) return universal;
+  return importedOriginalPieceStageDimensions(piece);
+}
+
+function importedOriginalPieceStageDimensions(piece) {
+  const defaultPiece = DEFAULT_PIECE_BY_ID.get(piece.id);
+  const source = piece || defaultPiece;
+  const fallback = defaultPiece || piece;
+  const sourceBase = baseFootprintDimensions(source);
+  const fallbackBase = fallback && fallback !== source ? baseFootprintDimensions(fallback) : sourceBase;
+  return {
+    width: Number(source.sourceWidthPx) || Number(fallback?.sourceWidthPx) || sourceBase.width || fallbackBase.width,
+    length: Number(source.sourceLengthPx) || Number(fallback?.sourceLengthPx) || sourceBase.length || fallbackBase.length,
+    height: Number(source.sourceHeightPx) || Number(fallback?.sourceHeightPx) || Number(fallback?.height) || Number(source.height) || 0.18,
+  };
+}
+
+function universalDefaultStageDimensions(piece) {
+  const width = Number(piece?.defaultStageWidth);
+  const length = Number(piece?.defaultStageLength);
+  const height = Number(piece?.defaultHeight);
+  if (Number.isFinite(width) && width > 0 && Number.isFinite(length) && length > 0 && Number.isFinite(height) && height > 0) {
+    return { width, length, height };
+  }
+  return null;
+}
+
+function sizePieceFromOriginal(piece, scale = 1) {
+  const cleanScale = Number.isFinite(Number(scale)) && Number(scale) > 0 ? Number(scale) : 1;
+  const original = originalPieceStageDimensions(piece);
+  return {
+    ...piece,
+    height: original.height * cleanScale,
+    stageWidth: original.width * cleanScale,
+    stageLength: original.length * cleanScale,
+    keepAspectRatio: true,
+  };
+}
+
+function sizePieceFromImportedOriginal(piece, scale = 1) {
+  const cleanScale = Number.isFinite(Number(scale)) && Number(scale) > 0 ? Number(scale) : 1;
+  const original = importedOriginalPieceStageDimensions(piece);
+  return {
+    ...piece,
+    height: original.height * cleanScale,
+    stageWidth: original.width * cleanScale,
+    stageLength: original.length * cleanScale,
+    keepAspectRatio: true,
+  };
+}
+
+function sizePieceCurrentToHeight(piece, targetHeight) {
+  const cleanHeight = Number.isFinite(Number(targetHeight)) && Number(targetHeight) > 0 ? Number(targetHeight) : Number(piece.height) || 0.18;
+  const dimensions = pieceStageDimensions(piece);
+  const currentHeight = Number(piece.height) || dimensions.height;
+  const scale = Number.isFinite(currentHeight) && currentHeight > 0 ? cleanHeight / currentHeight : 1;
+  return {
+    ...piece,
+    height: cleanHeight,
+    stageWidth: dimensions.width * scale,
+    stageLength: dimensions.length * scale,
+    keepAspectRatio: true,
+  };
+}
+
+function sizePieceToHeight(piece, targetHeight) {
+  const original = originalPieceStageDimensions(piece);
+  const cleanHeight = Number.isFinite(Number(targetHeight)) && Number(targetHeight) > 0 ? Number(targetHeight) : original.height;
+  const scale = original.height > 0 ? cleanHeight / original.height : 1;
+  return sizePieceFromOriginal(piece, scale);
+}
+
+function sizePieceHeightOnly(piece, targetHeight) {
+  const cleanHeight = Number.isFinite(Number(targetHeight)) && Number(targetHeight) > 0 ? Number(targetHeight) : Number(piece.height) || 0.18;
+  const dimensions = pieceStageDimensions(piece);
+  return {
+    ...piece,
+    height: cleanHeight,
+    stageWidth: dimensions.width,
+    stageLength: dimensions.length,
+    keepAspectRatio: false,
+  };
+}
+
+function markPieceSettingsAsUniversalDefault(piece, options = {}) {
+  const dimensions = pieceStageDimensions(piece);
+  const defaultColor = options.forceUniversalColor ? universalPieceColor(piece.group, piece.name) || piece.color : piece.color;
+  return {
+    ...piece,
+    color: options.forceUniversalColor ? defaultColor : piece.color,
+    defaultColor,
+    defaultHeight: Number(piece.height) || dimensions.height,
+    defaultStageWidth: dimensions.width,
+    defaultStageLength: dimensions.length,
+  };
+}
+
+function promotePiecesToUniversalDefaults(pieces) {
+  let changed = false;
+  const promotedPieces = pieces.map((piece) => {
+    if (!DEFAULT_PIECE_BY_ID.has(piece.id)) return piece;
+    const nextPiece = markPieceSettingsAsUniversalDefault(piece, { forceUniversalColor: true });
+    if (
+      !numbersClose(piece.height, nextPiece.height) ||
+      !numbersClose(piece.stageWidth, nextPiece.stageWidth) ||
+      !numbersClose(piece.stageLength, nextPiece.stageLength) ||
+      piece.color !== nextPiece.color ||
+      piece.defaultColor !== nextPiece.defaultColor ||
+      !numbersClose(piece.defaultHeight, nextPiece.defaultHeight) ||
+      !numbersClose(piece.defaultStageWidth, nextPiece.defaultStageWidth) ||
+      !numbersClose(piece.defaultStageLength, nextPiece.defaultStageLength)
+    ) {
+      changed = true;
+    }
+    return nextPiece;
+  });
+  return { pieces: promotedPieces, changed };
+}
+
+function normalizePiecesToShamsehReferenceWidth(pieces) {
+  const referenceGroups = Object.keys(SHAMSEH_REFERENCE_BY_GROUP).map(normalizePieceGroupName);
+  const referenceByGroup = new Map(
+    Object.entries(SHAMSEH_REFERENCE_BY_GROUP).map(([group, name]) => [normalizePieceGroupName(group), slugify(name)]),
+  );
+  const targetGroupPieces = pieces.filter((piece) => DEFAULT_PIECE_BY_ID.has(piece.id) && referenceByGroup.has(normalizePieceGroupName(piece.group)));
+  if (!targetGroupPieces.length || targetGroupPieces.some((piece) => !hasMeasuredSourceDimensions(piece))) return null;
+
+  const referencePieces = new Map();
+  for (const groupName of referenceGroups) {
+    const referenceSlug = referenceByGroup.get(groupName);
+    const referencePiece = targetGroupPieces.find(
+      (piece) => normalizePieceGroupName(piece.group) === groupName && slugify(piece.name) === referenceSlug,
+    );
+    if (!referencePiece) return null;
+    const referenceDimensions = importedOriginalPieceStageDimensions(referencePiece);
+    if (
+      !Number.isFinite(referenceDimensions.width) ||
+      referenceDimensions.width <= 0 ||
+      !Number.isFinite(referenceDimensions.height) ||
+      referenceDimensions.height <= 0
+    ) {
+      return null;
+    }
+    referencePieces.set(groupName, { piece: referencePiece, width: referenceDimensions.width });
+  }
+
+  const targetReference = referencePieces.get(normalizePieceGroupName(SHAMSEH_REFERENCE_GROUP));
+  const targetWidth = targetReference?.width;
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) return null;
+
+  const referenceHeights = new Map();
+  for (const [groupName, reference] of referencePieces) {
+    const scale = targetWidth / reference.width;
+    const scaledReference = sizePieceFromImportedOriginal(reference.piece, scale);
+    const referenceHeight = Number(scaledReference.height);
+    if (!Number.isFinite(referenceHeight) || referenceHeight <= 0) return null;
+    referenceHeights.set(groupName, referenceHeight);
+  }
+
+  let changed = false;
+  const normalizedPieces = pieces.map((piece) => {
+    const groupName = normalizePieceGroupName(piece.group);
+    if (!referenceByGroup.has(groupName) || !DEFAULT_PIECE_BY_ID.has(piece.id) || !hasMeasuredSourceDimensions(piece)) return piece;
+    const referenceWidth = referencePieces.get(groupName)?.width;
+    const referenceHeight = referenceHeights.get(groupName);
+    if (!Number.isFinite(referenceWidth) || referenceWidth <= 0) return piece;
+    if (!Number.isFinite(referenceHeight) || referenceHeight <= 0) return piece;
+    const scale = targetWidth / referenceWidth;
+    const scaledPiece = sizePieceFromImportedOriginal(piece, scale);
+    const groupHeightPiece = sizePieceCurrentToHeight(scaledPiece, referenceHeight);
+    const nextPiece = markPieceSettingsAsUniversalDefault(sizePieceHeightOnly(groupHeightPiece, UNIVERSAL_PIECE_HEIGHT), {
+      forceUniversalColor: true,
+    });
+    if (
+      !numbersClose(piece.height, nextPiece.height) ||
+      !numbersClose(piece.stageWidth, nextPiece.stageWidth) ||
+      !numbersClose(piece.stageLength, nextPiece.stageLength) ||
+      piece.color !== nextPiece.defaultColor ||
+      !numbersClose(piece.defaultHeight, nextPiece.defaultHeight) ||
+      !numbersClose(piece.defaultStageWidth, nextPiece.defaultStageWidth) ||
+      !numbersClose(piece.defaultStageLength, nextPiece.defaultStageLength) ||
+      piece.keepAspectRatio === false
+    ) {
+      changed = true;
+    }
+    return nextPiece;
+  });
+
+  return { pieces: normalizedPieces, changed };
+}
+
+function hasMeasuredSourceDimensions(piece) {
+  return (
+    piece.analysisVersion === ANALYSIS_VERSION &&
+    Number.isFinite(Number(piece.sourceHeightPx)) &&
+    Number(piece.sourceHeightPx) > 0 &&
+    Number.isFinite(Number(piece.sourceWidthPx)) &&
+    Number(piece.sourceWidthPx) > 0 &&
+    Number.isFinite(Number(piece.sourceLengthPx)) &&
+    Number(piece.sourceLengthPx) > 0
+  );
+}
+
+function numbersClose(a, b, tolerance = 0.0005) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) <= tolerance;
 }
 
 function draftStageDimensions(draft) {
@@ -4730,6 +10564,53 @@ function rotatePoint(x, y, rotation) {
   return [x * cos - y * sin, x * sin + y * cos];
 }
 
+function selectionCenter(pieces) {
+  if (!pieces.length) return { x: 0, y: 0, elevation: 0 };
+  const bounds = sceneBounds(pieces);
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+    elevation: pieces.reduce((sum, piece) => sum + (Number(piece.elevation) || 0), 0) / pieces.length,
+  };
+}
+
+function transformSelectedPiece(piece, { scaleDelta, positionDelta, rotationDelta, center, transformAsGroup }) {
+  const dimensions = pieceStageDimensions(piece);
+  const next = {
+    ...piece,
+    height: Math.max(0.001, dimensions.height * scaleDelta.y),
+    stageWidth: Math.max(0.001, dimensions.width * scaleDelta.x),
+    stageLength: Math.max(0.001, dimensions.length * scaleDelta.z),
+    elevation: (Number(piece.elevation) || 0) + positionDelta.y,
+    tiltX: (Number(piece.tiltX) || 0) + rotationDelta.x,
+    tiltZ: (Number(piece.tiltZ) || 0) + rotationDelta.z,
+    snappedTo: null,
+  };
+  if (transformAsGroup && center) {
+    let relativeX = ((piece.x || 0) - center.x) * scaleDelta.x;
+    let relativeElevation = ((Number(piece.elevation) || 0) - center.elevation) * scaleDelta.y;
+    let relativeY = ((piece.y || 0) - center.y) * scaleDelta.z;
+    if (rotationDelta.x) {
+      [relativeElevation, relativeY] = rotatePoint(relativeElevation, relativeY, rotationDelta.x);
+    }
+    if (rotationDelta.y) {
+      [relativeX, relativeY] = rotatePoint(relativeX, relativeY, rotationDelta.y);
+    }
+    if (rotationDelta.z) {
+      [relativeX, relativeElevation] = rotatePoint(relativeX, relativeElevation, rotationDelta.z);
+    }
+    next.x = center.x + relativeX + positionDelta.x;
+    next.y = center.y + relativeY + positionDelta.z;
+    next.elevation = center.elevation + relativeElevation + positionDelta.y;
+    next.rotation = normalizeAngle((piece.rotation || 0) + rotationDelta.y);
+    return next;
+  }
+  next.x = (piece.x || 0) + positionDelta.x;
+  next.y = (piece.y || 0) + positionDelta.z;
+  next.rotation = normalizeAngle((piece.rotation || 0) + rotationDelta.y);
+  return next;
+}
+
 function normalizeAngle(angle) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
@@ -4742,31 +10623,66 @@ function countSnappedPairs(placed) {
   return placed.filter((item) => item.snappedTo).length;
 }
 
-function PieceIcon({ piece }) {
-  const schematic = useMemo(() => {
-    const segments = getRealFootprintSegments(piece);
-    const points = segments.flat();
-    const verticalEdges = getIconVerticalPoints(piece);
-    const allPoints = [...points, ...verticalEdges];
-    if (!allPoints.length) {
-      return { segments: [], verticalEdges: [] };
+function buildItemSummaryItems(placed) {
+  const items = new Map();
+  placed.forEach((piece) => {
+    const key = piece.sourceId || piece.name || piece.id;
+    const existing = items.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
     }
-    const xs = allPoints.map(([x]) => x);
-    const ys = allPoints.map(([, y]) => y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const scale = 38 / Math.max(maxX - minX || 1, maxY - minY || 1);
-    const project = ([x, y]) => [(x - minX) * scale + 5, (y - minY) * scale + 5];
-    return {
-      segments: segments.map(([start, end]) => [project(start), project(end)]),
-      verticalEdges: verticalEdges.map(project),
-    };
-  }, [piece]);
+    items.set(key, {
+      key,
+      name: piece.name || 'Item',
+      piece,
+      count: 1,
+    });
+  });
+  return Array.from(items.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function pieceIconSchematic(piece, fitFootprintOnly = false) {
+  const segments = getRealFootprintSegments(piece);
+  const polygon = getLocalCollisionPoints(piece);
+  const points = segments.flat();
+  const verticalEdges = getIconVerticalPoints(piece);
+  const allPoints = fitFootprintOnly && polygon.length ? polygon : [...points, ...verticalEdges, ...polygon];
+  if (!allPoints.length) return { segments: [], verticalEdges: [], polygon: [] };
+  const xs = allPoints.map(([x]) => x);
+  const ys = allPoints.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const scale = 38 / Math.max(width || 1, height || 1);
+  const offsetX = 5 + (38 - width * scale) / 2;
+  const offsetY = 5 + (38 - height * scale) / 2;
+  const project = ([x, y]) => [(x - minX) * scale + offsetX, (y - minY) * scale + offsetY];
+  return {
+    segments: segments.map(([start, end]) => [project(start), project(end)]),
+    verticalEdges: verticalEdges.map(project),
+    polygon: polygon.map(project),
+  };
+}
+
+function PieceIcon({ piece, filled = false }) {
+  const schematic = useMemo(() => pieceIconSchematic(piece), [piece]);
+  const color = normalizeHexColor(piece.color, '#1c7c74');
   return (
     <svg className="piece-icon" viewBox="0 0 48 48" aria-hidden="true">
-      <g stroke={piece.color} strokeLinecap="round" strokeLinejoin="round">
+      {filled && schematic.polygon.length >= 3 && (
+        <polygon
+          points={schematic.polygon.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')}
+          fill={color}
+          stroke="#2d2924"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+      )}
+      <g stroke={filled ? '#2d2924' : color} strokeLinecap="round" strokeLinejoin="round" fill="none">
         {schematic.segments.map(([start, end], index) => (
           <line
             key={`${start.join(',')}-${end.join(',')}-${index}`}
@@ -4778,11 +10694,423 @@ function PieceIcon({ piece }) {
           />
         ))}
         {schematic.verticalEdges.map(([x, y], index) => (
-          <circle key={`${x}-${y}-${index}`} cx={x} cy={y} r="1.8" fill={piece.color} stroke="none" />
+          <circle key={`${x}-${y}-${index}`} cx={x} cy={y} r="1.8" fill={filled ? '#2d2924' : color} stroke="none" />
         ))}
       </g>
     </svg>
   );
+}
+
+function normalizeSurfaceSticker(sticker = {}) {
+  const source = sticker && typeof sticker === 'object' ? sticker : {};
+  const imageDataUrl = typeof source.imageDataUrl === 'string' && /^data:image\/(png|webp);base64,/i.test(source.imageDataUrl)
+    ? source.imageDataUrl
+    : '';
+  const shapes = (Array.isArray(source.shapes) ? source.shapes : [])
+    .filter((shape) => shape && SURFACE_STICKER_SHAPE_TYPES.has(shape.type))
+    .slice(-SURFACE_STICKER_MAX_SHAPES)
+    .map((shape, index) => ({
+      id: typeof shape.id === 'string' ? shape.id : `sticker-shape-${index}`,
+      type: shape.type,
+      x: clamp(Number(shape.x) || 0.5, 0, 1),
+      y: clamp(Number(shape.y) || 0.5, 0, 1),
+      size: clamp(Number(shape.size) || 0.18, 0.04, 0.7),
+      color: normalizeHexColor(shape.color, '#ffffff'),
+      opacity: clamp(Number.isFinite(Number(shape.opacity)) ? Number(shape.opacity) : 0.9, 0.05, 1),
+      rotation: Number.isFinite(Number(shape.rotation)) ? Number(shape.rotation) : 0,
+    }));
+  return {
+    imageDataUrl,
+    imageOpacity: clamp(Number.isFinite(Number(source.imageOpacity)) ? Number(source.imageOpacity) : 1, 0.05, 1),
+    imageCentered: source.imageCentered === true,
+    imageX: source.imageCentered === true ? 0.5 : clamp(Number.isFinite(Number(source.imageX)) ? Number(source.imageX) : 0.5, -0.5, 1.5),
+    imageY: source.imageCentered === true ? 0.5 : clamp(Number.isFinite(Number(source.imageY)) ? Number(source.imageY) : 0.5, -0.5, 1.5),
+    imageScale: clamp(Number.isFinite(Number(source.imageScale)) ? Number(source.imageScale) : 1, 0.1, 3),
+    imageRotation: clamp(Number.isFinite(Number(source.imageRotation)) ? Number(source.imageRotation) : 0, -180, 180),
+    shapes,
+  };
+}
+
+function hasSurfaceStickerContent(sticker) {
+  const normalized = normalizeSurfaceSticker(sticker);
+  return !!normalized.imageDataUrl || normalized.shapes.length > 0;
+}
+
+function createSurfaceStickerPackage(name, surfaceSticker) {
+  return {
+    app: 'Girih',
+    kind: 'surface-sticker',
+    version: 1,
+    name: String(name || 'Surface sticker').trim() || 'Surface sticker',
+    surfaceSticker: normalizeSurfaceSticker(surfaceSticker),
+  };
+}
+
+function isSurfaceStickerPackage(value) {
+  return value?.kind === 'surface-sticker' && hasSurfaceStickerContent(value.surfaceSticker);
+}
+
+function normalizeSurfaceStickerLibraryItem(item) {
+  if (!item || !hasSurfaceStickerContent(item.surfaceSticker)) return null;
+  return {
+    id: String(item.id || `sticker-${crypto.randomUUID()}`),
+    listingId: item.listingId ? String(item.listingId) : '',
+    name: String(item.name || 'Surface sticker').trim() || 'Surface sticker',
+    previewImage: typeof item.previewImage === 'string' ? item.previewImage : '',
+    surfaceSticker: normalizeSurfaceSticker(item.surfaceSticker),
+    installedAt: Number(item.installedAt) || Date.now(),
+  };
+}
+
+function normalizeSurfaceStickerUvTransform(transform) {
+  if (!transform || typeof transform !== 'object') return undefined;
+  const normalized = {
+    uX: Number(transform.uX),
+    uY: Number(transform.uY),
+    uOffset: Number(transform.uOffset),
+    vX: Number(transform.vX),
+    vY: Number(transform.vY),
+    vOffset: Number(transform.vOffset),
+  };
+  return Object.values(normalized).every(Number.isFinite) ? normalized : undefined;
+}
+
+function surfaceStickerSignature(sticker) {
+  const normalized = normalizeSurfaceSticker(sticker);
+  if (!hasSurfaceStickerContent(normalized)) return 'none';
+  const source = JSON.stringify({
+    imageDataUrl: normalized.imageDataUrl,
+    imageOpacity: normalized.imageOpacity,
+    imageCentered: normalized.imageCentered,
+    imageX: normalized.imageX,
+    imageY: normalized.imageY,
+    imageScale: normalized.imageScale,
+    imageRotation: normalized.imageRotation,
+    shapes: normalized.shapes,
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${source.length}:${(hash >>> 0).toString(36)}`;
+}
+
+async function readSurfaceStickerPng(file) {
+  if (!file || (file.type && file.type !== 'image/png') || !/\.png$/i.test(file.name || '')) {
+    throw new Error('Choose a PNG image.');
+  }
+  if (file.size > 8 * 1024 * 1024) throw new Error('The PNG must be smaller than 8 MB.');
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('The PNG could not be read.'));
+      element.src = imageUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = SURFACE_STICKER_IMAGE_SIZE;
+    canvas.height = SURFACE_STICKER_IMAGE_SIZE;
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    const scale = Math.min(canvas.width / Math.max(image.width, 1), canvas.height / Math.max(image.height, 1));
+    const width = image.width * scale;
+    const height = image.height * scale;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+    const pngDataUrl = canvas.toDataURL('image/png');
+    const webpDataUrl = canvas.toDataURL('image/webp', 0.96);
+    return /^data:image\/webp;base64,/i.test(webpDataUrl) && webpDataUrl.length < pngDataUrl.length ? webpDataUrl : pngDataUrl;
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+function SurfaceStickerShape({ shape, preview = false }) {
+  const x = shape.x;
+  const y = shape.y;
+  const size = shape.size;
+  const common = {
+    fill: shape.color,
+    opacity: preview ? Math.min(shape.opacity, 0.72) : shape.opacity,
+    transform: `rotate(${shape.rotation || 0} ${x} ${y})`,
+    ...(preview ? {
+      stroke: '#ffffff',
+      strokeWidth: 0.012,
+      strokeDasharray: '0.032 0.021',
+      pointerEvents: 'none',
+    } : {}),
+  };
+  if (shape.type === 'circle') return <circle cx={x} cy={y} r={size / 2} {...common} />;
+  if (shape.type === 'triangle') {
+    const points = `${x},${y - size / 2} ${x + size / 2},${y + size / 2} ${x - size / 2},${y + size / 2}`;
+    return <polygon points={points} {...common} />;
+  }
+  if (shape.type === 'line') {
+    return <line x1={x - size / 2} y1={y} x2={x + size / 2} y2={y} stroke={shape.color} strokeOpacity={shape.opacity} strokeWidth={Math.max(0.02, size * 0.16)} strokeLinecap="round" transform={common.transform} />;
+  }
+  return <rect x={x - size / 2} y={y - size * 0.34} width={size} height={size * 0.68} rx={Math.min(0.04, size * 0.12)} {...common} />;
+}
+
+function PieceSurfaceStickerEditor({ piece, value, onChange, onSave, onCancel }) {
+  const sticker = normalizeSurfaceSticker(value);
+  const [stickerLibrary, setStickerLibrary] = useState([]);
+  const [tool, setTool] = useState('circle');
+  const [toolColor, setToolColor] = useState('#000000');
+  const [toolSize, setToolSize] = useState(0.18);
+  const [toolOpacity, setToolOpacity] = useState(0.9);
+  const [toolCentered, setToolCentered] = useState(true);
+  const [toolPreviewPosition, setToolPreviewPosition] = useState({ x: 0.5, y: 0.5 });
+  const [message, setMessage] = useState('Click the surface to place the selected shape.');
+  const imageDragRef = useRef(null);
+  const suppressShapeClickRef = useRef(false);
+  const schematic = useMemo(() => pieceIconSchematic(piece, true), [piece]);
+  const polygonPoints = schematic.polygon.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+  const stickerViewport = useMemo(() => {
+    if (schematic.polygon.length < 3) return { x: 5, y: 5, width: 38, height: 38 };
+    const bounds = centeredSquareBounds(schematic.polygon);
+    return {
+      x: bounds.minX,
+      y: bounds.minY,
+      width: bounds.size,
+      height: bounds.size,
+    };
+  }, [schematic]);
+  const clipId = `surface-clip-${slugify(piece.id)}`;
+
+  useEffect(() => {
+    let active = true;
+    readSurfaceStickerLibrary().then((items) => {
+      if (active) setStickerLibrary(items);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const stickerPointFromEvent = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 48;
+    const viewY = ((event.clientY - rect.top) / Math.max(rect.height, 1)) * 48;
+    return {
+      x: clamp((viewX - stickerViewport.x) / stickerViewport.width, 0, 1),
+      y: clamp((viewY - stickerViewport.y) / stickerViewport.height, 0, 1),
+    };
+  };
+
+  const addShape = (event) => {
+    if (suppressShapeClickRef.current) {
+      suppressShapeClickRef.current = false;
+      return;
+    }
+    if (sticker.shapes.length >= SURFACE_STICKER_MAX_SHAPES) {
+      setMessage(`Maximum ${SURFACE_STICKER_MAX_SHAPES} shapes reached.`);
+      return;
+    }
+    const pointerPosition = stickerPointFromEvent(event);
+    const placement = toolCentered
+      ? { x: 0.5, y: 0.5 }
+      : pointerPosition;
+    onChange({
+      ...sticker,
+      shapes: [...sticker.shapes, {
+        id: crypto.randomUUID(),
+        type: tool,
+        x: placement.x,
+        y: placement.y,
+        size: toolSize,
+        color: toolColor,
+        opacity: toolOpacity,
+        rotation: 0,
+      }],
+    });
+  };
+
+  const uploadPng = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const imageDataUrl = await readSurfaceStickerPng(file);
+      onChange({ ...sticker, imageDataUrl, imageCentered: true, imageX: 0.5, imageY: 0.5, imageScale: 1, imageRotation: 0 });
+      setMessage('PNG added. Drag it on the surface or use the transform controls.');
+    } catch (error) {
+      setMessage(error.message || 'The PNG could not be added.');
+    }
+    event.target.value = '';
+  };
+
+  const startImageDrag = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const svg = event.currentTarget.ownerSVGElement;
+    const rect = svg?.getBoundingClientRect();
+    if (!svg || !rect) return;
+    svg.setPointerCapture?.(event.pointerId);
+    suppressShapeClickRef.current = true;
+    imageDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: sticker.imageX,
+      startY: sticker.imageY,
+      width: Math.max(rect.width, 1),
+      height: Math.max(rect.height, 1),
+      captureTarget: svg,
+    };
+    setMessage('Drag to position the PNG.');
+  };
+
+  const moveImage = (event) => {
+    const drag = imageDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = (event.clientX - drag.startClientX) / drag.width;
+    const deltaY = (event.clientY - drag.startClientY) / drag.height;
+    onChange({
+      ...normalizeSurfaceSticker(value),
+      imageCentered: false,
+      imageX: clamp(drag.startX + deltaX, -0.5, 1.5),
+      imageY: clamp(drag.startY + deltaY, -0.5, 1.5),
+    });
+  };
+
+  const moveSurfacePointer = (event) => {
+    if (imageDragRef.current) {
+      moveImage(event);
+      return;
+    }
+    if (toolCentered) return;
+    setToolPreviewPosition(stickerPointFromEvent(event));
+  };
+
+  const endImageDrag = (event) => {
+    const drag = imageDragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
+    imageDragRef.current = null;
+    drag.captureTarget?.releasePointerCapture?.(event.pointerId);
+    setMessage('PNG position updated.');
+  };
+
+  const imageCenterX = sticker.imageX;
+  const imageCenterY = sticker.imageY;
+  const imageSize = sticker.imageScale;
+  const pendingShape = {
+    id: 'pending-surface-sticker-shape',
+    type: tool,
+    x: toolCentered ? 0.5 : toolPreviewPosition.x,
+    y: toolCentered ? 0.5 : toolPreviewPosition.y,
+    size: toolSize,
+    color: toolColor,
+    opacity: toolOpacity,
+    rotation: 0,
+  };
+
+  return (
+    <section className="surface-sticker-editor" aria-label={`${piece.name} surface sticker editor`}>
+      <div className="surface-sticker-heading">
+        <span><ImageIcon size={15} /> Surface sticker</span>
+        <small>{sticker.shapes.length}/{SURFACE_STICKER_MAX_SHAPES} shapes</small>
+      </div>
+      <svg
+        className="surface-sticker-canvas"
+        viewBox="0 0 48 48"
+        role="img"
+        aria-label={`Sticker preview for ${piece.name}`}
+        onClick={addShape}
+        onPointerMove={moveSurfacePointer}
+        onPointerUp={endImageDrag}
+        onPointerCancel={endImageDrag}
+      >
+        <defs><clipPath id={clipId}><polygon points={polygonPoints} /></clipPath></defs>
+        <polygon points={polygonPoints} fill={piece.color} stroke="#2d2924" strokeWidth="0.8" />
+        <g clipPath={`url(#${clipId})`}>
+          <svg
+            x={stickerViewport.x}
+            y={stickerViewport.y}
+            width={stickerViewport.width}
+            height={stickerViewport.height}
+            viewBox="0 0 1 1"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {sticker.imageDataUrl && (
+              <image
+                href={sticker.imageDataUrl}
+                x={imageCenterX - imageSize / 2}
+                y={imageCenterY - imageSize / 2}
+                width={imageSize}
+                height={imageSize}
+                opacity={sticker.imageOpacity}
+                preserveAspectRatio="xMidYMid meet"
+                transform={`rotate(${sticker.imageRotation} ${imageCenterX} ${imageCenterY})`}
+                onPointerDown={startImageDrag}
+                onClick={(event) => {
+                  suppressShapeClickRef.current = false;
+                  event.stopPropagation();
+                }}
+                className="surface-sticker-image"
+              />
+            )}
+            {sticker.shapes.map((shape) => <SurfaceStickerShape key={shape.id} shape={shape} />)}
+            {sticker.shapes.length < SURFACE_STICKER_MAX_SHAPES && <SurfaceStickerShape shape={pendingShape} preview />}
+          </svg>
+        </g>
+        <polygon points={polygonPoints} fill="none" stroke="rgba(255,255,255,.65)" strokeWidth="0.35" pointerEvents="none" />
+      </svg>
+      <div className="surface-sticker-tools">
+        <label>PNG<input type="file" accept="image/png,.png" onChange={uploadPng} /></label>
+        {!!stickerLibrary.length && <label>Purchased sticker<select defaultValue="" onChange={(event) => {
+          const libraryItem = stickerLibrary.find((item) => item.id === event.target.value);
+          if (!libraryItem) return;
+          onChange(normalizeSurfaceSticker(libraryItem.surfaceSticker));
+          setMessage(`${libraryItem.name} applied. Preview it on the stage, then save.`);
+          event.target.value = '';
+        }}><option value="">Choose from library</option>{stickerLibrary.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        <label>Shape<select value={tool} onChange={(event) => setTool(event.target.value)}><option value="circle">Circle</option><option value="triangle">Triangle</option></select></label>
+        <label>Color<input type="color" value={toolColor} onChange={(event) => setToolColor(event.target.value)} /></label>
+        <label>Size ({Math.round(toolSize * 100)}%)<input type="range" min="4" max="70" value={Math.round(toolSize * 100)} onChange={(event) => setToolSize(Number(event.target.value) / 100)} /></label>
+        <label>Opacity<input type="range" min="5" max="100" value={Math.round(toolOpacity * 100)} onChange={(event) => setToolOpacity(Number(event.target.value) / 100)} /></label>
+        <label className="surface-sticker-center-toggle"><input type="checkbox" checked={toolCentered} onChange={(event) => {
+          setToolCentered(event.target.checked);
+          if (event.target.checked) setToolPreviewPosition({ x: 0.5, y: 0.5 });
+        }} /><span>Center new shape on piece</span></label>
+        {sticker.imageDataUrl && <label>PNG opacity<input type="range" min="5" max="100" value={Math.round(sticker.imageOpacity * 100)} onChange={(event) => onChange({ ...sticker, imageOpacity: Number(event.target.value) / 100 })} /></label>}
+        {sticker.imageDataUrl && <button type="button" className="surface-sticker-center-button" onClick={() => {
+          onChange({ ...sticker, imageCentered: true, imageX: 0.5, imageY: 0.5 });
+          setMessage('PNG centered on the piece.');
+        }}>Center PNG on piece</button>}
+        {sticker.imageDataUrl && <label>PNG scale ({Math.round(sticker.imageScale * 100)}%)<input type="range" min="10" max="300" value={Math.round(sticker.imageScale * 100)} onChange={(event) => onChange({ ...sticker, imageScale: Number(event.target.value) / 100 })} /></label>}
+        {sticker.imageDataUrl && <label>PNG rotation ({Math.round(sticker.imageRotation)}°)<input type="range" min="-180" max="180" step="1" value={Math.round(sticker.imageRotation)} onChange={(event) => onChange({ ...sticker, imageRotation: Number(event.target.value) })} /></label>}
+        {sticker.imageDataUrl && <label>PNG horizontal<input type="range" min="-50" max="150" value={Math.round(sticker.imageX * 100)} disabled={sticker.imageCentered} onChange={(event) => onChange({ ...sticker, imageCentered: false, imageX: Number(event.target.value) / 100 })} /></label>}
+        {sticker.imageDataUrl && <label>PNG vertical<input type="range" min="-50" max="150" value={Math.round(sticker.imageY * 100)} disabled={sticker.imageCentered} onChange={(event) => onChange({ ...sticker, imageCentered: false, imageY: Number(event.target.value) / 100 })} /></label>}
+      </div>
+      <div className="surface-sticker-secondary-actions">
+        <button type="button" onClick={() => onChange({ ...sticker, shapes: sticker.shapes.slice(0, -1) })} disabled={!sticker.shapes.length}>Undo shape</button>
+        <button type="button" onClick={() => onChange({ ...sticker, imageCentered: true, imageX: 0.5, imageY: 0.5, imageScale: 1, imageRotation: 0 })} disabled={!sticker.imageDataUrl}>Reset PNG</button>
+        <button type="button" onClick={() => onChange({ ...sticker, imageDataUrl: '' })} disabled={!sticker.imageDataUrl}>Remove PNG</button>
+        <button type="button" onClick={() => onChange(normalizeSurfaceSticker())} disabled={!hasSurfaceStickerContent(sticker)}>Clear all</button>
+      </div>
+      <p>{message}</p>
+      <div className="surface-sticker-actions">
+        <button type="button" onClick={onSave}><Save size={14} /> Save sticker</button>
+        <button type="button" onClick={onCancel}>Cancel</button>
+      </div>
+    </section>
+  );
+}
+
+function pieceSummarySvgMarkup(piece) {
+  const schematic = pieceIconSchematic(piece);
+  const color = normalizeHexColor(piece.color, '#1c7c74');
+  const polygon = schematic.polygon.length >= 3
+    ? `<polygon points="${schematic.polygon.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(' ')}" fill="${color}" stroke="#2d2924" stroke-width="1.4" stroke-linejoin="round" />`
+    : '';
+  const lines = schematic.segments.map(([start, end], index) =>
+    `<line key="${index}" x1="${start[0].toFixed(2)}" y1="${start[1].toFixed(2)}" x2="${end[0].toFixed(2)}" y2="${end[1].toFixed(2)}" stroke="#2d2924" stroke-width="1.8" stroke-linecap="round" />`,
+  ).join('');
+  const dots = schematic.verticalEdges.map(([x, y], index) =>
+    `<circle key="v${index}" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="1.8" fill="#2d2924" />`,
+  ).join('');
+  return `<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">${polygon}<g fill="none">${lines}${dots}</g></svg>`;
 }
 
 function getRealFootprintSegments(piece) {
@@ -4807,15 +11135,83 @@ function createMotifFromPieces(name, pieces) {
     savedAt: Date.now(),
     width: Math.max(0.001, bounds.maxX - bounds.minX),
     height: Math.max(0.001, bounds.maxY - bounds.minY),
-    pieces: sourcePieces.map((piece) => ({
-      ...piece,
-      id: piece.sourceId || piece.id,
-      x: (piece.x || 0) - centerX,
-      y: (piece.y || 0) - centerY,
-      groupInstanceId: null,
-      snappedTo: null,
-    })),
+    ...compactMotifPiecesWithSources(sourcePieces, centerX, centerY),
   };
+}
+
+function motifSourceKey(piece) {
+  const sourceKey = piece.sourceKey || (piece.isFrameSlice ? piece.id : piece.sourceId || piece.id);
+  return piece.isFrameSlice ? sourceKey : normalizeMoroccoPieceId(sourceKey);
+}
+
+function compactMotifPiecesWithSources(sourcePieces, centerX = 0, centerY = 0) {
+  const sourceMap = new Map();
+  const pieces = sourcePieces.map((piece) => {
+    const sourceKey = motifSourceKey(piece);
+    if (!sourceMap.has(sourceKey)) sourceMap.set(sourceKey, compactSceneSource(sourceKey, piece));
+    return compactMotifPiece(piece, centerX, centerY, sourceKey);
+  });
+  return {
+    sources: Array.from(sourceMap.values()),
+    pieces,
+  };
+}
+
+function compactMotifPiece(piece, centerX, centerY, sourceKey = motifSourceKey(piece)) {
+  const sourceId = normalizeMoroccoPieceId(piece.sourceId || piece.id);
+  const normalizedSourceKey = piece.isFrameSlice ? sourceKey : normalizeMoroccoPieceId(sourceKey);
+  return {
+    id: sourceId,
+    sourceKey: normalizedSourceKey,
+    sourceId,
+    x: (piece.x || 0) - centerX,
+    y: (piece.y || 0) - centerY,
+    rotation: Number(piece.rotation) || 0,
+    elevation: Number(piece.elevation) || 0,
+    tiltX: Number(piece.tiltX) || 0,
+    tiltZ: Number(piece.tiltZ) || 0,
+    mirrorHorizontal: !!piece.mirrorHorizontal,
+    mirrorVertical: !!piece.mirrorVertical,
+    hidden: false,
+    height: Number(piece.height) || undefined,
+    stageWidth: parseOptionalNumber(piece.stageWidth),
+    stageLength: parseOptionalNumber(piece.stageLength),
+    color: piece.color,
+    groupInstanceId: null,
+    snappedTo: null,
+  };
+}
+
+function motifSourceMap(motif) {
+  const sourceMap = new Map();
+  (Array.isArray(motif?.sources) ? motif.sources : [])
+    .filter((source) => source && typeof source === 'object')
+    .forEach((source) => {
+      const rawKey = source.sourceKey || source.id || source.sourceId;
+      if (!rawKey) return;
+      const normalizedKey = source.isFrameSlice ? rawKey : normalizeMoroccoPieceId(rawKey);
+      const normalizedSource = normalizeMoroccoStoredSource(source);
+      sourceMap.set(rawKey, normalizedSource);
+      sourceMap.set(normalizedKey, normalizedSource);
+    });
+  return sourceMap;
+}
+
+function rehydrateMotifPiece(piece, sourceByKey = new Map()) {
+  const sourceId = normalizeMoroccoPieceId(piece.sourceId || piece.id);
+  const sourceKey = piece.isFrameSlice ? piece.sourceKey || sourceId : normalizeMoroccoPieceId(piece.sourceKey || sourceId);
+  const source = sourceByKey.get(sourceKey) || sourceByKey.get(sourceId) || DEFAULT_PIECE_BY_ID.get(sourceId);
+  return source
+    ? {
+        ...source,
+        ...piece,
+        id: sourceId,
+        sourceKey,
+        sourceId: sourceId || source.sourceId || sourceKey,
+        group: normalizePieceGroupName(piece.group || source.group),
+        glbUrl: normalizeMoroccoModelUrl(piece.glbUrl ?? source.glbUrl),
+      }
+    : { ...piece, id: sourceId, sourceKey, sourceId, group: normalizePieceGroupName(piece.group), glbUrl: normalizeMoroccoModelUrl(piece.glbUrl) };
 }
 
 function createTessellatedMotifInstances(motif, options = {}) {
@@ -4835,12 +11231,14 @@ function createTessellatedMotifInstances(motif, options = {}) {
   const groups = [];
   let activeGroupId = null;
   let selectedIds = [];
+  const sourceByKey = motifSourceMap(motif);
+  const motifPieces = motif.pieces.map((piece) => rehydrateMotifPiece(piece, sourceByKey));
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const groupId = `group-${crypto.randomUUID()}`;
       if (!activeGroupId) activeGroupId = groupId;
       const groupIds = [];
-      motif.pieces.forEach((piece) => {
+      motifPieces.forEach((piece) => {
         const sourceId = piece.sourceId || piece.id;
         const id = `${sourceId}-${crypto.randomUUID()}`;
         groupIds.push(id);
@@ -4892,7 +11290,9 @@ function usePersistentPieces() {
     }
   });
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pieces));
+    // Sticker artwork is persisted once in the admin settings record. Avoid
+    // duplicating image data in the library snapshot and exhausting storage.
+    writeJsonToLocalStorage(STORAGE_KEY, pieces.map(({ surfaceSticker, ...piece }) => piece));
   }, [pieces]);
   return [pieces, setPieces];
 }
@@ -4904,27 +11304,47 @@ function usePersistentMotifs() {
       return Array.isArray(stored)
         ? stored
             .filter((motif) => motif && typeof motif === 'object' && Array.isArray(motif.pieces))
-            .map((motif) => ({
-              id: typeof motif.id === 'string' ? motif.id : `motif-${crypto.randomUUID()}`,
-              name: typeof motif.name === 'string' ? motif.name : 'Motif',
-              savedAt: Number(motif.savedAt) || Date.now(),
-              width: Math.max(0.001, Number(motif.width) || 1),
-              height: Math.max(0.001, Number(motif.height) || 1),
-              pieces: motif.pieces,
-            }))
+            .map(compactStoredMotif)
         : [];
     } catch {
       return [];
     }
   });
   useEffect(() => {
-    localStorage.setItem(MOTIFS_STORAGE_KEY, JSON.stringify(motifs));
+    writeJsonToLocalStorage(MOTIFS_STORAGE_KEY, motifs);
   }, [motifs]);
   return [motifs, setMotifs];
 }
 
+function compactStoredMotif(motif) {
+  const sourceMap = motifSourceMap(motif);
+  const sources = new Map();
+  sourceMap.forEach((source) => {
+    const sourceKey = source.sourceKey || source.id || source.sourceId;
+    if (sourceKey) sources.set(sourceKey, source);
+  });
+  const pieces = motif.pieces.map((piece) => {
+    const sourceKey = motifSourceKey(piece);
+    if (!sources.has(sourceKey)) {
+      const source = rehydrateMotifPiece(piece, sourceMap);
+      sources.set(sourceKey, compactSceneSource(sourceKey, source));
+    }
+    return compactMotifPiece(piece, 0, 0, sourceKey);
+  });
+  return {
+    id: typeof motif.id === 'string' ? motif.id : `motif-${crypto.randomUUID()}`,
+    name: typeof motif.name === 'string' ? motif.name : 'Motif',
+    savedAt: Number(motif.savedAt) || Date.now(),
+    width: Math.max(0.001, Number(motif.width) || 1),
+    height: Math.max(0.001, Number(motif.height) || 1),
+    sources: Array.from(sources.values()).map((source) => compactSceneSource(source.sourceKey || source.id || source.sourceId, source)),
+    pieces,
+  };
+}
+
 function mergeDefaultPieces(stored) {
-  const keptStored = stored.filter((piece) => !REMOVED_DEFAULT_PIECE_IDS.has(piece.id));
+  const migratedStored = stored.map(normalizeMoroccoStoredLibraryPiece);
+  const keptStored = migratedStored.filter((piece) => !REMOVED_DEFAULT_PIECE_IDS.has(piece.id));
   const storedById = new Map(keptStored.map((piece) => [piece.id, piece]));
   const mergedDefaults = DEFAULT_PIECES.map((defaultPiece) => mergeStoredDefaultPiece(defaultPiece, storedById.get(defaultPiece.id)));
   const importedPieces = keptStored.filter((piece) => !DEFAULT_PIECE_BY_ID.has(piece.id));
@@ -4946,7 +11366,15 @@ function mergeStoredDefaultPiece(defaultPiece, storedPiece) {
 function readAdminPieceSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(ADMIN_SETTINGS_STORAGE_KEY));
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return {};
+    return Object.fromEntries(
+      Object.entries(stored).map(([pieceId, setting]) => [
+        normalizeMoroccoPieceId(pieceId),
+        setting && typeof setting === 'object'
+          ? { ...setting, group: normalizePieceGroupName(setting.group) }
+          : setting,
+      ]),
+    );
   } catch {
     return {};
   }
@@ -4967,7 +11395,9 @@ function readGroupColorPalettes() {
                 id: typeof palette.id === 'string' ? palette.id : crypto.randomUUID(),
                 name: typeof palette.name === 'string' ? palette.name.replace(/^Set\s+/i, '') : `${index + 1}`,
                 savedAt: Number(palette.savedAt) || Date.now(),
-                colors: palette.colors,
+                colors: Object.fromEntries(
+                  Object.entries(palette.colors).map(([pieceId, color]) => [normalizeMoroccoPieceId(pieceId), color]),
+                ),
               }))
           : [],
       ]),
@@ -4977,19 +11407,53 @@ function readGroupColorPalettes() {
   }
 }
 
+function buildGroupColorPalettes(group, savedPalettes = []) {
+  const saved = Array.isArray(savedPalettes) ? savedPalettes : [];
+  return [builtInGroupColorPalette(group), ...saved.map((palette, index) => ({ ...palette, name: `${index + 2}` }))];
+}
+
+function builtInGroupColorPalette(group) {
+  return {
+    id: BUILT_IN_GROUP_PALETTE_ID,
+    name: '1',
+    builtIn: true,
+    savedAt: 0,
+    colors: Object.fromEntries(
+      group.items.map((piece) => [piece.id, universalPieceColor(group.name, piece.name) || piece.defaultColor || piece.color]),
+    ),
+  };
+}
+
+function normalizeUserRole(role) {
+  return Object.values(USER_ROLES).includes(role) ? role : USER_ROLES.FREE;
+}
+
+function roleLabel(role) {
+  if (role === USER_ROLES.ADMIN) return 'Admin';
+  if (role === USER_ROLES.PAID) return 'Paid';
+  return 'Free';
+}
+
 function saveAdminPieceSetting(piece) {
   const settings = readAdminPieceSettings();
+  const defaultedPiece = markPieceSettingsAsUniversalDefault(piece);
   const nextSetting = {
-    group: normalizePieceGroupName(piece.group),
-    color: piece.color,
-    height: piece.height,
-    stageWidth: piece.stageWidth,
-    stageLength: piece.stageLength,
-    sourceHeightPx: piece.sourceHeightPx,
-    sourceWidthPx: piece.sourceWidthPx,
-    sourceLengthPx: piece.sourceLengthPx,
-    sourceFootprintScale: piece.sourceFootprintScale,
-    keepAspectRatio: piece.keepAspectRatio !== false,
+    group: normalizePieceGroupName(defaultedPiece.group),
+    color: defaultedPiece.color,
+    height: defaultedPiece.height,
+    stageWidth: defaultedPiece.stageWidth,
+    stageLength: defaultedPiece.stageLength,
+    defaultColor: defaultedPiece.defaultColor,
+    defaultHeight: defaultedPiece.defaultHeight,
+    defaultStageWidth: defaultedPiece.defaultStageWidth,
+    defaultStageLength: defaultedPiece.defaultStageLength,
+    sourceHeightPx: defaultedPiece.sourceHeightPx,
+    sourceWidthPx: defaultedPiece.sourceWidthPx,
+    sourceLengthPx: defaultedPiece.sourceLengthPx,
+    sourceFootprintScale: defaultedPiece.sourceFootprintScale,
+    keepAspectRatio: defaultedPiece.keepAspectRatio !== false,
+    offsetLinesEnabled: defaultedPiece.offsetLinesEnabled !== false,
+    surfaceSticker: hasSurfaceStickerContent(defaultedPiece.surfaceSticker) ? normalizeSurfaceSticker(defaultedPiece.surfaceSticker) : undefined,
   };
   localStorage.setItem(
     ADMIN_SETTINGS_STORAGE_KEY,
@@ -5015,6 +11479,10 @@ function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.
     height: Number.isFinite(Number(setting.height)) ? Number(setting.height) : piece.height,
     stageWidth: Number.isFinite(Number(setting.stageWidth)) ? Number(setting.stageWidth) : piece.stageWidth,
     stageLength: Number.isFinite(Number(setting.stageLength)) ? Number(setting.stageLength) : piece.stageLength,
+    defaultColor: setting.defaultColor || piece.defaultColor || setting.color || piece.color,
+    defaultHeight: Number.isFinite(Number(setting.defaultHeight)) ? Number(setting.defaultHeight) : piece.defaultHeight,
+    defaultStageWidth: Number.isFinite(Number(setting.defaultStageWidth)) ? Number(setting.defaultStageWidth) : piece.defaultStageWidth,
+    defaultStageLength: Number.isFinite(Number(setting.defaultStageLength)) ? Number(setting.defaultStageLength) : piece.defaultStageLength,
     sourceHeightPx:
       setting.sourceHeightPx === undefined || setting.sourceHeightPx === ''
         ? piece.sourceHeightPx
@@ -5040,6 +11508,8 @@ function applyAdminPieceSetting(piece, setting = readAdminPieceSettings()[piece.
           ? Number(setting.sourceFootprintScale)
           : piece.sourceFootprintScale,
     keepAspectRatio: setting.keepAspectRatio === undefined ? piece.keepAspectRatio !== false : setting.keepAspectRatio !== false,
+    offsetLinesEnabled: setting.offsetLinesEnabled === undefined ? piece.offsetLinesEnabled !== false : setting.offsetLinesEnabled !== false,
+    surfaceSticker: hasSurfaceStickerContent(setting.surfaceSticker) ? normalizeSurfaceSticker(setting.surfaceSticker) : undefined,
   };
 }
 
@@ -5047,15 +11517,179 @@ function usePersistentModels() {
   const [models, setModels] = useState(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(MODELS_STORAGE_KEY));
-      return Array.isArray(stored) ? stored : [];
+      return Array.isArray(stored) ? stored.map(compactSceneModelForStorage).slice(0, 20) : [];
     } catch {
       return [];
     }
   });
   useEffect(() => {
-    localStorage.setItem(MODELS_STORAGE_KEY, JSON.stringify(models));
-  }, [models]);
-  return [models, setModels];
+    let active = true;
+    readModelsFromDevice().then((stored) => {
+      if (active) setModels(stored);
+    });
+    return () => { active = false; };
+  }, []);
+  return [models, setModels, writeModelsToDevice];
+}
+
+function openModelsDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!globalThis.indexedDB) {
+      reject(new Error('IndexedDB is unavailable.'));
+      return;
+    }
+    const request = indexedDB.open(MODELS_DATABASE_NAME, 2);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(MODELS_DATABASE_STORE)) database.createObjectStore(MODELS_DATABASE_STORE);
+      if (!database.objectStoreNames.contains(SURFACE_STICKERS_DATABASE_STORE)) database.createObjectStore(SURFACE_STICKERS_DATABASE_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Could not open model storage.'));
+  });
+}
+
+async function readModelsFromIndexedDb() {
+  const database = await openModelsDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(MODELS_DATABASE_STORE, 'readonly');
+      const request = transaction.objectStore(MODELS_DATABASE_STORE).get(MODELS_STORAGE_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('Could not read model storage.'));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+async function writeModelsToIndexedDb(models) {
+  const database = await openModelsDatabase();
+  try {
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(MODELS_DATABASE_STORE, 'readwrite');
+      transaction.objectStore(MODELS_DATABASE_STORE).put(models, MODELS_STORAGE_KEY);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Could not write model storage.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Model storage was interrupted.'));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function readModelsFromLocalStorage() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODELS_STORAGE_KEY));
+    return Array.isArray(stored) ? stored.map(compactSceneModelForStorage).slice(0, 20) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function readModelsFromDevice() {
+  try {
+    const stored = await readModelsFromIndexedDb();
+    if (Array.isArray(stored)) return stored.map(compactSceneModelForStorage).slice(0, 20);
+  } catch (error) {
+    console.warn('Could not read IndexedDB model storage', error);
+  }
+  const legacyModels = readModelsFromLocalStorage();
+  if (legacyModels.length) {
+    try {
+      await writeModelsToIndexedDb(legacyModels);
+    } catch {
+      // Keep using the readable legacy copy when IndexedDB is unavailable.
+    }
+  }
+  return legacyModels;
+}
+
+async function writeModelsToDevice(models) {
+  const normalized = (Array.isArray(models) ? models : []).map(compactSceneModelForStorage).slice(0, 20);
+  try {
+    await writeModelsToIndexedDb(normalized);
+    if (!writeJsonToLocalStorage(MODELS_STORAGE_KEY, normalized)) localStorage.removeItem(MODELS_STORAGE_KEY);
+    return true;
+  } catch (error) {
+    console.warn('Could not save models to IndexedDB', error);
+    return writeJsonToLocalStorage(MODELS_STORAGE_KEY, normalized);
+  }
+}
+
+async function readSurfaceStickerLibrary() {
+  try {
+    const database = await openModelsDatabase();
+    try {
+      const stored = await new Promise((resolve, reject) => {
+        const transaction = database.transaction(SURFACE_STICKERS_DATABASE_STORE, 'readonly');
+        const request = transaction.objectStore(SURFACE_STICKERS_DATABASE_STORE).get(SURFACE_STICKERS_STORAGE_KEY);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Could not read the sticker library.'));
+      });
+      return (Array.isArray(stored) ? stored : []).map(normalizeSurfaceStickerLibraryItem).filter(Boolean).slice(0, 50);
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.warn('Could not read the surface sticker library', error);
+    try {
+      const stored = JSON.parse(localStorage.getItem(SURFACE_STICKERS_STORAGE_KEY));
+      return (Array.isArray(stored) ? stored : []).map(normalizeSurfaceStickerLibraryItem).filter(Boolean).slice(0, 50);
+    } catch {
+      return [];
+    }
+  }
+}
+
+async function writeSurfaceStickerLibrary(items) {
+  const normalized = (Array.isArray(items) ? items : []).map(normalizeSurfaceStickerLibraryItem).filter(Boolean).slice(0, 50);
+  try {
+    const database = await openModelsDatabase();
+    try {
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction(SURFACE_STICKERS_DATABASE_STORE, 'readwrite');
+        transaction.objectStore(SURFACE_STICKERS_DATABASE_STORE).put(normalized, SURFACE_STICKERS_STORAGE_KEY);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error || new Error('Could not save the sticker library.'));
+        transaction.onabort = () => reject(transaction.error || new Error('Sticker library storage was interrupted.'));
+      });
+      return true;
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    console.warn('Could not save the surface sticker library', error);
+    return writeJsonToLocalStorage(SURFACE_STICKERS_STORAGE_KEY, normalized);
+  }
+}
+
+function writeJsonToLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.warn(`Could not save ${key} to local storage`, error);
+    return false;
+  }
+}
+
+function readRecoveryDraft() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(RECOVERY_DRAFT_STORAGE_KEY));
+    return stored && Array.isArray(stored.pieces) ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function designStateSignature(placed, material, renderSettings, modelTransform) {
+  return JSON.stringify({
+    pieces: placed || [],
+    material: normalizeMaterialName(material),
+    renderSettings: normalizeRenderSettings(renderSettings),
+    modelTransform: normalizeModelTransform(modelTransform),
+  });
 }
 
 function emptyDraft() {
@@ -5079,12 +11713,53 @@ function emptyDraft() {
     objText: '',
     glbDataUrl: '',
     glbUrl: '',
+    surfaceSticker: undefined,
   };
 }
 
 function normalizePieceGroupName(group) {
   const normalized = typeof group === 'string' ? group.trim() : '';
+  if (normalized.toLowerCase() === LEGACY_MOROCCO_GROUP.toLowerCase()) return '8 Morocco';
   return normalized || 'Default';
+}
+
+function normalizeMoroccoPieceId(value) {
+  if (typeof value !== 'string') return value;
+  return value.toLowerCase().startsWith(LEGACY_MOROCCO_ID_PREFIX)
+    ? `${MOROCCO_ID_PREFIX}${value.slice(LEGACY_MOROCCO_ID_PREFIX.length)}`
+    : value;
+}
+
+function normalizeMoroccoModelUrl(value) {
+  if (typeof value !== 'string') return value;
+  return value
+    .replace(/8%20Morroco/gi, '8%20Morocco')
+    .replace(/8 Morroco/gi, '8 Morocco');
+}
+
+function normalizeMoroccoStoredLibraryPiece(piece) {
+  if (!piece || typeof piece !== 'object') return piece;
+  return {
+    ...piece,
+    id: normalizeMoroccoPieceId(piece.id),
+    sourceId: normalizeMoroccoPieceId(piece.sourceId),
+    group: normalizePieceGroupName(piece.group),
+    glbUrl: normalizeMoroccoModelUrl(piece.glbUrl),
+  };
+}
+
+function normalizeMoroccoStoredSource(source) {
+  if (!source || typeof source !== 'object') return source;
+  const sourceKey = source.isFrameSlice
+    ? source.sourceKey
+    : normalizeMoroccoPieceId(source.sourceKey);
+  return {
+    ...source,
+    sourceKey,
+    sourceId: normalizeMoroccoPieceId(source.sourceId || source.id || sourceKey),
+    group: normalizePieceGroupName(source.group),
+    glbUrl: normalizeMoroccoModelUrl(source.glbUrl),
+  };
 }
 
 function groupLibraryPieces(pieces, groupNames = []) {
@@ -5576,22 +12251,19 @@ function estimateObjHeight(objText) {
 }
 
 function estimateHeightFromVertices(vertices) {
-  const ranges = [0, 1, 2].map((axis) => {
-    const values = vertices.map((vertex) => vertex[axis]);
-    return Math.max(...values) - Math.min(...values);
-  });
-  const heightRange = Math.min(...ranges.filter((range) => range > 0)) || 0.18;
-  const footprintRange = Math.max(...ranges);
-  return Math.max(0.08, Math.min(0.6, (heightRange / footprintRange) * OBJ_DISPLAY_SIZE));
+  const heightRange = measureVertexAxisRange(vertices, 1) || 0.18;
+  return Number(heightRange.toFixed(heightRange >= 10 ? 0 : 3));
 }
 
 function measureSourceHeightPx(vertices) {
-  const ranges = [0, 1, 2].map((axis) => {
-    const values = vertices.map((vertex) => vertex[axis]);
-    return Math.max(...values) - Math.min(...values);
-  });
-  const rawHeight = Math.min(...ranges.filter((range) => range > 0)) || 0;
+  const rawHeight = measureVertexAxisRange(vertices, 1) || 0;
   return Number(rawHeight.toFixed(rawHeight >= 10 ? 0 : 3));
+}
+
+function measureVertexAxisRange(vertices, axis) {
+  if (!vertices.length) return 0;
+  const values = vertices.map((vertex) => vertex[axis]).filter(Number.isFinite);
+  return values.length ? Math.max(...values) - Math.min(...values) : 0;
 }
 
 function arrayBufferToDataUrl(buffer, mimeType) {
@@ -5668,6 +12340,19 @@ function slugify(value) {
 
 function serializeSceneModel(name, placed, style, material, renderSettings = DEFAULT_RENDER_SETTINGS, modelTransform = DEFAULT_MODEL_TRANSFORM) {
   const normalizedMaterial = normalizeMaterialName(material);
+  const flatPolygons = placed
+    .filter((piece) => !piece.hidden)
+    .map((piece) => ({
+      id: piece.id,
+      sourceId: piece.sourceId,
+      name: piece.name,
+      color: piece.color,
+      height: Number(piece.height) || 0.18,
+      elevation: Number(piece.elevation) || 0,
+      points: worldFootprintPoints(piece),
+    }))
+    .filter((polygon) => polygon.points.length >= 3);
+  const flatBounds = exportPolygonBounds(flatPolygons);
   return {
     id: `model-${crypto.randomUUID()}`,
     app: 'Girih',
@@ -5679,17 +12364,30 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
     material: normalizedMaterial,
     renderSettings: normalizeRenderSettings(renderSettings),
     modelTransform: normalizeModelTransform(modelTransform),
-    pieces: placed.map(({ id, sourceId, name: pieceName, group, groupInstanceId, points, snapEdges, verticalEdges, displayEdges, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, x, y, rotation, mirrorVertical, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
+    bounds: sceneBounds(placed),
+    mehrazPlacementMode: 'preserve-girih-stage',
+    mehrazFlatPattern: {
+      version: 1,
+      coordinateSystem: 'girih-world-xz',
+      grouped: true,
+      bounds: flatBounds,
+      pieces: flatPolygons,
+    },
+    pieces: placed.map(({ id, sourceId, name: pieceName, group, groupInstanceId, points, snapEdges, verticalEdges, displayEdges, offsetLinesEnabled, surfaceSticker, surfaceStickerUvTransform, sourceHeightPx, sourceWidthPx, sourceLengthPx, sourceFootprintScale, keepAspectRatio, analysisVersion, isFrameSlice, x, y, rotation, elevation, tiltX, tiltZ, mirrorHorizontal, mirrorVertical, hidden, height, stageWidth, stageLength, color, type, objText, glbDataUrl, glbUrl, snappedTo }) => ({
       id,
       sourceId,
       name: pieceName,
       group: normalizePieceGroupName(group),
       groupInstanceId: groupInstanceId || null,
       type: type || 'shape',
+      isFrameSlice: !!isFrameSlice,
       points,
       snapEdges,
       verticalEdges,
       displayEdges,
+      offsetLinesEnabled: offsetLinesEnabled !== false,
+      surfaceSticker: hasSurfaceStickerContent(surfaceSticker) ? normalizeSurfaceSticker(surfaceSticker) : undefined,
+      surfaceStickerUvTransform: normalizeSurfaceStickerUvTransform(surfaceStickerUvTransform),
       sourceHeightPx,
       sourceWidthPx,
       sourceLengthPx,
@@ -5700,14 +12398,106 @@ function serializeSceneModel(name, placed, style, material, renderSettings = DEF
       glbDataUrl,
       glbUrl,
       snappedTo,
-      transform: { x, y, rotation, mirrorVertical: !!mirrorVertical, height, stageWidth, stageLength },
+      transform: { x, y, rotation, elevation, tiltX, tiltZ, mirrorHorizontal: !!mirrorHorizontal, mirrorVertical: !!mirrorVertical, hidden: !!hidden, height, stageWidth, stageLength },
       material: { type: normalizedMaterial, color },
     })),
   };
 }
 
+function compactSceneModelForStorage(model) {
+  if (!model || typeof model !== 'object') return model;
+  const sourceMap = new Map();
+  if (Array.isArray(model.sources)) {
+    model.sources.forEach((source) => {
+      const sourceKey = source.sourceKey || source.id || source.sourceId;
+      if (sourceKey) sourceMap.set(sourceKey, compactSceneSource(sourceKey, source));
+    });
+  }
+  const compactPieces = (Array.isArray(model.pieces) ? model.pieces : []).map((piece) => {
+    const sourceKey = piece.sourceKey || (piece.isFrameSlice ? piece.id : piece.sourceId || piece.id);
+    if (!sourceMap.has(sourceKey)) sourceMap.set(sourceKey, compactSceneSource(sourceKey, piece));
+    return compactSceneInstance(sourceKey, piece);
+  });
+  return {
+    ...model,
+    version: 2,
+    sources: Array.from(sourceMap.values()),
+    pieces: compactPieces,
+  };
+}
+
+function compactSceneSource(sourceKey, piece) {
+  const normalizedSourceKey = piece.isFrameSlice ? sourceKey : normalizeMoroccoPieceId(sourceKey);
+  return {
+    sourceKey: normalizedSourceKey,
+    sourceId: normalizeMoroccoPieceId(piece.sourceId || piece.id || normalizedSourceKey),
+    name: piece.name || 'Imported model piece',
+    group: normalizePieceGroupName(piece.group),
+    type: piece.type || 'shape',
+    isFrameSlice: !!piece.isFrameSlice,
+    points: piece.points,
+    snapEdges: piece.snapEdges,
+    verticalEdges: piece.verticalEdges,
+    displayEdges: piece.displayEdges,
+    offsetLinesEnabled: piece.offsetLinesEnabled !== false,
+    surfaceSticker: hasSurfaceStickerContent(piece.surfaceSticker) ? normalizeSurfaceSticker(piece.surfaceSticker) : undefined,
+    surfaceStickerUvTransform: normalizeSurfaceStickerUvTransform(piece.surfaceStickerUvTransform),
+    sourceHeightPx: piece.sourceHeightPx,
+    sourceWidthPx: piece.sourceWidthPx,
+    sourceLengthPx: piece.sourceLengthPx,
+    sourceFootprintScale: piece.sourceFootprintScale,
+    keepAspectRatio: piece.keepAspectRatio !== false,
+    analysisVersion: piece.analysisVersion,
+    objText: piece.objText,
+    glbDataUrl: piece.glbUrl ? undefined : piece.glbDataUrl,
+    glbUrl: normalizeMoroccoModelUrl(piece.glbUrl),
+  };
+}
+
+function compactSceneInstance(sourceKey, piece) {
+  const transform = piece.transform || piece;
+  const materialInfo = piece.material || {};
+  const normalizedSourceKey = piece.isFrameSlice ? sourceKey : normalizeMoroccoPieceId(sourceKey);
+  return {
+    id: piece.id,
+    sourceKey: normalizedSourceKey,
+    sourceId: normalizeMoroccoPieceId(piece.sourceId || normalizedSourceKey),
+    groupInstanceId: piece.groupInstanceId || null,
+    snappedTo: piece.snappedTo || null,
+    offsetLinesEnabled: piece.offsetLinesEnabled !== false,
+    transform: {
+      x: transform.x,
+      y: transform.y,
+      rotation: transform.rotation,
+      elevation: transform.elevation,
+      tiltX: transform.tiltX,
+      tiltZ: transform.tiltZ,
+      mirrorHorizontal: !!transform.mirrorHorizontal,
+      mirrorVertical: !!transform.mirrorVertical,
+      hidden: !!transform.hidden,
+      height: transform.height ?? piece.height,
+      stageWidth: transform.stageWidth ?? piece.stageWidth,
+      stageLength: transform.stageLength ?? piece.stageLength,
+    },
+    material: {
+      color: materialInfo.color || piece.color,
+    },
+  };
+}
+
 function rehydrateScenePieces(model) {
   const sourcePieces = Array.isArray(model?.pieces) ? model.pieces : [];
+  const sourceByKey = new Map();
+  (Array.isArray(model?.sources) ? model.sources : [])
+    .filter((source) => source && typeof source === 'object')
+    .forEach((source) => {
+      const rawKey = source.sourceKey || source.id || source.sourceId;
+      if (!rawKey) return;
+      const normalizedSource = normalizeMoroccoStoredSource(source);
+      const normalizedKey = source.isFrameSlice ? rawKey : normalizeMoroccoPieceId(rawKey);
+      sourceByKey.set(rawKey, normalizedSource);
+      sourceByKey.set(normalizedKey, normalizedSource);
+    });
   const idMap = new Map();
   const groupIdMap = new Map();
   const pieces = sourcePieces
@@ -5715,7 +12505,10 @@ function rehydrateScenePieces(model) {
       const oldId = piece.id || crypto.randomUUID();
       const transform = piece.transform || piece;
       const materialInfo = piece.material || {};
-      const sourceId = piece.sourceId || slugify(piece.name || oldId) || oldId;
+      const normalizedSourceKey = piece.isFrameSlice ? piece.sourceKey : normalizeMoroccoPieceId(piece.sourceKey);
+      const normalizedPieceSourceId = normalizeMoroccoPieceId(piece.sourceId);
+      const source = sourceByKey.get(normalizedSourceKey) || sourceByKey.get(normalizedPieceSourceId) || DEFAULT_PIECE_BY_ID.get(normalizedPieceSourceId) || {};
+      const sourceId = normalizedPieceSourceId || normalizeMoroccoPieceId(source.sourceId) || slugify(piece.name || source.name || oldId) || oldId;
       const nextId = `${sourceId}-${crypto.randomUUID()}`;
       const sourceGroupInstanceId = piece.groupInstanceId || null;
       const groupInstanceId = sourceGroupInstanceId
@@ -5726,28 +12519,37 @@ function rehydrateScenePieces(model) {
       return {
         id: nextId,
         sourceId,
-        name: piece.name || 'Imported model piece',
-        group: normalizePieceGroupName(piece.group),
+        name: piece.name || source.name || 'Imported model piece',
+        group: normalizePieceGroupName(piece.group || source.group),
         groupInstanceId,
-        type: piece.type || 'shape',
+        type: piece.type || source.type || 'shape',
+        isFrameSlice: !!(piece.isFrameSlice ?? source.isFrameSlice) || ((piece.type || source.type) === 'shape' && /\bslice\b/i.test(piece.name || source.name || '')),
         color: materialInfo.color || piece.color || '#1c7c74',
-        points: piece.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number)),
-        snapEdges: piece.snapEdges,
-        verticalEdges: piece.verticalEdges,
-        displayEdges: piece.displayEdges,
-        sourceHeightPx: piece.sourceHeightPx,
-        sourceWidthPx: piece.sourceWidthPx,
-        sourceLengthPx: piece.sourceLengthPx,
-        sourceFootprintScale: piece.sourceFootprintScale,
-        keepAspectRatio: piece.keepAspectRatio !== false,
-        analysisVersion: piece.analysisVersion,
-        objText: piece.objText,
-        glbDataUrl: piece.glbDataUrl,
-        glbUrl: piece.glbUrl,
+        points: piece.points || source.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number)),
+        snapEdges: piece.snapEdges || source.snapEdges,
+        verticalEdges: piece.verticalEdges || source.verticalEdges,
+        displayEdges: piece.displayEdges || source.displayEdges,
+        offsetLinesEnabled: (piece.offsetLinesEnabled ?? source.offsetLinesEnabled) !== false,
+        surfaceSticker: hasSurfaceStickerContent(piece.surfaceSticker ?? source.surfaceSticker) ? normalizeSurfaceSticker(piece.surfaceSticker ?? source.surfaceSticker) : undefined,
+        surfaceStickerUvTransform: normalizeSurfaceStickerUvTransform(piece.surfaceStickerUvTransform ?? source.surfaceStickerUvTransform),
+        sourceHeightPx: piece.sourceHeightPx ?? source.sourceHeightPx,
+        sourceWidthPx: piece.sourceWidthPx ?? source.sourceWidthPx,
+        sourceLengthPx: piece.sourceLengthPx ?? source.sourceLengthPx,
+        sourceFootprintScale: piece.sourceFootprintScale ?? source.sourceFootprintScale,
+        keepAspectRatio: (piece.keepAspectRatio ?? source.keepAspectRatio) !== false,
+        analysisVersion: piece.analysisVersion ?? source.analysisVersion,
+        objText: piece.objText ?? source.objText,
+        glbDataUrl: piece.glbDataUrl ?? source.glbDataUrl,
+        glbUrl: normalizeMoroccoModelUrl(piece.glbUrl ?? source.glbUrl),
         x: Number(transform.x) || 0,
         y: Number(transform.y) || 0,
         rotation: Number(transform.rotation) || 0,
+        elevation: Number(transform.elevation) || 0,
+        tiltX: Number(transform.tiltX) || 0,
+        tiltZ: Number(transform.tiltZ) || 0,
+        mirrorHorizontal: !!transform.mirrorHorizontal,
         mirrorVertical: !!transform.mirrorVertical,
+        hidden: !!transform.hidden,
         height: Number(transform.height || piece.height) || 0.18,
         stageWidth: parseOptionalNumber(transform.stageWidth ?? piece.stageWidth),
         stageLength: parseOptionalNumber(transform.stageLength ?? piece.stageLength),
@@ -5943,13 +12745,15 @@ async function renderSceneCanvas(placed, options = {}) {
 
 async function renderPaperSceneCanvas(placed, options = {}) {
   const orientation = options.orientation || 'landscape';
-  const size = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
+  const size = exportCanvasSize(orientation, options.paperSize);
   const canvas = document.createElement('canvas');
   canvas.width = size[0];
   canvas.height = size[1];
   const context = canvas.getContext('2d');
-  context.fillStyle = PAPER_BACKGROUND_COLOR;
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  if (!options.transparentBackground) {
+    context.fillStyle = PAPER_BACKGROUND_COLOR;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   const transformMatrix = modelTransformMatrix(options.modelTransform);
   const segments = placed.flatMap((piece) => transformedPaperSegments(piece, transformMatrix));
@@ -5966,7 +12770,7 @@ async function renderPaperSceneCanvas(placed, options = {}) {
   const offsetY = (canvas.height - drawHeight) / 2;
   const toCanvas = ([x, y]) => [
     offsetX + (x - bounds.minX) * scale,
-    offsetY + (bounds.maxY - y) * scale,
+    offsetY + (y - bounds.minY) * scale,
   ];
 
   context.save();
@@ -6186,11 +12990,11 @@ function shadeColor(color, factor) {
 
 function glassTintColor(color) {
   const piece = hexToRgb(color) || hexToRgb('#1c7c74');
-  const vivid = saturateRgb(piece, 2.35);
+  const vivid = saturateRgb(piece, 1.08);
   const rgb = {
-    r: clampColor(vivid.r * 1.16 + 10),
-    g: clampColor(vivid.g * 1.16 + 10),
-    b: clampColor(vivid.b * 1.16 + 10),
+    r: clampColor(vivid.r * 0.8 + 38),
+    g: clampColor(vivid.g * 0.8 + 38),
+    b: clampColor(vivid.b * 0.8 + 38),
   };
   return rgbToHex(rgb);
 }
@@ -6232,6 +13036,10 @@ function rgbToHex({ r, g, b }) {
 
 function rgbaFromRgb({ r, g, b }, alpha) {
   return `rgba(${clampColor(r)}, ${clampColor(g)}, ${clampColor(b)}, ${alpha})`;
+}
+
+function relativeRgbLuminance({ r, g, b }) {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 function clampColor(value) {
@@ -6287,16 +13095,71 @@ function cappedExportSize(baseSize, requestedScale, maxPixels) {
   return requestedSize.map((value) => Math.max(1, Math.floor(value * scale)));
 }
 
+function getExportPaperSize(paperSize = DEFAULT_EXPORT_PAPER_SIZE) {
+  return EXPORT_PAPER_SIZES.find((item) => item.value === paperSize) || EXPORT_PAPER_SIZES[0];
+}
+
+function exportCanvasSize(orientation = 'landscape', paperSize = DEFAULT_EXPORT_PAPER_SIZE) {
+  const paper = getExportPaperSize(paperSize);
+  const longSide = 3200;
+  const sourceWidth = orientation === 'portrait' ? Math.min(paper.width, paper.height) : Math.max(paper.width, paper.height);
+  const sourceHeight = orientation === 'portrait' ? Math.max(paper.width, paper.height) : Math.min(paper.width, paper.height);
+  const scale = longSide / Math.max(sourceWidth, sourceHeight);
+  return [
+    Math.max(1, Math.round(sourceWidth * scale)),
+    Math.max(1, Math.round(sourceHeight * scale)),
+  ];
+}
+
+function exportPdfPageSize(orientation = 'landscape', paperSize = DEFAULT_EXPORT_PAPER_SIZE) {
+  const paper = getExportPaperSize(paperSize);
+  const width = paper.pdf?.width || 842;
+  const height = paper.pdf?.height || 595;
+  return orientation === 'portrait'
+    ? [Math.min(width, height), Math.max(width, height)]
+    : [Math.max(width, height), Math.min(width, height)];
+}
+
+function loadGlassHdrEnvironment(renderer) {
+  return new Promise((resolve, reject) => {
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    new RGBELoader().load(
+      GLASS_HDR_ENVIRONMENT_URL,
+      (texture) => {
+        try {
+          texture.mapping = THREE.EquirectangularReflectionMapping;
+          const target = pmremGenerator.fromEquirectangular(texture);
+          texture.dispose();
+          pmremGenerator.dispose();
+          resolve(target);
+        } catch (error) {
+          texture.dispose();
+          pmremGenerator.dispose();
+          reject(error);
+        }
+      },
+      undefined,
+      (error) => {
+        pmremGenerator.dispose();
+        reject(error);
+      },
+    );
+  });
+}
+
 async function renderIsometricSceneCanvas(placed, options = {}) {
   const renderSettings = normalizeRenderSettings(options.renderSettings);
   const exportMaterial = normalizeMaterialName(options.material);
-  const exportShadowsEnabled = exportMaterial === 'plastic' && !!options.shadowsEnabled;
+  const glassSettings = normalizeGlassSettings(options.glassSettings);
+  const transparentBackground = !!options.transparentBackground;
+  const exportShadowsEnabled = !transparentBackground && exportMaterial !== 'paper' && !!options.shadowsEnabled;
   const constrainedExport = isConstrainedExportDevice();
   const modelTransform = normalizeModelTransform(options.modelTransform);
   const cameraView = getStageCameraView(options.view);
   const cameraSnapshot = normalizeCameraSnapshot(options.cameraSnapshot);
   const orientation = options.orientation || 'landscape';
-  const baseSize = orientation === 'portrait' ? [2400, 3200] : [3200, 2400];
+  const baseSize = exportCanvasSize(orientation, options.paperSize);
   const requestedRenderScale = exportMaterial === 'glass'
     ? GLASS_EXPORT_RENDER_SCALE
     : constrainedExport
@@ -6307,97 +13170,140 @@ async function renderIsometricSceneCanvas(placed, options = {}) {
     requestedRenderScale,
     constrainedExport ? MOBILE_EXPORT_MAX_PIXELS : DESKTOP_EXPORT_MAX_PIXELS,
   );
-  const renderer = new THREE.WebGLRenderer({ antialias: exportMaterial !== 'glass', preserveDrawingBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: exportMaterial !== 'glass', preserveDrawingBuffer: true, alpha: transparentBackground });
   renderer.setPixelRatio(1);
   renderer.setSize(size[0], size[1], false);
-  renderer.setClearColor(renderSettings.backgroundColor, 1);
+  renderer.setClearColor(renderSettings.backgroundColor, transparentBackground ? 0 : 1);
   renderer.shadowMap.enabled = exportShadowsEnabled;
   if (exportShadowsEnabled) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  if (exportMaterial !== 'glass') {
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1;
-  }
+  renderer.toneMapping = exportMaterial === 'glass' ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+  renderer.toneMappingExposure = exportMaterial === 'glass' ? 0.9 : 1;
+  if ('physicallyCorrectLights' in renderer) renderer.physicallyCorrectLights = exportMaterial === 'glass';
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(renderSettings.backgroundColor);
+  scene.background = transparentBackground ? null : new THREE.Color(renderSettings.backgroundColor);
   const group = new THREE.Group();
   const colorCastGroup = new THREE.Group();
   colorCastGroup.name = 'export-glass-color-cast';
-  updateGlassColorCast(colorCastGroup, placed, exportMaterial, modelTransform);
-  const floor = createStageFloor(renderSettings.backgroundColor, exportShadowsEnabled);
-  scene.add(floor);
-  scene.add(colorCastGroup);
-  scene.add(group);
+  const stageFloor = transparentBackground ? null : createStageFloor(renderSettings.backgroundColor, exportShadowsEnabled);
+  let exportHdrEnvironmentTarget = null;
+  try {
+    if (exportMaterial === 'glass') {
+      try {
+        exportHdrEnvironmentTarget = await loadGlassHdrEnvironment(renderer);
+        scene.environment = exportHdrEnvironmentTarget.texture;
+      } catch (error) {
+        console.warn('The HDR environment was unavailable for this glass export.', error);
+      }
+    }
+    if (exportMaterial === 'glass' && !transparentBackground) {
+      try {
+        updateGlassColorCast(colorCastGroup, placed, exportMaterial, modelTransform, glassSettings);
+      } catch (error) {
+        console.warn('Glass color cast was skipped during export', error);
+        colorCastGroup.visible = false;
+      }
+    }
+    if (stageFloor) scene.add(stageFloor);
+    if (colorCastGroup.visible) scene.add(colorCastGroup);
+    scene.add(group);
 
-  const ambient = new THREE.HemisphereLight(
-    STAGE_HEMISPHERE_LIGHT.sky,
-    STAGE_HEMISPHERE_LIGHT.ground,
-    exportMaterial === 'glass' ? 1.45 : STAGE_HEMISPHERE_LIGHT.intensity,
-  );
-  scene.add(ambient);
-  const key = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
-  key.position.set(...STAGE_KEY_LIGHT.position);
-  key.castShadow = exportShadowsEnabled;
-  if (exportShadowsEnabled) {
-    const shadowMapSize = Math.min(
-      Math.round((constrainedExport ? MOBILE_EXPORT_SHADOW_MAP_SIZE : EXPORT_SHADOW_MAP_SIZE) * EXPORT_SHADOW_QUALITY_SCALE),
-      renderer.capabilities.maxTextureSize || EXPORT_SHADOW_MAP_SIZE,
+    const ambient = new THREE.HemisphereLight(
+      STAGE_HEMISPHERE_LIGHT.sky,
+      STAGE_HEMISPHERE_LIGHT.ground,
+      exportMaterial === 'glass' ? 1.45 : STAGE_HEMISPHERE_LIGHT.intensity,
     );
-    key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
-    key.shadow.bias = -0.00006;
-    key.shadow.normalBias = 0.018;
-    key.shadow.radius = 2.2;
-    key.shadow.camera.near = 0.5;
-    key.shadow.camera.far = 40;
-    key.shadow.camera.left = -16;
-    key.shadow.camera.right = 16;
-    key.shadow.camera.top = 16;
-    key.shadow.camera.bottom = -16;
-  }
-  scene.add(key);
-  for (const piece of placed) {
-    const object = await createExportPieceObject(piece);
-    object.userData.id = piece.id;
-    object.position.set(piece.x, 0, piece.y);
-    object.rotation.y = -piece.rotation;
-    object.scale.set(1, 1, piece.mirrorVertical ? -1 : 1);
-    applyExportPieceMaterial(object, piece, exportMaterial, renderSettings, exportShadowsEnabled);
-    const edgeOverlay = exportMaterial === 'glass' ? null : createExportEdgeOverlay(piece, renderSettings, false);
-    if (edgeOverlay) object.add(edgeOverlay);
-    group.add(object);
-  }
-  applyModelTransform(group, modelTransform);
+    scene.add(ambient);
+    const key = new THREE.DirectionalLight(STAGE_KEY_LIGHT.color, STAGE_KEY_LIGHT.intensity);
+    key.position.set(...STAGE_KEY_LIGHT.position);
+    key.castShadow = exportShadowsEnabled;
+    if (exportShadowsEnabled) {
+      const shadowMapSize = Math.min(
+        Math.round((constrainedExport ? MOBILE_EXPORT_SHADOW_MAP_SIZE : EXPORT_SHADOW_MAP_SIZE) * EXPORT_SHADOW_QUALITY_SCALE),
+        renderer.capabilities.maxTextureSize || EXPORT_SHADOW_MAP_SIZE,
+      );
+      key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+      key.shadow.bias = -0.00006;
+      key.shadow.normalBias = 0.018;
+      key.shadow.radius = 2.2;
+      key.shadow.intensity = exportMaterial === 'glass' ? 0.34 : 1;
+      key.shadow.camera.near = 0.5;
+      key.shadow.camera.far = 40;
+      key.shadow.camera.left = -16;
+      key.shadow.camera.right = 16;
+      key.shadow.camera.top = 16;
+      key.shadow.camera.bottom = -16;
+    }
+    scene.add(key);
+    for (const piece of placed) {
+      const object = await createExportPieceObject(piece, exportMaterial);
+      object.userData.id = piece.id;
+      object.position.set(piece.x, Number(piece.elevation) || 0, piece.y);
+      object.rotation.set(Number(piece.tiltX) || 0, -piece.rotation, Number(piece.tiltZ) || 0);
+      const exportBaseHeight = Math.max(0.02, Number(piece.height) || 0.18);
+      object.scale.set(
+        piece.mirrorHorizontal ? -1 : 1,
+        exportMaterial === 'glass' ? glassOpticalThickness(piece, glassSettings) / exportBaseHeight : 1,
+        piece.mirrorVertical ? -1 : 1,
+      );
+      applyExportPieceMaterial(object, piece, exportMaterial, renderSettings, exportShadowsEnabled, glassSettings);
+      const edgeOverlay = exportMaterial === 'glass' ? null : createExportEdgeOverlay(piece, renderSettings, false);
+      if (edgeOverlay) object.add(edgeOverlay);
+      const surfaceStickerOverlay = updatePieceSurfaceStickerOverlay(object, piece);
+      if (surfaceStickerOverlay?.material?.map?.userData?.readyPromise) {
+        await surfaceStickerOverlay.material.map.userData.readyPromise;
+      }
+      group.add(object);
+    }
+    applyModelTransform(group, modelTransform);
 
-  const bounds = new THREE.Box3().setFromObject(group);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const sizeVector = bounds.getSize(new THREE.Vector3());
-  const radius = Math.max(sizeVector.x, sizeVector.y * 2.3, sizeVector.z, 1);
-  const aspect = size[0] / size[1];
-  const useStageCameraSnapshot = options.view !== 'top' && cameraSnapshot;
-  const camera = new THREE.PerspectiveCamera(useStageCameraSnapshot ? cameraSnapshot.fov : 42, aspect, 0.01, 1000);
-  if (useStageCameraSnapshot) {
-    camera.up.fromArray(cameraSnapshot.up);
-    camera.position.fromArray(cameraSnapshot.position);
-    camera.lookAt(new THREE.Vector3().fromArray(cameraSnapshot.target));
-  } else {
-    frameExportCameraToBounds(camera, bounds, cameraView, { padding: exportMaterial === 'glass' ? 1.32 : 1.18, minDistance: Math.max(radius, 6) });
+    const bounds = new THREE.Box3().setFromObject(group);
+    if (bounds.isEmpty()) throw new Error('The model has no visible geometry to export.');
+    const sizeVector = bounds.getSize(new THREE.Vector3());
+    const radius = Math.max(sizeVector.x, sizeVector.y * 2.3, sizeVector.z, 1);
+    const aspect = size[0] / size[1];
+    const useStageCameraSnapshot = options.view !== 'top' && cameraSnapshot;
+    const camera = new THREE.PerspectiveCamera(useStageCameraSnapshot ? cameraSnapshot.fov : 42, aspect, 0.01, 1000);
+    if (useStageCameraSnapshot) {
+      camera.up.fromArray(cameraSnapshot.up);
+      camera.position.fromArray(cameraSnapshot.position);
+      camera.lookAt(new THREE.Vector3().fromArray(cameraSnapshot.target));
+    } else {
+      frameExportCameraToBounds(camera, bounds, cameraView, {
+        padding: exportMaterial === 'glass' ? 1.32 : 1.18,
+        minDistance: Math.max(radius, 6),
+        zoom: options.zoom,
+        pan: options.pan,
+      });
+    }
+    camera.updateProjectionMatrix();
+
+    renderer.render(scene, camera);
+    const canvas = document.createElement('canvas');
+    canvas.width = size[0];
+    canvas.height = size[1];
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('The browser could not create the export canvas.');
+    context.drawImage(renderer.domElement, 0, 0);
+    if (!transparentBackground) {
+      context.fillStyle = '#4f4538';
+      context.font = '24px Inter, Arial, sans-serif';
+      context.fillText(`Girih ${cameraView.label} ${exportMaterial} export`, 32, canvas.height - 34);
+    }
+    return canvas;
+  } finally {
+    disposeObject(group);
+    disposeObject(colorCastGroup);
+    if (stageFloor) disposeObject(stageFloor);
+    exportHdrEnvironmentTarget?.dispose();
+    renderer.dispose();
+    try {
+      renderer.forceContextLoss();
+    } catch (error) {
+      console.warn('Could not explicitly release the export WebGL context', error);
+    }
   }
-  camera.updateProjectionMatrix();
-
-  renderer.render(scene, camera);
-  const canvas = document.createElement('canvas');
-  canvas.width = size[0];
-  canvas.height = size[1];
-  const context = canvas.getContext('2d');
-  context.drawImage(renderer.domElement, 0, 0);
-  context.fillStyle = '#4f4538';
-  context.font = '24px Inter, Arial, sans-serif';
-  context.fillText(`Girih ${cameraView.label} ${exportMaterial} export`, 32, canvas.height - 34);
-
-  disposeObject(group);
-  renderer.dispose();
-  return canvas;
 }
 
 function frameExportCameraToBounds(camera, bounds, cameraView, options = {}) {
@@ -6427,12 +13333,22 @@ function frameExportCameraToBounds(camera, bounds, cameraView, options = {}) {
   const fov = THREE.MathUtils.degToRad(camera.fov);
   const fitHeightDistance = (viewHeight * padding) / (2 * Math.tan(fov / 2));
   const fitWidthDistance = (viewWidth * padding) / (2 * Math.tan(fov / 2) * camera.aspect);
-  const distance = Math.max(fitHeightDistance, fitWidthDistance, viewDepth + 1, Number(options.minDistance) || 6);
+  const zoom = clamp(Number(options.zoom) || 1, 0.5, 3);
+  const distance = Math.max(fitHeightDistance, fitWidthDistance, viewDepth + 1, Number(options.minDistance) || 6) / zoom;
+  const panX = clamp(Number(options.pan?.x) || 0, -0.75, 0.75);
+  const panY = clamp(Number(options.pan?.y) || 0, -0.75, 0.75);
+  const visibleHeight = 2 * distance * Math.tan(fov / 2);
+  const visibleWidth = visibleHeight * camera.aspect;
+  const panOffset = right
+    .clone()
+    .multiplyScalar(-panX * visibleWidth)
+    .add(trueUp.clone().multiplyScalar(panY * visibleHeight));
+  const target = center.clone().add(panOffset);
   camera.up.copy(trueUp);
-  camera.position.copy(center).add(direction.multiplyScalar(distance));
+  camera.position.copy(target).add(direction.multiplyScalar(distance));
   camera.near = Math.max(0.01, distance - viewDepth * 3 - 20);
   camera.far = distance + viewDepth * 3 + 80;
-  camera.lookAt(center);
+  camera.lookAt(target);
 }
 
 function boxCorners(bounds) {
@@ -6661,7 +13577,7 @@ function worldRenderSegments(piece) {
 }
 
 function getExportFootprintSegments(piece) {
-  if (piece.displayEdges?.length) return scaleImportedSegments(piece, piece.displayEdges).filter(([start, end]) => start && end);
+  if (!piece.isFrameSlice && piece.displayEdges?.length) return scaleImportedSegments(piece, piece.displayEdges).filter(([start, end]) => start && end);
   return getRealFootprintSegments(piece);
 }
 
@@ -6675,13 +13591,18 @@ function uniqueSegmentPoints(segments) {
 }
 
 function createExportEdgeOverlay(piece, renderSettings, showThrough = false) {
+  if (renderSettings.edgeMode === 'offset' && piece.offsetLinesEnabled === false) return null;
   const segments = getExportFootprintSegments(piece).filter(([start, end]) => start && end);
   if (!segments.length) return null;
   const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
   if (thickness <= 0) return null;
-  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings);
-  const verticalPoints = renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
-  const instanceCount = edgeSegments.length * 2 + verticalPoints.length;
+  const edgeSegments = edgeOverlaySegments(segments, thickness, renderSettings, {
+    joinedSegmentOffsets: !!piece.isFrameSlice,
+    boundaryPoints: piece.isFrameSlice ? getLocalCollisionPoints(piece) : undefined,
+  });
+  const topOnly = !!piece.isFrameSlice;
+  const verticalPoints = topOnly || renderSettings.edgeMode === 'offset' ? [] : uniqueSegmentCoordinatePoints(segments);
+  const instanceCount = edgeSegments.length * (topOnly ? 1 : 2) + verticalPoints.length;
   if (!instanceCount) return null;
   const material = new THREE.MeshBasicMaterial({
     color: renderSettings.edgeColor,
@@ -6702,8 +13623,10 @@ function createExportEdgeOverlay(piece, renderSettings, showThrough = false) {
   edgeSegments.forEach(([start, end]) => {
     setStageEdgeBarMatrix(overlay, matrixIndex, start, end, topY, thickness, 0, interiorPoint);
     matrixIndex += 1;
-    setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
-    matrixIndex += 1;
+    if (!topOnly) {
+      setStageEdgeBarMatrix(overlay, matrixIndex, start, end, bottomY, thickness, 0, interiorPoint);
+      matrixIndex += 1;
+    }
   });
   verticalPoints.forEach(([x, y]) => {
     const matrix = new THREE.Matrix4();
@@ -6719,11 +13642,13 @@ function createExportEdgeOverlay(piece, renderSettings, showThrough = false) {
   return overlay;
 }
 
-async function createExportPieceObject(piece) {
-  return createExportFootprintObject(piece);
+async function createExportPieceObject(piece, materialName = 'plastic') {
+  // Export from the normalized footprint. Raw imported GLB meshes can contain
+  // source-specific axes and normals that render as inverted triangular faces.
+  return createExportFootprintObject(piece, materialName);
 }
 
-function createExportFootprintObject(piece) {
+function createExportFootprintObject(piece, materialName = 'plastic') {
   const points = getLocalCollisionPoints(piece);
   const shapePoints = points.length >= 3 ? points : piece.points || emptyDraft().points.split(' ').map((pair) => pair.split(',').map(Number));
   const shape = new THREE.Shape();
@@ -6733,9 +13658,15 @@ function createExportFootprintObject(piece) {
   });
   shape.closePath();
   const height = Math.max(0.02, Number(piece.height) || 0.18);
+  // Live Plastic pieces use crisp source geometry. Keep export Plastic equally
+  // sharp; the architectural bevel remains exclusive to Glass.
+  const bevelEnabled = normalizeMaterialName(materialName) !== 'plastic' && !piece.isFrameSlice;
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: height,
-    bevelEnabled: false,
+    bevelEnabled,
+    bevelThickness: bevelEnabled ? Math.min(0.018, height * 0.18) : 0,
+    bevelSize: bevelEnabled ? 0.018 : 0,
+    bevelSegments: bevelEnabled ? 3 : 0,
   });
   geometry.rotateX(Math.PI / 2);
   geometry.translate(0, height, 0);
@@ -6745,20 +13676,20 @@ function createExportFootprintObject(piece) {
   return mesh;
 }
 
-function applyExportPieceMaterial(object, piece, materialName, renderSettings = DEFAULT_RENDER_SETTINGS, shadowsEnabled = true) {
+function applyExportPieceMaterial(object, piece, materialName, renderSettings = DEFAULT_RENDER_SETTINGS, shadowsEnabled = true, glassSettings = DEFAULT_GLASS_SETTINGS) {
   const normalizedMaterialName = normalizeMaterialName(materialName);
-  const material = createExportMaterial(piece, normalizedMaterialName, renderSettings);
+  const material = createExportMaterial(piece, normalizedMaterialName, renderSettings, glassSettings);
   object.traverse((child) => {
     if (!child.isMesh) return;
-    child.castShadow = !!shadowsEnabled && normalizedMaterialName !== 'glass' && normalizedMaterialName !== 'paper';
-    child.receiveShadow = !!shadowsEnabled && normalizedMaterialName !== 'glass' && normalizedMaterialName !== 'paper';
+    child.castShadow = !!shadowsEnabled && normalizedMaterialName !== 'paper' && normalizedMaterialName !== 'glass';
+    child.receiveShadow = !!shadowsEnabled && normalizedMaterialName !== 'paper' && normalizedMaterialName !== 'glass';
     child.material?.dispose?.();
     child.material = material.clone();
   });
   material.dispose();
 }
 
-function createExportMaterial(piece, materialName = 'plastic', renderSettings = DEFAULT_RENDER_SETTINGS) {
+function createExportMaterial(piece, materialName = 'plastic', renderSettings = DEFAULT_RENDER_SETTINGS, glassSettings = DEFAULT_GLASS_SETTINGS) {
   const material = normalizeMaterialName(materialName);
   const color = piece.color || '#1c7c74';
   if (material === 'paper') {
@@ -6771,27 +13702,14 @@ function createExportMaterial(piece, materialName = 'plastic', renderSettings = 
     });
   }
   if (material === 'glass') {
-    const tint = glassTintColor(color);
-    return new THREE.MeshStandardMaterial({
-      color: tint,
-      metalness: 0,
-      roughness: 0.12,
-      emissive: new THREE.Color(tint),
-      emissiveIntensity: 0.08,
-      transparent: false,
-      opacity: 1,
-      envMapIntensity: 0.9,
-      depthWrite: true,
-      depthTest: true,
-      side: THREE.FrontSide,
-    });
+    return createArchitecturalGlassMaterial(piece, false, glassSettings);
   }
 
   return new THREE.MeshStandardMaterial({
     color,
-    metalness: 0,
-    roughness: 0.36,
-    envMapIntensity: 0.35,
+    metalness: 0.08,
+    roughness: 0.42,
+    envMapIntensity: 1,
     transparent: false,
     opacity: 1,
     depthWrite: true,
@@ -6924,12 +13842,10 @@ function downloadCanvasDataUrl(filename, canvas) {
   }
 }
 
-function downloadPdfFromCanvas(filename, canvas, orientation = 'landscape') {
+function downloadPdfFromCanvas(filename, canvas, orientation = 'landscape', paperSize = DEFAULT_EXPORT_PAPER_SIZE) {
   const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
   const imageBytes = base64ToBytes(dataUrl.split(',')[1]);
-  const landscape = orientation === 'landscape';
-  const pageWidth = landscape ? 842 : 595;
-  const pageHeight = landscape ? 595 : 842;
+  const [pageWidth, pageHeight] = exportPdfPageSize(orientation, paperSize);
   const margin = 28;
   const drawScale = Math.min((pageWidth - margin * 2) / canvas.width, (pageHeight - margin * 2) / canvas.height);
   const drawWidth = canvas.width * drawScale;
@@ -6941,28 +13857,51 @@ function downloadPdfFromCanvas(filename, canvas, orientation = 'landscape') {
   downloadBlob(filename, new Blob([pdf], { type: 'application/pdf' }));
 }
 
-function printCanvas(canvas, orientation = 'landscape', title = 'Girih model') {
+function openPrintWindow() {
+  const frame = window.open('about:blank', '_blank');
+  if (!frame) {
+    window.alert('The print window was blocked. Allow pop-ups for this site and try again.');
+    return null;
+  }
+  try {
+    frame.opener = null;
+  } catch {
+    // Some browsers expose a read-only opener reference.
+  }
+  return frame;
+}
+
+function printCanvas(canvas, orientation = 'landscape', title = 'Girih model', paperSize = DEFAULT_EXPORT_PAPER_SIZE, targetWindow = null) {
   const imageUrl = canvas.toDataURL('image/png');
-  const frame = window.open('', '_blank', 'noopener,noreferrer');
+  const frame = targetWindow || openPrintWindow();
   if (!frame) return;
+  const paper = getExportPaperSize(paperSize);
+  const cssPaperName = { a4: 'A4', a3: 'A3', letter: 'letter' }[paper.value];
+  const pageSize = cssPaperName ? `${cssPaperName} ${orientation}` : orientation;
   frame.document.write(`<!doctype html>
 <html>
   <head>
     <title>${escapeHtml(title)}</title>
     <style>
-      @page { size: ${orientation}; margin: 10mm; }
+      @page { size: ${pageSize}; margin: 10mm; }
       body { margin: 0; background: #f6efe3; }
       img { display: block; width: 100%; height: auto; page-break-inside: avoid; }
       .sheet { min-height: 100vh; display: grid; place-items: center; }
+      .print-action { position: fixed; top: 12px; right: 12px; padding: 9px 14px; border: 0; border-radius: 6px; background: #2f514c; color: white; font: 700 13px Arial, sans-serif; cursor: pointer; }
+      @media print { .print-action { display: none; } }
     </style>
   </head>
   <body>
+    <button class="print-action" type="button" onclick="window.print()">Print</button>
     <div class="sheet"><img src="${imageUrl}" alt="${escapeHtml(title)}" /></div>
     <script>
-      window.addEventListener('load', () => {
+      const image = document.querySelector('img');
+      const openDialog = () => window.setTimeout(() => {
         window.focus();
         window.print();
-      });
+      }, 80);
+      if (image.complete) openDialog();
+      else image.addEventListener('load', openDialog, { once: true });
     </script>
   </body>
 </html>`);
@@ -7037,17 +13976,36 @@ function downloadText(filename, text) {
   downloadBlob(filename, blob);
 }
 
+function nextAnimationFrame() {
+  return new Promise((resolve) => window.requestAnimationFrame(resolve));
+}
+
+function drawVideoCanvasFrame(context, sourceCanvas, backgroundColor) {
+  const targetWidth = context.canvas.width;
+  const targetHeight = context.canvas.height;
+  context.fillStyle = normalizeHexColor(backgroundColor, DEFAULT_RENDER_SETTINGS.backgroundColor);
+  context.fillRect(0, 0, targetWidth, targetHeight);
+  const scale = Math.min(targetWidth / sourceCanvas.width, targetHeight / sourceCanvas.height);
+  const width = sourceCanvas.width * scale;
+  const height = sourceCanvas.height * scale;
+  context.drawImage(sourceCanvas, (targetWidth - width) / 2, (targetHeight - height) / 2, width, height);
+}
+
 function exportTopPolygons(placed, options = {}) {
   const transformMatrix = modelTransformMatrix(options.modelTransform);
   return placed
     .map((piece) => {
-      const points = cleanClosedPoints(getLocalCollisionPoints(piece))
-        .map((point) => transformExportFootprintPoint(point, piece, transformMatrix));
+      const localPoints = cleanClosedPoints(getLocalCollisionPoints(piece));
+      const points = localPoints.map((point) => transformExportFootprintPoint(point, piece, transformMatrix));
       if (points.length < 3 || Math.abs(polygonArea2(points)) < 0.000001) return null;
       return {
         id: piece.id,
         name: piece.name || 'Girih piece',
         color: piece.color || '#1c7c74',
+        surfaceSticker: piece.surfaceSticker,
+        surfaceStickerUvs: hasSurfaceStickerContent(piece.surfaceSticker)
+          ? localPoints.map(([x, y]) => surfaceStickerUvAtLocalPoint(piece, x, y))
+          : undefined,
         height: Math.max(0.02, Number(piece.height) || 0.18),
         points,
       };
@@ -7131,10 +14089,15 @@ function machineSegmentKey([start, end]) {
 }
 
 function renderTransparentTopCanvas(placed, options = {}) {
-  const segments = exportPaperTopSegments(placed, options);
+  const renderSettings = normalizeRenderSettings(options.renderSettings);
+  const transformMatrix = modelTransformMatrix(options.modelTransform);
+  const segments = renderSettings.edgeThickness > 0
+    ? placed.flatMap((piece) => transformedStageEdgeSegments(piece, transformMatrix, renderSettings))
+    : [];
   const canvas = document.createElement('canvas');
-  canvas.width = 2400;
-  canvas.height = 2400;
+  const size = exportCanvasSize(options.orientation || 'landscape', options.paperSize);
+  canvas.width = size[0];
+  canvas.height = size[1];
   const context = canvas.getContext('2d');
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (!segments.length) return canvas;
@@ -7150,13 +14113,29 @@ function renderTransparentTopCanvas(placed, options = {}) {
   const offsetY = (canvas.height - drawHeight) / 2;
   const toCanvas = ([x, y]) => [
     offsetX + (x - bounds.minX) * scale,
-    offsetY + (bounds.maxY - y) * scale,
+    offsetY + (y - bounds.minY) * scale,
   ];
 
   context.lineJoin = 'round';
   context.lineCap = 'round';
-  context.strokeStyle = '#000000';
-  context.lineWidth = 3;
+  const edgeLineWidth = Math.max(0.5, stageEdgeWorldThickness(renderSettings.edgeThickness) * scale);
+  const edgeColor = normalizeHexColor(renderSettings.edgeColor, DEFAULT_RENDER_SETTINGS.edgeColor);
+  const edgeRgb = hexToRgb(edgeColor);
+  const needsLightBacking = edgeRgb && relativeRgbLuminance(edgeRgb) < 88;
+  if (needsLightBacking) {
+    context.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+    context.lineWidth = edgeLineWidth + 2.5;
+    segments.forEach(([start, end]) => {
+      const [startX, startY] = toCanvas(start);
+      const [endX, endY] = toCanvas(end);
+      context.beginPath();
+      context.moveTo(startX, startY);
+      context.lineTo(endX, endY);
+      context.stroke();
+    });
+  }
+  context.strokeStyle = edgeColor;
+  context.lineWidth = edgeLineWidth;
   segments.forEach(([start, end]) => {
     const [startX, startY] = toCanvas(start);
     const [endX, endY] = toCanvas(end);
@@ -7168,21 +14147,415 @@ function renderTransparentTopCanvas(placed, options = {}) {
   return canvas;
 }
 
+function renderGraphic2DCanvas(placed, options = {}) {
+  const polygons = exportTopPolygons(placed, options);
+  const size = exportCanvasSize(options.orientation || 'landscape', options.paperSize);
+  const canvas = document.createElement('canvas');
+  canvas.width = size[0];
+  canvas.height = size[1];
+  const context = canvas.getContext('2d');
+  const style = options.graphicStyle || 'standard';
+  const paperCutOut = style === 'paper-cut' && !!options.paperCutOut;
+  const renderSettings = normalizeRenderSettings(options.renderSettings);
+  if (!options.transparentBackground || paperCutOut) {
+    context.fillStyle = renderSettings.backgroundColor;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  if (!polygons.length) return canvas;
+
+  const bounds = exportPolygonBounds(polygons);
+  const margin = 96;
+  const width = Math.max(bounds.maxX - bounds.minX, 0.001);
+  const height = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const scale = Math.min((canvas.width - margin * 2) / width, (canvas.height - margin * 2) / height);
+  const offsetX = (canvas.width - width * scale) / 2;
+  const offsetY = (canvas.height - height * scale) / 2;
+  const toCanvas = ([x, y]) => [offsetX + (x - bounds.minX) * scale, offsetY + (y - bounds.minY) * scale];
+
+  polygons.forEach((polygon, index) => {
+    let points = polygon.points.map(toCanvas);
+    if (style === 'paper-cut') points = offsetCanvasPolygon(points, Number(options.paperGap) || 0);
+    if (points.length < 3) return;
+
+    if (style === 'paper-cut') {
+      traceCanvasPolygon(context, points);
+      if (paperCutOut) {
+        context.save();
+        context.globalCompositeOperation = 'destination-out';
+        context.fillStyle = '#000000';
+        context.fill();
+        context.restore();
+      } else {
+        context.fillStyle = normalizeHexColor(polygon.color, '#fffdf7');
+        context.fill();
+      }
+      if (renderSettings.edgeThickness > 0) {
+        traceCanvasPolygon(context, points);
+        context.strokeStyle = renderSettings.edgeColor;
+        context.lineWidth = Math.max(0.5, Number(renderSettings.edgeThickness));
+        context.stroke();
+      }
+      return;
+    }
+
+    if (style === 'pencil') {
+      const color = normalizeHexColor(polygon.color, '#526f9c');
+      const edgeColor = normalizeHexColor(options.pencilColor, '#526f9c');
+      const intensity = clamp((Number(options.pencilIntensity) || 65) / 100, 0.1, 1);
+      traceCanvasPolygon(context, points);
+      context.fillStyle = hexToRgba(color, 0.05 + intensity * 0.12);
+      context.fill();
+      [12, -10, 32].forEach((angle, pass) => {
+        drawClippedCanvasHatch(context, points, {
+          angle: angle + (index % 3) * 2,
+          spacing: 7 + pass * 2,
+          thickness: 0.55 + intensity * 0.7,
+          color: hexToRgba(color, 0.18 + intensity * 0.22),
+          offset: (index * 5 + pass * 3) % 11,
+        });
+      });
+      if (renderSettings.edgeThickness > 0) {
+        traceCanvasPolygon(context, points);
+        context.strokeStyle = hexToRgba(edgeColor, 0.5 + intensity * 0.38);
+        context.lineWidth = Math.max(0.5, Number(renderSettings.edgeThickness));
+        context.stroke();
+      }
+      return;
+    }
+
+    traceCanvasPolygon(context, points);
+    context.fillStyle = '#fffaf0';
+    context.fill();
+    drawClippedCanvasHatch(context, points, {
+      angle: Number(options.hatchAngle) || 45,
+      spacing: clamp(Number(options.hatchSpacing) || 10, 3, 60),
+      thickness: clamp(Number(options.hatchThickness) || 1.5, 0.25, 8),
+      color: normalizeHexColor(polygon.color, '#b86c38'),
+      offset: (index * 3) % 13,
+    });
+    if (renderSettings.edgeThickness > 0) {
+      traceCanvasPolygon(context, points);
+      context.strokeStyle = renderSettings.edgeColor;
+      context.lineWidth = clamp(Number(options.hatchOutline) || Number(renderSettings.edgeThickness) || 2, 0.25, 12);
+      context.stroke();
+    }
+  });
+  return canvas;
+}
+
+function offsetCanvasPolygon(points, distance) {
+  if (points.length < 3 || distance <= 0) return points;
+  const signedArea = points.reduce((area, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return area + point[0] * next[1] - next[0] * point[1];
+  }, 0) / 2;
+  const direction = signedArea >= 0 ? 1 : -1;
+  const offsetEdges = points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    const dx = next[0] - point[0];
+    const dy = next[1] - point[1];
+    const length = Math.hypot(dx, dy) || 1;
+    const normal = [-dy / length * direction, dx / length * direction];
+    return {
+      start: [point[0] + normal[0] * distance, point[1] + normal[1] * distance],
+      end: [next[0] + normal[0] * distance, next[1] + normal[1] * distance],
+      normal,
+    };
+  });
+
+  return points.map((point, index) => {
+    const previous = offsetEdges[(index - 1 + offsetEdges.length) % offsetEdges.length];
+    const current = offsetEdges[index];
+    const intersection = infiniteLineIntersection(previous.start, previous.end, current.start, current.end);
+    if (intersection && Math.hypot(intersection[0] - point[0], intersection[1] - point[1]) <= distance * 6) return intersection;
+    const normalX = previous.normal[0] + current.normal[0];
+    const normalY = previous.normal[1] + current.normal[1];
+    const normalLength = Math.hypot(normalX, normalY) || 1;
+    return [point[0] + normalX / normalLength * distance, point[1] + normalY / normalLength * distance];
+  });
+}
+
+function infiniteLineIntersection(a1, a2, b1, b2) {
+  const aDx = a2[0] - a1[0];
+  const aDy = a2[1] - a1[1];
+  const bDx = b2[0] - b1[0];
+  const bDy = b2[1] - b1[1];
+  const denominator = aDx * bDy - aDy * bDx;
+  if (Math.abs(denominator) < 0.000001) return null;
+  const t = ((b1[0] - a1[0]) * bDy - (b1[1] - a1[1]) * bDx) / denominator;
+  return [a1[0] + t * aDx, a1[1] + t * aDy];
+}
+
+function drawClippedCanvasHatch(context, points, options = {}) {
+  const diagonal = Math.hypot(context.canvas.width, context.canvas.height);
+  context.save();
+  traceCanvasPolygon(context, points);
+  context.clip();
+  context.translate(context.canvas.width / 2, context.canvas.height / 2);
+  context.rotate(THREE.MathUtils.degToRad(Number(options.angle) || 0));
+  context.strokeStyle = options.color || '#b86c38';
+  context.lineWidth = Number(options.thickness) || 1;
+  context.lineCap = 'round';
+  const spacing = Math.max(2, Number(options.spacing) || 10);
+  const offset = Number(options.offset) || 0;
+  for (let y = -diagonal + offset; y <= diagonal; y += spacing) {
+    context.beginPath();
+    context.moveTo(-diagonal, y);
+    context.lineTo(diagonal, y);
+    context.stroke();
+  }
+  context.restore();
+}
+
+function hexToRgba(value, alpha) {
+  const color = normalizeHexColor(value, '#526f9c').slice(1);
+  const number = Number.parseInt(color, 16);
+  return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${clamp(alpha, 0, 1)})`;
+}
+
+function glassVisualOpacity(glassSettings = DEFAULT_GLASS_SETTINGS) {
+  return clamp(0.92 - normalizeGlassSettings(glassSettings).transparency * 0.4, 0.5, 0.72);
+}
+
+function fillCanvasGlassPolygon(context, points, color, glassSettings, detailed = true) {
+  const settings = normalizeGlassSettings(glassSettings);
+  const baseColor = normalizeHexColor(color, '#1c7c74');
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const width = Math.max(1, Math.max(...xs) - minX);
+  const height = Math.max(1, Math.max(...ys) - minY);
+  const surfaceTexture = createGlassSurfaceTexture(baseColor, settings);
+  const pattern = context.createPattern(surfaceTexture.image, 'no-repeat');
+  if (pattern?.setTransform && typeof DOMMatrix !== 'undefined') {
+    pattern.setTransform(new DOMMatrix().translate(minX, minY).scale(width / 256, height / 256));
+  }
+
+  context.save();
+  context.globalAlpha = glassVisualOpacity(settings);
+  if (detailed && settings.shadow > 0.01) {
+    context.shadowColor = hexToRgba(baseColor, 0.12 + settings.shadow * 0.2);
+    context.shadowBlur = 3 + settings.shadow * 10;
+    context.shadowOffsetX = 1 + settings.shadow * 3;
+    context.shadowOffsetY = 2 + settings.shadow * 4;
+  }
+  context.fillStyle = pattern || baseColor;
+  context.fill();
+  context.restore();
+
+  context.save();
+  context.globalAlpha = 0.16 + settings.edgeDarkness * 0.48;
+  context.strokeStyle = shadeColor(baseColor, 0.5 + (1 - settings.edgeDarkness) * 0.28);
+  context.lineWidth = Math.max(1, settings.thickness * 38);
+  context.stroke();
+  context.restore();
+
+  if (detailed && settings.highlight > 0.01) {
+    const highlight = context.createLinearGradient(minX, minY, minX + width, minY + height);
+    highlight.addColorStop(0, `rgba(255,255,255,${0.18 + settings.highlight * 0.34})`);
+    highlight.addColorStop(0.34, 'rgba(255,255,255,0)');
+    context.save();
+    context.strokeStyle = highlight;
+    context.lineWidth = Math.max(1, settings.thickness * 24);
+    context.stroke();
+    context.restore();
+  }
+}
+
+function canvasStickerUvTransform(points, uvs, textureSize) {
+  if (!Array.isArray(uvs) || uvs.length !== points.length || points.length < 3) return null;
+  // Three.js UVs use a bottom-left origin; Canvas drawImage uses top-left.
+  const canvasUvs = uvs.map(([u, v]) => [u, 1 - v]);
+  const first = 0;
+  for (let second = 1; second < canvasUvs.length - 1; second += 1) {
+    for (let third = second + 1; third < canvasUvs.length; third += 1) {
+      const du1 = canvasUvs[second][0] - canvasUvs[first][0];
+      const dv1 = canvasUvs[second][1] - canvasUvs[first][1];
+      const du2 = canvasUvs[third][0] - canvasUvs[first][0];
+      const dv2 = canvasUvs[third][1] - canvasUvs[first][1];
+      const determinant = du1 * dv2 - dv1 * du2;
+      if (Math.abs(determinant) < 0.000001) continue;
+      const dx1 = points[second][0] - points[first][0];
+      const dy1 = points[second][1] - points[first][1];
+      const dx2 = points[third][0] - points[first][0];
+      const dy2 = points[third][1] - points[first][1];
+      const a = (dx1 * dv2 - dx2 * dv1) / determinant;
+      const c = (du1 * dx2 - du2 * dx1) / determinant;
+      const b = (dy1 * dv2 - dy2 * dv1) / determinant;
+      const d = (du1 * dy2 - du2 * dy1) / determinant;
+      return {
+        a: a / textureSize,
+        b: b / textureSize,
+        c: c / textureSize,
+        d: d / textureSize,
+        e: points[first][0] - a * canvasUvs[first][0] - c * canvasUvs[first][1],
+        f: points[first][1] - b * canvasUvs[first][0] - d * canvasUvs[first][1],
+      };
+    }
+  }
+  return null;
+}
+
+function fillCanvasSurfaceSticker(context, points, sticker, uvs) {
+  if (!hasSurfaceStickerContent(sticker)) return;
+  const texture = createSurfaceStickerTexture(sticker);
+  const textureSize = Math.max(1, Number(texture.image?.width) || SURFACE_STICKER_TEXTURE_SIZE);
+  const uvTransform = canvasStickerUvTransform(points, uvs, textureSize);
+  if (uvTransform) {
+    context.save();
+    traceCanvasPolygon(context, points);
+    context.clip();
+    context.transform(uvTransform.a, uvTransform.b, uvTransform.c, uvTransform.d, uvTransform.e, uvTransform.f);
+    context.drawImage(texture.image, 0, 0);
+    context.restore();
+    return;
+  }
+  const pattern = context.createPattern(texture.image, 'no-repeat');
+  if (!pattern) return;
+  const xs = points.map(([x]) => x);
+  const ys = points.map(([, y]) => y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const width = Math.max(1, Math.max(...xs) - minX);
+  const height = Math.max(1, Math.max(...ys) - minY);
+  if (pattern.setTransform && typeof DOMMatrix !== 'undefined') {
+    pattern.setTransform(new DOMMatrix().translate(minX, minY).scale(width / textureSize, height / textureSize));
+  }
+  context.save();
+  traceCanvasPolygon(context, points);
+  context.clip();
+  context.fillStyle = pattern;
+  context.fillRect(minX, minY, width, height);
+  context.restore();
+}
+
+function renderFlatColorTopCanvas(placed, options = {}) {
+  const renderSettings = normalizeRenderSettings(options.renderSettings);
+  const material = normalizeMaterialName(options.material);
+  const glassSettings = normalizeGlassSettings(options.glassSettings);
+  const polygons = exportTopPolygons(placed, options);
+  const orientation = options.orientation || 'landscape';
+  const size = exportCanvasSize(orientation, options.paperSize);
+  const canvas = document.createElement('canvas');
+  canvas.width = size[0];
+  canvas.height = size[1];
+  const context = canvas.getContext('2d');
+  if (!options.transparentBackground) {
+    context.fillStyle = renderSettings.backgroundColor;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  if (!polygons.length) return canvas;
+
+  const bounds = exportPolygonBounds(polygons);
+  const margin = 96;
+  const width = Math.max(bounds.maxX - bounds.minX, 0.001);
+  const height = Math.max(bounds.maxY - bounds.minY, 0.001);
+  const scale = Math.min((canvas.width - margin * 2) / width, (canvas.height - margin * 2) / height);
+  const drawWidth = width * scale;
+  const drawHeight = height * scale;
+  const offsetX = (canvas.width - drawWidth) / 2;
+  const offsetY = (canvas.height - drawHeight) / 2;
+  const toCanvas = ([x, y]) => [
+    offsetX + (x - bounds.minX) * scale,
+    offsetY + (y - bounds.minY) * scale,
+  ];
+
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  const detailedGlass = polygons.length <= 600;
+  polygons.forEach((polygon) => {
+    const points = polygon.points.map(toCanvas);
+    const fillColor = normalizeHexColor(polygon.color, '#1c7c74');
+    traceCanvasPolygon(context, points);
+    if (material === 'glass') fillCanvasGlassPolygon(context, points, fillColor, glassSettings, detailedGlass);
+    else {
+      context.fillStyle = fillColor;
+      context.fill();
+    }
+    fillCanvasSurfaceSticker(context, points, polygon.surfaceSticker, polygon.surfaceStickerUvs);
+  });
+  if (renderSettings.edgeThickness > 0) {
+    const transformMatrix = modelTransformMatrix(options.modelTransform);
+    const edgeThicknessPx = Math.max(1, stageEdgeWorldThickness(renderSettings.edgeThickness) * scale);
+    context.save();
+    context.strokeStyle = renderSettings.edgeColor;
+    context.lineWidth = edgeThicknessPx;
+    context.lineCap = 'butt';
+    context.lineJoin = 'miter';
+    placed.flatMap((piece) => transformedStageEdgeSegments(piece, transformMatrix, renderSettings)).forEach(([start, end]) => {
+      const [startX, startY] = toCanvas(start);
+      const [endX, endY] = toCanvas(end);
+      context.beginPath();
+      context.moveTo(startX, startY);
+      context.lineTo(endX, endY);
+      context.stroke();
+    });
+    context.restore();
+  }
+  return canvas;
+}
+
+function transformedStageEdgeSegments(piece, transformMatrix, renderSettings) {
+  if (renderSettings.edgeMode === 'offset' && piece.offsetLinesEnabled === false) return [];
+  const segments = getRealFootprintSegments(piece).filter(([start, end]) => start && end);
+  if (!segments.length) return [];
+  const thickness = stageEdgeWorldThickness(renderSettings.edgeThickness);
+  return edgeOverlaySegments(segments, thickness, renderSettings, {
+    joinedSegmentOffsets: !!piece.isFrameSlice,
+    boundaryPoints: piece.isFrameSlice ? getLocalCollisionPoints(piece) : undefined,
+  }).map(([start, end]) => [
+    transformExportFootprintPoint(start, piece, transformMatrix),
+    transformExportFootprintPoint(end, piece, transformMatrix),
+  ]);
+}
+
 function toSvg(placed, options = {}) {
   const segments = exportPaperTopSegments(placed, options);
+  const material = normalizeMaterialName(options.material);
+  const glassSettings = normalizeGlassSettings(options.glassSettings);
   const bounds = exportSegmentBounds(segments);
   const padding = 0.1;
   const minX = bounds.minX - padding;
-  const maxY = bounds.maxY + padding;
+  const minY = bounds.minY - padding;
   const width = Math.max(bounds.maxX - bounds.minX + padding * 2, 0.1);
   const height = Math.max(bounds.maxY - bounds.minY + padding * 2, 0.1);
   const lines = segments.map(([[startX, startY], [endX, endY]]) =>
-    `  <line x1="${formatMachineNumber(startX)}" y1="${formatMachineNumber(-startY)}" x2="${formatMachineNumber(endX)}" y2="${formatMachineNumber(-endY)}" />`,
+    `  <line x1="${formatMachineNumber(startX)}" y1="${formatMachineNumber(startY)}" x2="${formatMachineNumber(endX)}" y2="${formatMachineNumber(endY)}" />`,
   );
+  const polygons = material === 'glass' ? exportTopPolygons(placed, options) : [];
+  const uniqueColors = Array.from(new Set(polygons.map((polygon) => normalizeHexColor(polygon.color, '#1c7c74'))));
+  const colorId = new Map(uniqueColors.map((color, index) => [color, `glass-color-${index}`]));
+  const gradients = uniqueColors.flatMap((color, index) => {
+    const id = `glass-color-${index}`;
+    return [
+      `    <linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">`,
+      `      <stop offset="0" stop-color="${shadeColor(color, 1.18)}" />`,
+      `      <stop offset="0.42" stop-color="${color}" />`,
+      `      <stop offset="1" stop-color="${shadeColor(color, 0.58 + (1 - glassSettings.edgeDarkness) * 0.2)}" />`,
+      '    </linearGradient>',
+    ];
+  });
+  const glassPolygons = polygons.map((polygon) => {
+    const color = normalizeHexColor(polygon.color, '#1c7c74');
+    const points = polygon.points.map(([x, y]) => `${formatMachineNumber(x)},${formatMachineNumber(y)}`).join(' ');
+    return `    <polygon points="${points}" fill="url(#${colorId.get(color)})" fill-opacity="${formatMachineNumber(glassVisualOpacity(glassSettings))}" stroke="${shadeColor(color, 0.68)}" stroke-opacity="${formatMachineNumber(0.22 + glassSettings.edgeDarkness * 0.5)}" stroke-width="${formatMachineNumber(glassSettings.thickness * 0.5)}" filter="url(#glass-soft-shadow)" />`;
+  });
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${formatMachineNumber(minX)} ${formatMachineNumber(-maxY)} ${formatMachineNumber(width)} ${formatMachineNumber(height)}">`,
-    '  <title>Girih machine export</title>',
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${formatMachineNumber(minX)} ${formatMachineNumber(minY)} ${formatMachineNumber(width)} ${formatMachineNumber(height)}">`,
+    `  <title>${material === 'glass' ? 'Girih architectural glass export' : 'Girih machine export'}</title>`,
+    ...(material === 'glass' ? [
+      '  <defs>',
+      ...gradients,
+      '    <filter id="glass-soft-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">',
+      `      <feDropShadow dx="0.025" dy="0.035" stdDeviation="${formatMachineNumber(0.018 + glassSettings.shadow * 0.035)}" flood-color="#263c3a" flood-opacity="${formatMachineNumber(0.08 + glassSettings.shadow * 0.18)}" />`,
+      '    </filter>',
+      '  </defs>',
+      '  <g id="glass-artwork" color-interpolation="sRGB">',
+      ...glassPolygons,
+      '  </g>',
+    ] : []),
     '  <g id="cut-lines" fill="none" stroke="#000000" stroke-width="0.02" stroke-linecap="butt" stroke-linejoin="miter" vector-effect="non-scaling-stroke">',
     ...lines,
     '  </g>',
@@ -7226,7 +14599,7 @@ function toEps(placed, options = {}) {
   const height = Math.ceil(sourceHeight * scale + padding * 2);
   const toEpsPoint = ([x, y]) => [
     padding + (x - bounds.minX) * scale,
-    padding + (bounds.maxY - y) * scale,
+    padding + (y - bounds.minY) * scale,
   ];
   const lines = [
     '%!PS-Adobe-3.0 EPSF-3.0',
@@ -7258,9 +14631,9 @@ async function toStl(placed, options = {}) {
   const exportObjects = await Promise.all(placed.map(createStlPieceObject));
   exportObjects.forEach(({ piece, object }) => {
     const holder = new THREE.Group();
-    holder.position.set(piece.x || 0, 0, piece.y || 0);
-    holder.rotation.y = -(Number(piece.rotation) || 0);
-    holder.scale.set(1, 1, piece.mirrorVertical ? -1 : 1);
+    holder.position.set(piece.x || 0, Number(piece.elevation) || 0, piece.y || 0);
+    holder.rotation.set(Number(piece.tiltX) || 0, -(Number(piece.rotation) || 0), Number(piece.tiltZ) || 0);
+    holder.scale.set(piece.mirrorHorizontal ? -1 : 1, 1, piece.mirrorVertical ? -1 : 1);
     holder.add(object);
     root.add(holder);
   });
@@ -7348,9 +14721,10 @@ function toObj(scene) {
   let vertexOffset = 1;
   scene.pieces.forEach((piece) => {
     lines.push(`o ${piece.name.replace(/\s+/g, '_')}_${piece.id}`);
-    const mirrored = !!piece.transform.mirrorVertical;
+    const mirrorHorizontal = !!piece.transform.mirrorHorizontal;
+    const mirrorVertical = !!piece.transform.mirrorVertical;
     piece.points.forEach(([x, y]) => {
-      const [rx, ry] = rotatePoint(x, mirrored ? -y : y, piece.transform.rotation);
+      const [rx, ry] = rotatePoint(mirrorHorizontal ? -x : x, mirrorVertical ? -y : y, piece.transform.rotation);
       const point = new THREE.Vector3(rx + piece.transform.x, 0, ry + piece.transform.y).applyMatrix4(transformMatrix);
       lines.push(`v ${point.x.toFixed(4)} ${point.y.toFixed(4)} ${point.z.toFixed(4)}`);
     });
@@ -7376,4 +14750,241 @@ function modelTransformMatrix(transform) {
   return matrix;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function ActivityTracker() {
+  useEffect(() => {
+    if (!supabase) return undefined;
+    let stopped = false;
+    let timer;
+    const storageKey = 'girih.activitySession.v1';
+    let activitySessionId = sessionStorage.getItem(storageKey);
+    if (!activitySessionId) {
+      activitySessionId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      sessionStorage.setItem(storageKey, activitySessionId);
+    }
+
+    const currentSessionKey = () => `${activitySessionId}:${new Date().toISOString().slice(0, 10)}`;
+
+    async function recordActivity() {
+      if (stopped || document.visibilityState === 'hidden') return;
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.access_token) return;
+      fetch('/api/user-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify({ sessionKey: currentSessionKey() }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function schedule() {
+      window.clearInterval(timer);
+      if (document.visibilityState !== 'hidden') {
+        recordActivity();
+        timer = window.setInterval(recordActivity, 60000);
+      }
+    }
+
+    schedule();
+    document.addEventListener('visibilitychange', schedule);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', schedule);
+    };
+  }, []);
+  return null;
+}
+
+function MehrazFoundationPage() {
+  const [libraryStatus, setLibraryStatus] = useState(null);
+  const icons = {
+    girih_pattern: Grid3X3,
+    brick_bond: Frame,
+    muqarnas_assembly: Layers3,
+    surface_sticker: ImageIcon,
+    mehraz_project: Box,
+  };
+  useEffect(() => {
+    let active = true;
+    if (!supabase) {
+      setLibraryStatus({ installed: false, phase: 0 });
+      return () => {
+        active = false;
+      };
+    }
+    supabase.rpc('library_capabilities').then(({ data, error }) => {
+      if (active) setLibraryStatus({
+        installed: !error && Number(data?.phase) >= 3,
+        phase: !error ? Number(data?.phase) || 0 : 0,
+      });
+    }).catch(() => {
+      if (active) setLibraryStatus({ installed: false, phase: 0 });
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const libraryInstalled = libraryStatus?.installed === true;
+  const statusLabel = libraryStatus === null
+    ? 'Checking database'
+    : libraryInstalled
+      ? 'Shared library operational'
+      : 'Migration ready';
+  return (
+    <main className="foundation-page">
+      <header className="foundation-header">
+        <a href="/" className="foundation-brand">
+          <img src="/landing/brand/girih-logo-color.png" alt="" />
+          <span>Girih Studio</span>
+        </a>
+        <div className="foundation-header-actions">
+          <span>Mehraz workspace</span>
+          <girih-app-switcher compact></girih-app-switcher>
+        </div>
+      </header>
+
+      <section className="foundation-hero">
+        <p className="foundation-eyebrow">Mehraz · Phase 7</p>
+        <div className="foundation-hero-grid">
+          <div>
+            <h1>Compose architecture from the studio’s shared design library.</h1>
+            <p>Phase 7 organizes version-pinned decorations into architectural assemblies with quantities, surface coverage, construction status, and downloadable fabrication schedules.</p>
+          </div>
+          <aside>
+            <span className={`foundation-status-dot ${libraryInstalled ? 'is-live' : 'is-ready'}`} />
+            <strong>{libraryInstalled ? 'Phase 7 ready' : statusLabel}</strong>
+            <small>{libraryInstalled
+              ? 'The Mehraz workspace can save and reopen versioned architectural projects.'
+              : 'Run the shared-library SQL migration to enable library browsing, save, and open.'}</small>
+          </aside>
+        </div>
+      </section>
+
+      <section className="foundation-adapters">
+        <div className="foundation-section-heading">
+          <p className="foundation-eyebrow">Architectural workspace</p>
+          <h2>A practical shell for assembling the studio’s design systems.</h2>
+        </div>
+        <div className="foundation-adapter-grid">
+          <article><span>01</span><strong>Architectural shell</strong><p>Start with an adjustable iwan or room and control its width, depth, height, opening, wall thickness, and colors.</p></article>
+          <article><span>02</span><strong>Shared asset browser</strong><p>Filter your library by Girih patterns, brick bonds, Muqarnas assemblies, and surface stickers.</p></article>
+          <article><span>03</span><strong>Construction assemblies</strong><p>Group placed designs into named fabrication and installation packages with trade, status, and project notes.</p></article>
+          <article><span>04</span><strong>Quantity schedules</strong><p>Calculate placement counts and planning coverage by surface, assembly, and asset version, then export a coordinated CSV schedule.</p></article>
+        </div>
+        <a className="foundation-launch" href="https://mehraz.girihstudio.com">Open Mehraz App <ArrowRight size={16} /></a>
+      </section>
+
+      <section className="foundation-library">
+        <div className="foundation-section-heading">
+          <p className="foundation-eyebrow">Shared Supabase foundation</p>
+          <h2>Designed for safe reuse without copying or losing ownership.</h2>
+        </div>
+        <div className="foundation-library-grid">
+          <article><strong>Asset ownership</strong><span>One stable identity belongs to its creator across every app.</span></article>
+          <article><strong>Immutable versions</strong><span>Every save creates a numbered snapshot; Mehraz pins the exact version used.</span></article>
+          <article><strong>Entitlements</strong><span>Private shares and marketplace purchases grant explicit view, use, or edit access.</span></article>
+          <article><strong>Protected storage</strong><span>JSON, PNG, SVG, GLB, PDF, and video artifacts live in a private 100 MB bucket.</span></article>
+          <article><strong>Row-level security</strong><span>Owners control their work while entitled users receive only their granted access.</span></article>
+        </div>
+        <div className="foundation-install">
+          <div>
+            <small>Database installation</small>
+            <strong>{libraryInstalled ? 'Connected and operational' : 'Run or rerun the updated SQL migration'}</strong>
+          </div>
+          <a href="/design/shared-asset-library-phase2.sql" download>
+            Download shared library migration <Download size={16} />
+          </a>
+        </div>
+      </section>
+
+      <section className="foundation-content">
+        <div className="foundation-section-heading">
+          <p className="foundation-eyebrow">Shared library formats</p>
+          <h2>Each focused app creates one portable asset.</h2>
+        </div>
+        <div className="foundation-asset-grid">
+          {ASSET_CONTRACT_MANIFEST.assetTypes.map((definition) => {
+            const Icon = icons[definition.type] || Box;
+            return (
+              <article key={definition.type}>
+                <span className="foundation-asset-icon"><Icon size={22} /></span>
+                <div>
+                  <small>{definition.sourceApp} app</small>
+                  <h3>{definition.label}</h3>
+                </div>
+                <p>{definition.description}</p>
+                <dl>
+                  <div><dt>Required</dt><dd>{definition.requiredPayload.join(' · ')}</dd></div>
+                  <div><dt>Artifacts</dt><dd>{definition.recommendedArtifacts.join(' · ')}</dd></div>
+                </dl>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="foundation-rules">
+        <div>
+          <p className="foundation-eyebrow">Spatial contract</p>
+          <h2>Everything meets in the same physical space.</h2>
+        </div>
+        <div className="foundation-rule-grid">
+          <article><strong>Metres</strong><span>All physical dimensions</span></article>
+          <article><strong>Y-up</strong><span>Shared vertical axis</span></article>
+          <article><strong>−Z</strong><span>Forward direction</span></article>
+          <article><strong>Version pinned</strong><span>Projects never change unexpectedly</span></article>
+        </div>
+      </section>
+
+      <section className="foundation-next">
+        <div>
+          <p className="foundation-eyebrow">Next approval point</p>
+          <h2>Phase 8 · Building templates and collaboration</h2>
+          <p>The next phase can turn complete architectural compositions into reusable building templates and introduce controlled project sharing and team review.</p>
+        </div>
+        <a href="https://mehraz.girihstudio.com">Review the Phase 7 workspace <ArrowRight size={16} /></a>
+      </section>
+    </main>
+  );
+}
+
+function Root() {
+  const pathname = window.location.pathname;
+  const appRoute = pathname === '/app' || pathname.startsWith('/app/');
+  const marketplaceRoute = pathname === '/marketplace';
+  const adminRoute = pathname === '/admin' || pathname.startsWith('/admin/');
+  const profileRoute = pathname === '/profile' || pathname.startsWith('/profile/');
+  const foundationRoute = pathname === '/mehraz-foundation';
+  const trainingRoute = pathname === '/training' || pathname.startsWith('/training/');
+  const publicProfileId = pathname.startsWith('/profile/') ? decodeURIComponent(pathname.slice('/profile/'.length)) : '';
+  const infoPageType = pathname === '/contact' ? 'contact' : pathname === '/support' ? 'support' : null;
+  useEffect(() => {
+    document.body.classList.toggle('landing-body', !appRoute);
+    return () => document.body.classList.remove('landing-body');
+  }, [appRoute]);
+  useEffect(() => {
+    if (appRoute) document.title = 'Girih App | Girih Studio';
+    else if (marketplaceRoute) document.title = 'Marketplace | Girih Studio';
+    else if (adminRoute) document.title = 'Admin | Girih Studio';
+    else if (profileRoute) document.title = 'Profile | Girih Studio';
+    else if (foundationRoute) document.title = 'Mehraz Foundation | Girih Studio';
+    else if (trainingRoute) document.title = 'Academy | Girih Studio';
+    else if (infoPageType) document.title = `${infoPageType === 'contact' ? 'Contact' : 'Support'} | Girih Studio`;
+    else document.title = 'Girih Studio';
+  }, [adminRoute, appRoute, foundationRoute, infoPageType, marketplaceRoute, profileRoute, trainingRoute]);
+  useEffect(() => {
+    const favicon = document.querySelector('link[rel~="icon"]');
+    if (favicon) favicon.href = appRoute ? '/design/icons/girih.png' : '/landing/brand/girih-logo-color.png';
+  }, [appRoute]);
+  let page = <LandingPage />;
+  if (appRoute) page = <App />;
+  else if (marketplaceRoute) page = <MarketplacePage />;
+  else if (adminRoute) page = <AdminOverviewPage />;
+  else if (profileRoute) page = <MarketplaceProfilePage publicProfileId={publicProfileId} />;
+  else if (foundationRoute) page = <MehrazFoundationPage />;
+  else if (trainingRoute) page = <TrainingPage />;
+  else if (infoPageType) page = <InfoPage type={infoPageType} />;
+  return <><ActivityTracker />{page}</>;
+}
+
+createRoot(document.getElementById('root')).render(<Root />);

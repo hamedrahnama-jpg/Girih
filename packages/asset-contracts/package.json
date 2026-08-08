@@ -1,0 +1,11 @@
+{
+  "name": "@girih-studio/asset-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./examples": "./examples.js",
+    "./manifest": "./manifest.js"
+  }
+}

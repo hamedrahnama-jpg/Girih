@@ -1,0 +1,122 @@
+:root {
+  --girih-color-canvas: #eee6d8;
+  --girih-color-surface: #fffaf1;
+  --girih-color-surface-soft: #f5efe4;
+  --girih-color-ink: #241e18;
+  --girih-color-muted: #6f6254;
+  --girih-color-primary: #2f514c;
+  --girih-color-primary-hover: #24433e;
+  --girih-color-primary-soft: #edf3f0;
+  --girih-color-border: #d8ccba;
+  --girih-color-gold: #b98132;
+  --girih-radius-sm: 6px;
+  --girih-radius-md: 8px;
+  --girih-radius-lg: 10px;
+  --girih-shadow-panel: 0 18px 55px rgba(36, 30, 24, 0.18);
+  --girih-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --girih-shell-header-height: 72px;
+  --girih-shell-sidebar-width: 320px;
+  --girih-shell-control-height: 38px;
+  --girih-app-accent: #2f514c;
+  --girih-app-accent-hover: #24433e;
+  --girih-app-accent-soft: #edf3f0;
+}
+
+.girih-theme-girih { --girih-app-accent: #26727a; --girih-app-accent-hover: #1d5c63; --girih-app-accent-soft: #e5f2f3; }
+.girih-theme-bricks { --girih-app-accent: #a55332; --girih-app-accent-hover: #844026; --girih-app-accent-soft: #f8ebe5; }
+.girih-theme-muqarnas { --girih-app-accent: #957018; --girih-app-accent-hover: #755711; --girih-app-accent-soft: #f7f0d9; }
+.girih-theme-mehraz { --girih-app-accent: #456f84; --girih-app-accent-hover: #34596c; --girih-app-accent-soft: #e8f0f4; }
+.girih-theme-academy { --girih-app-accent: #a37813; --girih-app-accent-hover: #7d5b0d; --girih-app-accent-soft: #f8f0d6; }
+
+.girih-product-header {
+  min-height: var(--girih-shell-header-height);
+  border-top: 4px solid var(--girih-app-accent);
+  border-bottom: 1px solid var(--girih-color-border);
+  background: rgba(255, 250, 241, .97);
+  color: var(--girih-color-ink);
+  font-family: var(--girih-font-sans);
+}
+
+.girih-header-start,
+.girih-header-tools,
+.girih-header-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.girih-header-start { flex: 0 0 auto; gap: 12px; }
+.girih-header-tools { flex: 1 1 auto; justify-content: center; gap: 7px; overflow: hidden; }
+.girih-header-end {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 7px;
+  border-left: 1px solid var(--girih-color-border);
+  padding-left: 12px;
+}
+
+.girih-product-sidebar { width: var(--girih-shell-sidebar-width); }
+
+.girih-product-identity {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--girih-app-accent);
+}
+
+.girih-product-identity strong { color: var(--girih-color-ink); font-size: 14px; white-space: nowrap; }
+.girih-product-identity small { color: var(--girih-color-muted); font-size: 9px; font-weight: 800; text-transform: uppercase; white-space: nowrap; }
+
+girih-app-icon { display: inline-grid; width: 28px; height: 28px; flex: 0 0 28px; color: var(--girih-app-accent); }
+girih-app-icon:not([app="academy"]) { width: 56px; height: 56px; flex-basis: 56px; }
+girih-app-icon[small] { width: 20px; height: 20px; flex-basis: 20px; }
+girih-app-icon[small]:not([app="academy"]) { width: 40px; height: 40px; flex-basis: 40px; }
+
+.girih-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--girih-color-border);
+  border-radius: var(--girih-radius-sm);
+  background: var(--girih-color-surface);
+  color: var(--girih-app-accent);
+  padding: 8px 13px;
+  font-family: var(--girih-font-sans);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.girih-button:hover,
+.girih-button:focus-visible {
+  border-color: var(--girih-app-accent);
+  background: var(--girih-app-accent-soft);
+}
+
+.girih-button--primary {
+  border-color: var(--girih-app-accent);
+  background: var(--girih-app-accent);
+  color: #ffffff;
+}
+
+.girih-button--primary:hover,
+.girih-button--primary:focus-visible {
+  background: var(--girih-app-accent-hover);
+  color: #ffffff;
+}
+
+.girih-brand-link,
+.girih-account-control {
+  font-family: var(--girih-font-sans);
+}
+
+.girih-account-control {
+  border-color: var(--girih-color-border) !important;
+  background-color: var(--girih-color-surface) !important;
+  color: var(--girih-color-ink) !important;
+}

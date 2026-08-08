@@ -1,0 +1,26 @@
+{
+  "headers": [
+    {
+      "source": "/design/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=300" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/training", "destination": "/api/admin-users?service=training" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/:path*", "destination": "/index.html" },
+    { "source": "/contact", "destination": "/index.html" },
+    { "source": "/support", "destination": "/index.html" },
+    { "source": "/mehraz-foundation", "destination": "/index.html" },
+    { "source": "/marketplace", "destination": "/index.html" },
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/admin/:path*", "destination": "/index.html" },
+    { "source": "/profile", "destination": "/index.html" },
+    { "source": "/profile/:path*", "destination": "/index.html" },
+    { "source": "/training", "destination": "/index.html" },
+    { "source": "/training/:path*", "destination": "/index.html" }
+  ]
+}

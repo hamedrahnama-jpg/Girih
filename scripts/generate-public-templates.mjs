@@ -22,7 +22,7 @@ function titleFromFilename(filename) {
 function defaultGroupForTemplate(name) {
   const match = String(name).match(/(\d+)/);
   const number = match ? Number(match[1]) : 0;
-  if (number >= 39 && number <= 49) return '8 Morroco';
+  if (number >= 39 && number <= 49) return '8 Morocco';
   if (number >= 52 && number <= 65) return '8 Persian';
   if (number >= 71 && number <= 78) return '10 Tond';
   if (number >= 84 && number <= 94) return '10 Kond';

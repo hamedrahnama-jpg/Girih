@@ -1,0 +1,57 @@
+[
+  {
+    "id": "girih",
+    "name": "Girih App",
+    "shortName": "Girih App",
+    "url": "https://girihstudio.com/app",
+    "homeUrl": "https://girihstudio.com",
+    "description": "Compose, tessellate, frame, and export historic geometric patterns in an editable spatial studio.",
+    "category": "Geometric pattern design",
+    "access": "Free and paid",
+    "status": "available"
+  },
+  {
+    "id": "bricks",
+    "name": "Bricks App",
+    "shortName": "Bricks App",
+    "url": "https://bricks.girihstudio.com",
+    "homeUrl": "https://bricks.girihstudio.com",
+    "description": "Build repeatable brick layouts, color studies, wall patterns, and production-ready exports.",
+    "category": "Brick pattern design",
+    "access": "Free and paid",
+    "status": "available"
+  },
+  {
+    "id": "muqarnas",
+    "name": "Muqarnas App",
+    "shortName": "Muqarnas App",
+    "url": "https://muqarnas.girihstudio.com",
+    "homeUrl": "https://muqarnas.girihstudio.com",
+    "description": "Design layered muqarnas compositions through a focused digital workflow for cells, tiers, and spatial assemblies.",
+    "category": "Muqarnas design",
+    "access": "Free with Girih Studio account",
+    "status": "available"
+  },
+  {
+    "id": "mehraz",
+    "name": "Mehraz App",
+    "shortName": "Mehraz App",
+    "url": "https://mehraz.girihstudio.com",
+    "homeUrl": "https://mehraz.girihstudio.com",
+    "description": "Compose iwans and architectural spaces using version-pinned Girih, brick, and Muqarnas designs from your shared library.",
+    "category": "Architectural composition",
+    "access": "Free with Girih Studio account",
+    "status": "available"
+  },
+  {
+    "id": "academy",
+    "name": "Girih Studio Academy",
+    "shortName": "Academy",
+    "url": "https://girihstudio.com/training",
+    "homeUrl": "https://girihstudio.com/training",
+    "description": "Complete guided app training, practical models, assignments, and teacher reviews.",
+    "category": "Training and assessment",
+    "access": "Teacher and student profiles",
+    "status": "available"
+  }
+]

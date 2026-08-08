@@ -1,0 +1,12 @@
+{
+  "name": "@girih-studio/design",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./theme.css": "./theme.css",
+    "./app-switcher.js": "./app-switcher.js",
+    "./apps.json": "./apps.json",
+    "./brand.json": "./brand.json"
+  }
+}

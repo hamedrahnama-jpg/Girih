@@ -1,0 +1,107 @@
+{
+  "id": "girihstudio.library-asset",
+  "version": 1,
+  "status": "stable-foundation",
+  "coordinateSystem": {
+    "handedness": "right",
+    "upAxis": "y",
+    "forwardAxis": "-z",
+    "horizontalAxes": [
+      "x",
+      "z"
+    ],
+    "units": "m",
+    "angleUnits": "degrees",
+    "origin": "asset-local-anchor"
+  },
+  "assetTypes": [
+    {
+      "type": "girih_pattern",
+      "label": "Girih pattern",
+      "sourceApp": "girih",
+      "description": "Editable geometric panel, motif, tessellation, frame, colors, and surface stickers.",
+      "requiredPayload": [
+        "pieces"
+      ],
+      "recommendedArtifacts": [
+        "preview_png",
+        "editable_json",
+        "svg",
+        "glb"
+      ]
+    },
+    {
+      "type": "brick_bond",
+      "label": "Brick bond",
+      "sourceApp": "bricks",
+      "description": "Repeatable brick grid containing dimensions, orientation, colors, and mortar.",
+      "requiredPayload": [
+        "brickWidth",
+        "brickHeight",
+        "mortar",
+        "pattern"
+      ],
+      "recommendedArtifacts": [
+        "preview_png",
+        "editable_json",
+        "svg"
+      ]
+    },
+    {
+      "type": "muqarnas_assembly",
+      "label": "Muqarnas assembly",
+      "sourceApp": "muqarnas",
+      "description": "Pure modular muqarnas composition with tiers, module instances, groups, slices, and placement anchor.",
+      "requiredPayload": [
+        "levels",
+        "instances",
+        "anchor"
+      ],
+      "recommendedArtifacts": [
+        "preview_png",
+        "editable_json",
+        "glb"
+      ]
+    },
+    {
+      "type": "surface_sticker",
+      "label": "Surface sticker",
+      "sourceApp": "girih",
+      "description": "Transparent surface artwork with physical size, transform defaults, and protected preview.",
+      "requiredPayload": [
+        "mimeType",
+        "width",
+        "height",
+        "image"
+      ],
+      "recommendedArtifacts": [
+        "watermarked_preview_png",
+        "source_png"
+      ]
+    },
+    {
+      "type": "mehraz_project",
+      "label": "Mehraz project",
+      "sourceApp": "mehraz",
+      "description": "Architectural shell plus façade zones, version-pinned decorative placements, assemblies, and construction data.",
+      "requiredPayload": [
+        "building",
+        "surfaces",
+        "placements"
+      ],
+      "recommendedArtifacts": [
+        "preview_png",
+        "editable_json",
+        "glb",
+        "pdf",
+        "schedule_csv"
+      ]
+    }
+  ],
+  "compatibility": {
+    "minimumReaderVersion": 1,
+    "unknownFields": "preserve",
+    "projectReferences": "pin-library-asset-version",
+    "breakingChanges": "require-new-contract-version"
+  }
+}
