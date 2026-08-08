@@ -25,6 +25,49 @@ test('new Mehraz projects use the requested north and south wall defaults', () =
   assert.equal(walls.southOpenings.door.enabled, true);
 });
 
+test('structural walls and the Ahang vault meet without overlapping volumes', () => {
+  const group = buildWallSystem({
+    type: 'iwan',
+    width: 8,
+    depth: 10,
+    height: 6,
+    wallThickness: 0.4,
+    openingWidth: 4,
+  }, {
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  });
+  const category = (side) => {
+    if (['north', 'north_sides', 'north_top'].includes(side)) return 'north';
+    if (['arch', 'south_arch'].includes(side)) return 'arch';
+    return side;
+  };
+  const meshes = [];
+  group.traverse((object) => {
+    if (!object.isMesh || !object.userData?.wallSide || object.userData?.isKarbandiCover) return;
+    const bounds = new THREE.Box3().setFromObject(object);
+    const size = bounds.getSize(new THREE.Vector3());
+    if (Math.min(size.x, size.y, size.z) <= 0.00001) return;
+    meshes.push({ bounds, category: category(object.userData.wallSide) });
+  });
+  const overlapDepth = (first, second, axis) => (
+    Math.min(first.max[axis], second.max[axis]) - Math.max(first.min[axis], second.min[axis])
+  );
+  for (let firstIndex = 0; firstIndex < meshes.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < meshes.length; secondIndex += 1) {
+      const first = meshes[firstIndex];
+      const second = meshes[secondIndex];
+      if (first.category === second.category) continue;
+      const overlap = ['x', 'y', 'z'].map((axis) => overlapDepth(first.bounds, second.bounds, axis));
+      assert.ok(
+        overlap.some((depth) => depth <= 0.00001),
+        `${first.category} overlaps ${second.category} by ${overlap.join(', ')}`,
+      );
+    }
+  }
+  assert.equal(group.userData.wallJunctionPolicy, 'butt-joints-no-volume-overlap');
+});
+
 test('web covers use structured rib-bound surfaces without artificial centre points', () => {
   const building = {
     type: 'iwan',

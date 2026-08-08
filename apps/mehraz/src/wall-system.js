@@ -2979,12 +2979,13 @@ export function buildWallSystem(building, value = {}) {
   const height = (side) => Math.max(0.05, Number(building.height) + walls.extraHeights[side]);
   const material = wallMaterial(walls);
   const meshes = [];
-  const sideWallDepth = depth + thickness;
-  const sideWallCenterZ = (northZ + southZ + thickness) / 2;
+  // Side walls terminate at the inside faces of the north and south walls.
+  // This keeps the corners closed as butt joints without intersecting volumes.
+  const sideWallDepth = depth;
+  const sideWallCenterZ = centerZ;
   const decorativeJointTrim = Math.max(0.01, Math.min(0.06, walls.bricks.mortar * 2 + 0.012, thickness * 0.16));
-  const intersectionTrim = Math.max(thickness + decorativeJointTrim, thickness * 1.02);
   const sideNorthTrim = decorativeJointTrim;
-  const sideSouthTrim = intersectionTrim;
+  const sideSouthTrim = decorativeJointTrim;
   const eastDecorMin = -sideWallDepth / 2 + sideNorthTrim;
   const eastDecorMax = sideWallDepth / 2 - sideSouthTrim;
   const eastDecorDepth = Math.max(0.05, eastDecorMax - eastDecorMin);
@@ -3222,7 +3223,9 @@ export function buildWallSystem(building, value = {}) {
     outer.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
     [...archPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
     shape.closePath();
-    const archDepth = Math.max(thickness, southZ - northZ + thickness);
+    // The vault meets both end walls at their inside faces instead of
+    // extending into either wall's structural volume.
+    const archDepth = Math.max(0.1, southZ - northZ);
     const geometry = new THREE.ExtrudeGeometry(shape, { depth: archDepth, steps: 1, bevelEnabled: false, curveSegments: 48 });
     geometry.translate(0, 0, northZ);
     geometry.computeVertexNormals();
@@ -3251,6 +3254,8 @@ export function buildWallSystem(building, value = {}) {
     wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, height(side)])),
     northArchPoints: walls.pointedArch.enabled ? archPoints : [],
   }, walls));
+
+  group.userData.wallJunctionPolicy = 'butt-joints-no-volume-overlap';
 
   meshes.forEach((mesh) => addEdges(group, mesh, walls));
   setShadow(group, walls.shadows);
