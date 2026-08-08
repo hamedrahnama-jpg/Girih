@@ -2370,9 +2370,6 @@ function App() {
                 <div className="cover-settings-heading"><strong>Ahang settings</strong><small>Arch-based portal cover</small></div>
                 {renderWallBondControls('arch')}
                 <p className="zone-hint">Ahang uses the arch designed in the North wall section and extends it across the portal enclosure.</p>
-                <div className="field-grid">
-                  <NumberField label="Top overlap" value={walls.pointedArch.overlap} min={0} max={0.5} step={0.01} onChange={(overlap) => updateWallGroup('pointedArch', { overlap })} />
-                </div>
                 <label className="check-field"><input type="checkbox" checked={walls.pointedArch.moduleInfill} onChange={(event) => updateWallGroup('pointedArch', { moduleInfill: event.target.checked })} /><span>Fill above open Muqarnas modules</span></label>
                 <label><span>Muqarnas under arch</span><select value={archMuqarnasPlacement?.assetId || ''} onChange={(event) => setArchMuqarnasAsset(event.target.value)}>
                   <option value="">No Muqarnas selected</option>

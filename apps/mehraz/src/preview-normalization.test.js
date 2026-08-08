@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { normalizePreview, previewWorldBounds } from './mehraz-scene.js';
+import { moduleTopExtrusionGeometry, normalizePreview, previewWorldBounds } from './mehraz-scene.js';
+
+test('Muqarnas infill extrudes the module top exactly to the arch without overlap', () => {
+  const module = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1));
+  module.position.set(0, 1, 0);
+  const geometry = moduleTopExtrusionGeometry(module, (x) => 4 + x * 0.5);
+
+  assert.ok(geometry);
+  assert.ok(Math.abs(geometry.boundingBox.min.y - 1.5) < 1e-6);
+  assert.ok(Math.abs(geometry.boundingBox.max.y - 4.5) < 1e-6);
+});
 
 test('preview normalization stays local after placement under a transformed cover', () => {
   const scene = new THREE.Scene();

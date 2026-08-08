@@ -55,7 +55,6 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
     greenOffset: 1,
     greenHeight: 5,
     moduleInfill: true,
-    overlap: 0.1,
   },
   ahang: {
     enabled: true,
@@ -230,7 +229,6 @@ export function normalizeWallSystem(value = {}, building = {}) {
       greenOffset: number(pointedArch.greenOffset, DEFAULT_WALL_SYSTEM.pointedArch.greenOffset, 0.05, 20),
       greenHeight: number(pointedArch.greenHeight, DEFAULT_WALL_SYSTEM.pointedArch.greenHeight, 0, 20),
       moduleInfill: pointedArch.moduleInfill !== false,
-      overlap: number(pointedArch.overlap, 0.1, 0, 0.5),
     },
     ahang: {
       enabled: ahangEnabled,

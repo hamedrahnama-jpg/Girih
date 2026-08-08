@@ -162,30 +162,76 @@ function box(width, height, depth, material, position) {
   return mesh;
 }
 
-function vaultExtensionGeometry(bounds, leftTop, rightTop, bottom) {
-  const { min, max } = bounds;
-  const vertices = new Float32Array([
-    min.x, bottom, min.z,
-    max.x, bottom, min.z,
-    max.x, bottom, max.z,
-    min.x, bottom, max.z,
-    min.x, leftTop, min.z,
-    max.x, rightTop, min.z,
-    max.x, rightTop, max.z,
-    min.x, leftTop, max.z,
-  ]);
-  const indices = [
-    0, 2, 1, 0, 3, 2,
-    4, 5, 6, 4, 6, 7,
-    0, 1, 5, 0, 5, 4,
-    1, 2, 6, 1, 6, 5,
-    2, 3, 7, 2, 7, 6,
-    3, 0, 4, 3, 4, 7,
-  ];
+export function moduleTopExtrusionGeometry(moduleRoot, archHeightAtX) {
+  moduleRoot.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3().setFromObject(moduleRoot);
+  if (bounds.isEmpty()) return null;
+  const topTolerance = Math.max(0.002, (bounds.max.y - bounds.min.y) * 0.015);
+  const vertices = [];
+  const vertexIds = new Map();
+  const triangles = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const idForVertex = (point) => {
+    const key = `${point.x.toFixed(5)}:${point.y.toFixed(5)}:${point.z.toFixed(5)}`;
+    if (!vertexIds.has(key)) {
+      vertexIds.set(key, vertices.length);
+      vertices.push(point.clone());
+    }
+    return vertexIds.get(key);
+  };
+
+  moduleRoot.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.geometry?.getAttribute('position')) return;
+    const positions = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.index;
+    const indexCount = index ? index.count : positions.count;
+    const readWorldVertex = (positionIndex, target) => {
+      target.fromBufferAttribute(positions, positionIndex).applyMatrix4(mesh.matrixWorld);
+    };
+    for (let offset = 0; offset + 2 < indexCount; offset += 3) {
+      readWorldVertex(index ? index.getX(offset) : offset, a);
+      readWorldVertex(index ? index.getX(offset + 1) : offset + 1, b);
+      readWorldVertex(index ? index.getX(offset + 2) : offset + 2, c);
+      ab.subVectors(b, a);
+      ac.subVectors(c, a);
+      const normalY = ab.cross(ac).normalize().y;
+      if (Math.abs(normalY) < 0.65 || Math.min(a.y, b.y, c.y) < bounds.max.y - topTolerance) continue;
+      const points = [a, b, c];
+      const topHeights = points.map((point) => Number(archHeightAtX(point.x)));
+      if (topHeights.some((height, pointIndex) => !Number.isFinite(height) || height <= points[pointIndex].y + 0.001)) continue;
+      triangles.push(points.map((point) => idForVertex(point)));
+    }
+  });
+  if (!triangles.length) return null;
+
+  const extrusionPositions = [];
+  vertices.forEach((point) => extrusionPositions.push(point.x, point.y, point.z));
+  vertices.forEach((point) => extrusionPositions.push(point.x, archHeightAtX(point.x), point.z));
+  const topOffset = vertices.length;
+  const indices = [];
+  const boundaryEdges = new Map();
+  triangles.forEach(([first, second, third]) => {
+    indices.push(first + topOffset, second + topOffset, third + topOffset);
+    [[first, second], [second, third], [third, first]].forEach(([start, end]) => {
+      const key = start < end ? `${start}:${end}` : `${end}:${start}`;
+      const edge = boundaryEdges.get(key);
+      if (edge) edge.count += 1;
+      else boundaryEdges.set(key, { count: 1, start, end });
+    });
+  });
+  boundaryEdges.forEach(({ count, start, end }) => {
+    if (count !== 1) return;
+    indices.push(start, end, end + topOffset, start, end + topOffset, start + topOffset);
+  });
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(extrusionPositions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
   return geometry;
 }
 
@@ -2211,27 +2257,23 @@ export class MehrazScene {
     this.placementGroup.children.forEach((root) => {
       if (root.userData.assetType !== 'muqarnas_assembly' || root.userData.surfaceId !== 'floor') return;
       root.updateMatrixWorld(true);
-      const bounds = new THREE.Box3().setFromObject(root);
-      if (bounds.isEmpty()) return;
-      const leftTop = wallArchHeightAtX(this.building, this.walls, bounds.min.x);
-      const rightTop = wallArchHeightAtX(this.building, this.walls, bounds.max.x);
-      if (leftTop == null || rightTop == null) return;
-      const targetBottom = bounds.max.y;
-      if (Math.min(leftTop, rightTop) <= targetBottom + 0.01) return;
-      const overlap = Math.max(0, this.walls.pointedArch.overlap) * Math.max(0.01, Math.min(leftTop, rightTop) - targetBottom);
-      const sourceMesh = root.getObjectByProperty('isMesh', true);
-      const sourceMaterial = Array.isArray(sourceMesh?.material) ? sourceMesh.material[0] : sourceMesh?.material;
-      const material = sourceMaterial?.clone?.() || makeMaterial('#d0a21f', 0.55);
-      material.side = THREE.DoubleSide;
-      const extension = new THREE.Mesh(
-        vaultExtensionGeometry(bounds, leftTop, rightTop, targetBottom - overlap),
-        material,
-      );
-      extension.castShadow = this.walls.shadows;
-      extension.receiveShadow = this.walls.shadows;
-      extension.userData.isArchModuleInfill = true;
-      extension.userData.placementId = root.userData.placementId;
-      this.archInfillGroup.add(extension);
+      root.children.filter((child) => child.userData.exactMuqarnasGeometry === true).forEach((moduleRoot) => {
+        const geometry = moduleTopExtrusionGeometry(
+          moduleRoot,
+          (x) => wallArchHeightAtX(this.building, this.walls, x),
+        );
+        if (!geometry) return;
+        const sourceMesh = moduleRoot.getObjectByProperty('isMesh', true);
+        const sourceMaterial = Array.isArray(sourceMesh?.material) ? sourceMesh.material[0] : sourceMesh?.material;
+        const material = sourceMaterial?.clone?.() || makeMaterial('#d0a21f', 0.55);
+        material.side = THREE.DoubleSide;
+        const extension = new THREE.Mesh(geometry, material);
+        extension.castShadow = this.walls.shadows;
+        extension.receiveShadow = this.walls.shadows;
+        extension.userData.isArchModuleInfill = true;
+        extension.userData.placementId = root.userData.placementId;
+        this.archInfillGroup.add(extension);
+      });
     });
   }
 
