@@ -316,10 +316,12 @@ export class MuqarnasScene {
     this.frontGuideGroup.name = 'Tier guides';
     this.scene.add(this.frontGuideGroup);
     this.frontLevelMaterials = new Map();
-    this.frontFocusMaterial = new THREE.MeshStandardMaterial({
+    this.frontFocusMaterial = new THREE.MeshBasicMaterial({
       color: 0xe87522,
-      ...GIRIH_STAGE_MATERIAL,
       side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
     });
     this.connectorGroup = new THREE.Group();
     this.scene.add(this.connectorGroup);
@@ -358,6 +360,15 @@ export class MuqarnasScene {
       depthWrite: false,
       toneMapped: false,
     }));
+    this.tierPreviewInactiveMaterial = new THREE.MeshBasicMaterial({
+      color: 0xb8c4c8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.38,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
     this.selectionMarquee = document.createElement('div');
     this.selectionMarquee.className = 'selection-marquee';
     this.container.appendChild(this.selectionMarquee);
@@ -3922,14 +3933,17 @@ export class MuqarnasScene {
       this.frontOutlineGroup.visible = !isMain;
       if (!isMain) {
         this.instances.forEach((root) => {
-          const levelMaterial = this.frontLevelMaterials.get(root.userData.levelId) || this.frontLevelMaterials.values().next().value;
+          const isActiveTier = root.userData.levelId === this.activeLevelId;
+          const levelMaterial = isActiveTier ? this.frontFocusMaterial : this.tierPreviewInactiveMaterial;
           root.traverse((child) => {
             if (!child.isMesh || child.userData.isEdgeOverlay) return;
             swaps.push([child, child.material, child.visible, child.renderOrder]);
             child.visible = root.visible;
             if (!root.visible) return;
             child.material = levelMaterial;
-            child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+            child.renderOrder = isActiveTier
+              ? 120
+              : 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
           });
         });
       }
@@ -3940,7 +3954,9 @@ export class MuqarnasScene {
         let activeIndex = 0;
         this.instances.forEach((root) => {
           const isActiveTier = root.userData.levelId === this.activeLevelId;
-          const activeMaterial = this.topTierMaterials[activeIndex % this.topTierMaterials.length];
+          const tierMaterial = isActiveTier
+            ? this.topTierMaterials[activeIndex % this.topTierMaterials.length]
+            : this.tierPreviewInactiveMaterial;
           if (isActiveTier) activeIndex += 1;
           root.traverse((child) => {
             if (!child.isMesh) return;
@@ -3954,8 +3970,10 @@ export class MuqarnasScene {
             swaps.push([child, child.material, child.visible, child.renderOrder]);
             child.visible = root.visible;
             if (!root.visible) return;
-            child.material = activeMaterial;
-            child.renderOrder = 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
+            child.material = tierMaterial;
+            child.renderOrder = isActiveTier
+              ? 120
+              : 60 + Math.max(0, this.levels.findIndex((level) => level.id === root.userData.levelId));
           });
         });
       }
@@ -4441,6 +4459,7 @@ export class MuqarnasScene {
     this.frontOutlineGroup.clear();
     this.frontOutlineMaterial.dispose();
     this.frontFocusMaterial.dispose();
+    this.tierPreviewInactiveMaterial.dispose();
     this.topOutlineMaterial.dispose();
     this.selectionOutlineMaterial.dispose();
     this.topTierMaterials.forEach((material) => material.dispose());

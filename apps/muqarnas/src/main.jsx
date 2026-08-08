@@ -1013,7 +1013,7 @@ function App() {
               <button type="button" className={overviewView === 'front' ? 'active' : ''} onClick={() => { setOverviewView('front'); engineRef.current?.setOverviewView('front'); }}><Layers3 size={13} /> Front</button>
             </div>
             <div className="overview-viewport" ref={overviewViewportRef} />
-            <figcaption><ViewLabel view={overviewView} /><small>Muqarnas model</small></figcaption>
+            <figcaption><ViewLabel view={overviewView} /><small>{levels.find((level) => level.id === activeLevelId)?.name || 'Active tier'} highlighted</small></figcaption>
           </figure>
 
           <div className={`level-section inspector-section ${collapsedSections.tiers ? 'collapsed' : ''}`}>
