@@ -26,7 +26,20 @@
 .girih-theme-bricks { --girih-app-accent: #a55332; --girih-app-accent-hover: #844026; --girih-app-accent-soft: #f8ebe5; }
 .girih-theme-muqarnas { --girih-app-accent: #957018; --girih-app-accent-hover: #755711; --girih-app-accent-soft: #f7f0d9; }
 .girih-theme-mehraz { --girih-app-accent: #456f84; --girih-app-accent-hover: #34596c; --girih-app-accent-soft: #e8f0f4; }
-.girih-theme-academy { --girih-app-accent: #a37813; --girih-app-accent-hover: #7d5b0d; --girih-app-accent-soft: #f8f0d6; }
+.girih-theme-academy { --girih-app-accent: #f0ca2e; --girih-app-accent-hover: #d7b222; --girih-app-accent-soft: #fff7d1; }
+
+.girih-training-button {
+  border-color: #f0ca2e !important;
+  background: #f0ca2e !important;
+  color: #202825 !important;
+}
+
+.girih-training-button:hover,
+.girih-training-button:focus-visible {
+  border-color: #d7b222 !important;
+  background: #d7b222 !important;
+  color: #202825 !important;
+}
 
 .girih-product-header {
   min-height: var(--girih-shell-header-height);
@@ -108,6 +121,12 @@ girih-app-icon[small]:not([app="academy"]) { width: 40px; height: 40px; flex-bas
 .girih-button--primary:focus-visible {
   background: var(--girih-app-accent-hover);
   color: #ffffff;
+}
+
+.girih-theme-academy .girih-button--primary,
+.girih-theme-academy .girih-button--primary:hover,
+.girih-theme-academy .girih-button--primary:focus-visible {
+  color: #202825;
 }
 
 .girih-brand-link,

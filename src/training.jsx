@@ -114,8 +114,8 @@ function TeacherDashboard({ payload, mutate, busy }) {
       <article><Send /><span>Ready to review</span><strong>{submitted}</strong></article>
       <article><CheckCircle2 /><span>Completed</span><strong>{completed}</strong></article>
     </section>
-    <nav className="academy-teacher-tabs" aria-label="Teacher workspace views"><button className={activeView === 'class' ? 'active' : ''} onClick={() => setActiveView('class')}><UsersRound size={16} /> Class</button><button className={activeView === 'curriculum' ? 'active' : ''} onClick={() => setActiveView('curriculum')}><BookOpen size={16} /> Curriculum</button></nav>
-    {activeView === 'curriculum' ? <CurriculumManager payload={payload} mutate={mutate} busy={busy} /> : <>
+    <nav className="academy-teacher-tabs" aria-label="Teacher workspace views"><button className={activeView === 'class' ? 'active' : ''} onClick={() => setActiveView('class')}><UsersRound size={16} /> Class</button><button className={activeView === 'curriculum' ? 'active' : ''} onClick={() => setActiveView('curriculum')}><BookOpen size={16} /> Curriculum</button><button className={activeView === 'learning' ? 'active' : ''} onClick={() => setActiveView('learning')}><GraduationCap size={16} /> My training</button></nav>
+    {activeView === 'curriculum' ? <CurriculumManager payload={payload} mutate={mutate} busy={busy} /> : activeView === 'learning' ? <TeacherLearning /> : <>
     <div className="academy-teacher-grid">
       <section className="academy-section academy-roster">
         <header><div><p>Class roster</p><h2>Students</h2></div><span>{payload.students.length}</span></header>
@@ -156,6 +156,22 @@ function TeacherDashboard({ payload, mutate, busy }) {
     {reviewing && <ReviewDialog assignment={reviewing} module={modulesById[reviewing.module_id]} student={studentsById[reviewing.student_id]} busy={busy} onClose={() => setReviewing(null)} onSubmit={async (review) => { await mutate({ action: 'review', assignmentId: reviewing.id, ...review }); setReviewing(null); }} />}
     </>}
   </main>;
+}
+
+function TeacherLearning() {
+  const trainingApps = GIRIH_APPS.filter((app) => ['girih', 'bricks', 'muqarnas', 'mehraz'].includes(app.id));
+  function openTraining(appId) {
+    if (window.GirihTrainingPanel?.open?.(appId)) return;
+    window.location.href = `/training?app=${encodeURIComponent(appId)}`;
+  }
+  return <section className="academy-teacher-learning">
+    <header><div><p>Personal development</p><h2>Learn with the same guided modules as your students.</h2><span>Complete each instruction in order, tick finished tasks, and continue until your own module reaches 100%.</span></div><GraduationCap size={40} /></header>
+    <div className="academy-teacher-learning-grid">{trainingApps.map((app) => <article key={app.id}>
+      <AcademyAppIcon appId={app.id} />
+      <div><small>{app.category}</small><h3>{app.shortName}</h3><p>{app.description}</p></div>
+      <button type="button" onClick={() => openTraining(app.id)}><BookOpen size={15} /> Open training panel</button>
+    </article>)}</div>
+  </section>;
 }
 
 function ReviewDialog({ assignment, module, student, onClose, onSubmit, busy }) {

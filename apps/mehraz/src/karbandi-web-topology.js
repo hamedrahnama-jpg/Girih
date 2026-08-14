@@ -40,7 +40,7 @@ export function normalizeKarbandiWebOptions(value = {}) {
     : [];
   const brickColor = typeof value.infillBrickColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.infillBrickColor)
     ? value.infillBrickColor
-    : '#b9824f';
+    : '#e5d41f';
   const brickColor2 = typeof value.infillBrickColor2 === 'string' && /^#[0-9a-f]{6}$/i.test(value.infillBrickColor2)
     ? value.infillBrickColor2
     : '#9f663b';
@@ -53,7 +53,7 @@ export function normalizeKarbandiWebOptions(value = {}) {
     soffitCustomOffset: number(value.soffitCustomOffset, 0, -5, 5),
     springingTangent,
     springingAngle: number(value.springingAngle, 45, -89, 89),
-    roofThickness: number(value.roofThickness, 0.1, 0.01, 2),
+    roofThickness: 0.05,
     infillBrickColor: brickColor,
     infillBrickColor2: brickColor2,
     infillBrickHeight: number(value.infillBrickHeight, 0.06, 0.01, 0.5),
@@ -61,6 +61,8 @@ export function normalizeKarbandiWebOptions(value = {}) {
     wallEmbedTolerance: number(value.wallEmbedTolerance, 0, 0, 0.1),
     ribEmbedTolerance: number(value.ribEmbedTolerance, 0, 0, 0.1),
     seatingOffset: number(value.seatingOffset, 0, -1, 1),
+    southWestGuideBlend: number(value.southWestGuideBlend, 0.5, 0, 1),
+    southEastGuideBlend: number(value.southEastGuideBlend, 0.5, 0, 1),
     cornerSeatMode,
     cornerRadius: number(value.cornerRadius, 0.08, 0.001, 2),
     customCornerCurve: points(value.customCornerCurve),

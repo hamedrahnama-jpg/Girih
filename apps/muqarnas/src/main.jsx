@@ -854,7 +854,7 @@ function App() {
           <button type="button" className="button primary" disabled={libraryBusy || !stats.modules} onClick={saveAssemblyToLibrary}><Save size={15} /> {libraryBusy ? 'Saving...' : 'Save project'}</button>
         </div>
         <div className="header-actions girih-header-end">
-          <a className="button account-button" href="https://girihstudio.com/training?app=muqarnas"><GraduationCap size={15} /> Academy</a>
+          <a className="button account-button girih-training-button" href="https://girihstudio.com/training?app=muqarnas"><GraduationCap size={15} /> Training</a>
           <button type="button" className="button" onClick={() => setLibraryDialogOpen(true)}><FolderOpen size={15} /> Library</button>
           {bondAccount ? <a className="button account-button" href="https://girihstudio.com/profile" title={bondAccount.email}><User size={15} /> Profile</a> : <button type="button" className="button" onClick={connectBondAccount}><LogIn size={15} /> Sign in</button>}
           <girih-app-switcher current-app="muqarnas" compact></girih-app-switcher>

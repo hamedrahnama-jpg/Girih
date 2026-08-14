@@ -8,11 +8,29 @@ import {
   normalizeKarbandiWebOptions,
   polygonMostlyInsideRibBands,
 } from './karbandi-web-topology.js';
+import {
+  buildRibCenterlines,
+  fourRibCenterlineRegion,
+  ribCenteredPerimeterRegion,
+} from './karbandi-four-rib-region.js';
 import { buildStructuredWebPatch } from './karbandi-structured-patch.js';
 
 export const WALL_SIDES = Object.freeze(['north', 'east', 'south', 'west']);
 export const BRICK_BOND_SIDES = Object.freeze(['north_sides', 'north_top', 'east', 'south', 'west', 'arch']);
 const IMPORTED_BOND_NORMALIZED_UNIT_M = 0.1;
+
+export function wallConnectedRibIndexes(adjacency = new Map(), supportedRibs = []) {
+  const connected = new Set(supportedRibs);
+  const queue = [...supportedRibs];
+  for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+    for (const neighbor of adjacency.get(queue[queueIndex]) || []) {
+      if (connected.has(neighbor)) continue;
+      connected.add(neighbor);
+      queue.push(neighbor);
+    }
+  }
+  return connected;
+}
 
 export const BUILT_IN_BONDS = Object.freeze({
   running: {
@@ -43,17 +61,37 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
   color: '#b78b5d',
   shadows: true,
   openSides: [],
+  interiorGypsum: { enabled: false, color: '#f1eee7' },
+  stoneBase: { enabled: true, height: 1, slabWidth: 0.6, color: '#b7a68a', mortar: 0.001, mortarColor: '#9a8f7e' },
   extraHeights: { north: 0, east: 0, south: 0, west: 0 },
   sideOffsets: { north: 0, east: 0, south: 0, west: 0 },
   edges: { enabled: false, color: '#79610c', thickness: 2 },
   southOpenings: {
-    door: { enabled: true, width: 1.7, height: 2.1, position: 0 },
-    window: { enabled: false, width: 1, height: 1, position: 0, sillHeight: 4.5 },
+    door: {
+      enabled: true,
+      width: 2,
+      height: 1.6,
+      position: 0,
+      head: 'lintel',
+      arch: { redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 },
+    },
+    window: {
+      enabled: false,
+      width: 1,
+      height: 0.5,
+      position: 0,
+      sillHeight: 4.7,
+      head: 'lintel',
+      arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 },
+    },
   },
   pointedArch: {
     enabled: true,
+    redOffset: 0,
+    redRadius: null,
     greenOffset: 1,
     greenHeight: 5,
+    greenHeightOffset: -1,
     moduleInfill: true,
   },
   ahang: {
@@ -63,8 +101,9 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
     enabled: false,
     ribCount: 16,
     rotationOffset: 0,
-    span: 4.3,
+    span: 4.1,
     springHeightOffset: 0,
+    redOffset: 0,
     greenOffset: 0.85,
     greenHeightOffset: -0.85,
     ribWidth: 0.1,
@@ -78,7 +117,8 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
     groupZ: 0.35,
     groupRotationY: 0,
     groupScale: 0.95,
-    ribColor: '#b78b5d',
+    ribColor: '#3490b7',
+    referenceRibColor: '#ffd400',
     coverEnabled: false,
     coverFinish: 'bricks',
     coverColor: '#eee8dc',
@@ -91,14 +131,16 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
       soffitCustomOffset: 0,
       springingTangent: 'infer',
       springingAngle: 45,
-      roofThickness: 0.1,
-      infillBrickColor: '#b9824f',
+      roofThickness: 0.05,
+      infillBrickColor: '#e5d41f',
       infillBrickColor2: '#9f663b',
       infillBrickHeight: 0.06,
       wallBearingDepth: 0,
       wallEmbedTolerance: 0,
       ribEmbedTolerance: 0,
       seatingOffset: 0,
+      southWestGuideBlend: 0.5,
+      southEastGuideBlend: 0.5,
       cornerSeatMode: 'rib-profile',
       cornerRadius: 0.08,
       customCornerCurve: [],
@@ -107,6 +149,7 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
       intentionalOpenings: [],
     },
     clipToPortal: true,
+    autoClip: true,
     cutMode: false,
     manualCuts: [],
   },
@@ -179,6 +222,60 @@ function normalizeSideBond(value = {}) {
   };
 }
 
+export function wallContextLibraryAsset(sideBonds = {}, selectedSide = '') {
+  const exactSide = selectedSide === 'south_arch' ? 'arch' : selectedSide;
+  const fallbackSides = exactSide === 'arch'
+    ? ['south']
+    : exactSide === 'north_sides' || exactSide === 'north_top'
+      ? ['north']
+      : [];
+  const bond = [exactSide, ...fallbackSides]
+    .map((side) => sideBonds?.[side])
+    .find((candidate) => candidate?.source === 'library' && candidate.assetId);
+  if (!bond) return null;
+  const payload = bond.payload || {};
+  const assetType = bond.assetType
+    || payload.asset_type
+    || (payload.kind === 'girih-model' || payload.mehrazFlatPattern ? 'girih_pattern' : 'brick_bond');
+  return {
+    assetId: bond.assetId,
+    versionId: bond.assetVersionId || '',
+    assetType,
+    name: bond.name,
+  };
+}
+
+function normalizeSouthOpening(value, fallback, bottom = 0) {
+  const source = value || {};
+  const width = number(source.width, fallback.width, 0.3, 12);
+  const height = number(source.height, fallback.height, 0.3, 15);
+  const arch = { ...(fallback.arch || {}), ...(source.arch || {}) };
+  const springHeight = bottom + height;
+  const defaultGreenOffset = number(fallback.arch?.greenOffset, Math.max(0.05, width * 0.5), 0.05, 20);
+  const defaultGreenHeightOffset = fallback.arch?.greenHeightOffset == null
+    ? -Math.max(0.05, width * 0.5)
+    : number(fallback.arch.greenHeightOffset, -Math.max(0.05, width * 0.5), -40, 40);
+  const greenHeightOffset = arch.greenHeightOffset == null
+    ? (arch.greenHeight == null
+      ? defaultGreenHeightOffset
+      : number(arch.greenHeight, springHeight + defaultGreenHeightOffset, -40, 40) - springHeight)
+    : number(arch.greenHeightOffset, defaultGreenHeightOffset, -40, 40);
+  return {
+    enabled: source.enabled == null ? fallback.enabled : source.enabled === true,
+    width,
+    height,
+    position: number(source.position, fallback.position, -20, 20),
+    head: source.head === 'arch' ? 'arch' : 'lintel',
+    arch: {
+      redOffset: number(arch.redOffset, fallback.arch?.redOffset ?? 0, -20, 20),
+      redRadius: arch.redRadius == null ? null : number(arch.redRadius, fallback.arch?.redRadius ?? width * 0.5, 0.05, 40),
+      greenOffset: number(arch.greenOffset, defaultGreenOffset, 0.05, 20),
+      greenHeight: number(springHeight + greenHeightOffset, springHeight + defaultGreenHeightOffset, -40, 40),
+      greenHeightOffset,
+    },
+  };
+}
+
 export function normalizeWallSystem(value = {}, building = {}) {
   const openings = value.southOpenings || {};
   const door = openings.door || {};
@@ -193,14 +290,48 @@ export function normalizeWallSystem(value = {}, building = {}) {
   const northWall = value.northWall || {};
   const northBoundary = value.northBoundary || {};
   const edges = value.edges || value.wallEdges || {};
+  const interiorGypsum = value.interiorGypsum || {};
+  const stoneBase = value.stoneBase || {};
   const bricks = value.bricks || value.brickPattern || {};
   const defaultSill = DEFAULT_WALL_SYSTEM.southOpenings.window.sillHeight;
+  const windowSill = windowOpening.sillHeight == null
+    ? defaultSill
+    : number(windowOpening.sillHeight, defaultSill, 0, 18);
+  const extraHeights = sideRecord(value.extraHeights, 0, 0, 20);
+  const buildingHeight = number(building.height, 6, 2, 20);
+  const buildingDepth = number(building.depth, 8, 2, 30);
+  const referenceZMinimum = 0.001;
+  const referenceZMaximum = Math.max(referenceZMinimum, buildingDepth - 0.001);
+  const archSpringHeight = Math.max(
+    0.05,
+    buildingHeight + extraHeights.east,
+    buildingHeight + extraHeights.west,
+  );
+  // Store the green construction center relative to the arch spring line. This
+  // lets the complete circle construction translate with the building height
+  // without changing the arch profile. Legacy projects only have the absolute
+  // height, so derive their offset the first time they are normalized.
+  const greenHeightOffset = pointedArch.greenHeightOffset == null
+    ? number(pointedArch.greenHeight, DEFAULT_WALL_SYSTEM.pointedArch.greenHeight, -40, 40) - archSpringHeight
+    : number(pointedArch.greenHeightOffset, DEFAULT_WALL_SYSTEM.pointedArch.greenHeightOffset, -40, 40);
   return {
     enabled: value.enabled !== false,
     color: color(value.color, DEFAULT_WALL_SYSTEM.color),
     shadows: value.shadows !== false,
     openSides: WALL_SIDES.filter((side) => Array.isArray(value.openSides) && value.openSides.includes(side)),
-    extraHeights: sideRecord(value.extraHeights, 0, 0, 20),
+    interiorGypsum: {
+      enabled: interiorGypsum.enabled === true,
+      color: color(interiorGypsum.color, DEFAULT_WALL_SYSTEM.interiorGypsum.color),
+    },
+    stoneBase: {
+      enabled: stoneBase.enabled == null ? DEFAULT_WALL_SYSTEM.stoneBase.enabled : stoneBase.enabled === true,
+      height: number(stoneBase.height, DEFAULT_WALL_SYSTEM.stoneBase.height, 0, 10),
+      slabWidth: number(stoneBase.slabWidth, DEFAULT_WALL_SYSTEM.stoneBase.slabWidth, 0.1, 5),
+      color: color(stoneBase.color, DEFAULT_WALL_SYSTEM.stoneBase.color),
+      mortar: number(stoneBase.mortar, DEFAULT_WALL_SYSTEM.stoneBase.mortar, 0.001, 0.1),
+      mortarColor: color(stoneBase.mortarColor, DEFAULT_WALL_SYSTEM.stoneBase.mortarColor),
+    },
+    extraHeights,
     sideOffsets: sideRecord(value.sideOffsets, 0, -20, 20),
     edges: {
       enabled: edges.enabled === true,
@@ -208,26 +339,19 @@ export function normalizeWallSystem(value = {}, building = {}) {
       thickness: number(edges.thickness, DEFAULT_WALL_SYSTEM.edges.thickness, 0.5, 8),
     },
     southOpenings: {
-      door: {
-        enabled: door.enabled == null ? DEFAULT_WALL_SYSTEM.southOpenings.door.enabled : door.enabled === true,
-        width: number(door.width, DEFAULT_WALL_SYSTEM.southOpenings.door.width, 0.3, 12),
-        height: number(door.height, 2.1, 0.5, 15),
-        position: number(door.position, 0, -20, 20),
-      },
+      door: normalizeSouthOpening(door, DEFAULT_WALL_SYSTEM.southOpenings.door, 0),
       window: {
-        enabled: windowOpening.enabled === true,
-        width: number(windowOpening.width, DEFAULT_WALL_SYSTEM.southOpenings.window.width, 0.3, 12),
-        height: number(windowOpening.height, DEFAULT_WALL_SYSTEM.southOpenings.window.height, 0.3, 12),
-        position: number(windowOpening.position, 0, -20, 20),
-        sillHeight: windowOpening.sillHeight == null
-          ? defaultSill
-          : number(windowOpening.sillHeight, defaultSill, 0, 18),
+        ...normalizeSouthOpening(windowOpening, DEFAULT_WALL_SYSTEM.southOpenings.window, windowSill),
+        sillHeight: windowSill,
       },
     },
     pointedArch: {
       enabled: pointedArch.enabled !== false,
+      redOffset: number(pointedArch.redOffset, DEFAULT_WALL_SYSTEM.pointedArch.redOffset, -20, 20),
+      redRadius: pointedArch.redRadius == null ? null : number(pointedArch.redRadius, 1, 0.05, 40),
       greenOffset: number(pointedArch.greenOffset, DEFAULT_WALL_SYSTEM.pointedArch.greenOffset, 0.05, 20),
-      greenHeight: number(pointedArch.greenHeight, DEFAULT_WALL_SYSTEM.pointedArch.greenHeight, 0, 20),
+      greenHeight: number(archSpringHeight + greenHeightOffset, DEFAULT_WALL_SYSTEM.pointedArch.greenHeight, -40, 40),
+      greenHeightOffset,
       moduleInfill: pointedArch.moduleInfill !== false,
     },
     ahang: {
@@ -239,33 +363,43 @@ export function normalizeWallSystem(value = {}, building = {}) {
       rotationOffset: number(value.karbandi?.rotationOffset, DEFAULT_WALL_SYSTEM.karbandi.rotationOffset, -360, 360),
       span: number(value.karbandi?.span, DEFAULT_WALL_SYSTEM.karbandi.span, 0.2, 40),
       springHeightOffset: number(value.karbandi?.springHeightOffset, DEFAULT_WALL_SYSTEM.karbandi.springHeightOffset, -10, 20),
+      redOffset: number(value.karbandi?.redOffset, DEFAULT_WALL_SYSTEM.karbandi.redOffset, -20, 20),
       greenOffset: number(value.karbandi?.greenOffset, DEFAULT_WALL_SYSTEM.karbandi.greenOffset, 0.05, 20),
       greenHeightOffset: number(value.karbandi?.greenHeightOffset, DEFAULT_WALL_SYSTEM.karbandi.greenHeightOffset, -10, 20),
       ribWidth: number(value.karbandi?.ribWidth ?? value.karbandi?.ribThickness, DEFAULT_WALL_SYSTEM.karbandi.ribWidth, 0.01, 2),
       ribDepth: number(value.karbandi?.ribDepth ?? value.karbandi?.ribThickness, DEFAULT_WALL_SYSTEM.karbandi.ribDepth, 0.01, 2),
       referenceAngle: number(value.karbandi?.referenceAngle, DEFAULT_WALL_SYSTEM.karbandi.referenceAngle, 1, 359),
       referenceX: number(value.karbandi?.referenceX, DEFAULT_WALL_SYSTEM.karbandi.referenceX, -40, 40),
-      referenceZ: number(value.karbandi?.referenceZ, DEFAULT_WALL_SYSTEM.karbandi.referenceZ, -40, 40),
+      referenceZ: number(
+        value.karbandi?.referenceZ,
+        THREE.MathUtils.clamp(DEFAULT_WALL_SYSTEM.karbandi.referenceZ, referenceZMinimum, referenceZMaximum),
+        referenceZMinimum,
+        referenceZMaximum,
+      ),
       referenceRotation: number(value.karbandi?.referenceRotation, DEFAULT_WALL_SYSTEM.karbandi.referenceRotation, -360, 360),
       groupX: number(value.karbandi?.groupX, DEFAULT_WALL_SYSTEM.karbandi.groupX, -40, 40),
       groupY: number(value.karbandi?.groupY, DEFAULT_WALL_SYSTEM.karbandi.groupY, -40, 40),
       groupZ: number(value.karbandi?.groupZ, DEFAULT_WALL_SYSTEM.karbandi.groupZ, -40, 40),
       groupRotationY: number(value.karbandi?.groupRotationY, DEFAULT_WALL_SYSTEM.karbandi.groupRotationY, -360, 360),
       groupScale: number(value.karbandi?.groupScale, DEFAULT_WALL_SYSTEM.karbandi.groupScale, 0.05, 20),
-      ribColor: color(value.karbandi?.ribColor, color(value.color, DEFAULT_WALL_SYSTEM.color)),
+      ribColor: color(value.karbandi?.ribColor, DEFAULT_WALL_SYSTEM.karbandi.ribColor),
+      referenceRibColor: color(value.karbandi?.referenceRibColor, DEFAULT_WALL_SYSTEM.karbandi.referenceRibColor),
       coverEnabled: value.karbandi?.coverEnabled === true,
       coverFinish: value.karbandi?.coverFinish === 'solid' ? 'solid' : 'bricks',
       coverColor: color(value.karbandi?.coverColor, DEFAULT_WALL_SYSTEM.karbandi.coverColor),
       web: normalizeKarbandiWebOptions(value.karbandi?.web),
       clipToPortal: karbandiEnabled,
+      autoClip: value.karbandi?.autoClip !== false,
       cutMode: value.karbandi?.cutMode === true,
       manualCuts: Array.isArray(value.karbandi?.manualCuts)
-        ? value.karbandi.manualCuts
-          .map((cut) => ({
-            ribIndex: Math.round(number(cut?.ribIndex, 0, 0, 512)),
-            side: cut?.side === 'right' ? 'right' : 'left',
-          }))
-          .filter((cut, index, list) => list.findIndex((item) => item.ribIndex === cut.ribIndex && item.side === cut.side) === index)
+        ? [...value.karbandi.manualCuts.reduce((cuts, cut) => {
+          const ribIndex = Math.round(number(cut?.ribIndex, 0, 0, 512));
+          const side = cut?.side === 'right' ? 'right' : 'left';
+          const key = `${ribIndex}:${side}`;
+          const steps = Math.round(number(cut?.steps, 1, 1, 64));
+          cuts.set(key, { ribIndex, side, steps: (cuts.get(key)?.steps || 0) + steps });
+          return cuts;
+        }, new Map()).values()].map((cut) => ({ ...cut, steps: Math.min(64, cut.steps) }))
         : [],
     },
     northWall: {
@@ -328,6 +462,70 @@ function wallMaterial(walls, side = null, width = 1, height = 1, worldUv = false
     material.userData.generatedTexture = material.map;
     material.userData.isFlatBrickBond = true;
   }
+  return configureStoneBaseMaterial(material, walls);
+}
+
+export function configureStoneBaseMaterial(material, walls, { clipPattern = false } = {}) {
+  if (!material || walls?.stoneBase?.enabled !== true || !(Number(walls.stoneBase.height) > 0)) return material;
+  const height = Number(walls.stoneBase.height);
+  const slabWidth = number(walls.stoneBase.slabWidth, DEFAULT_WALL_SYSTEM.stoneBase.slabWidth, 0.1, 5);
+  const stoneColor = color(walls.stoneBase.color, DEFAULT_WALL_SYSTEM.stoneBase.color);
+  const mortar = number(walls.stoneBase.mortar, DEFAULT_WALL_SYSTEM.stoneBase.mortar, 0.001, 0.1);
+  const mortarColor = color(walls.stoneBase.mortarColor, DEFAULT_WALL_SYSTEM.stoneBase.mortarColor);
+  material.userData.stoneBaseHeight = height;
+  material.userData.stoneBaseSlabWidth = slabWidth;
+  material.userData.stoneBaseColor = stoneColor;
+  material.userData.stoneBaseMortar = mortar;
+  material.userData.stoneBaseMortarColor = mortarColor;
+  if (clipPattern) {
+    material.clippingPlanes = [
+      ...(Array.isArray(material.clippingPlanes) ? material.clippingPlanes : []),
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), -height),
+    ];
+    material.clipIntersection = false;
+    material.clipShadows = true;
+    material.userData.stoneBasePatternClipHeight = height;
+    return material;
+  }
+  const previousCompile = material.onBeforeCompile;
+  const previousCacheKey = material.customProgramCacheKey?.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previousCompile?.(shader, renderer);
+    shader.uniforms.stoneBaseHeight = { value: height };
+    shader.uniforms.stoneBaseSlabWidth = { value: slabWidth };
+    shader.uniforms.stoneBaseColor = { value: new THREE.Color(stoneColor) };
+    shader.uniforms.stoneBaseMortar = { value: mortar };
+    shader.uniforms.stoneBaseMortarColor = { value: new THREE.Color(mortarColor) };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vStoneBaseWorldPosition;\nvarying vec3 vStoneBaseWorldNormal;')
+      .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\nvStoneBaseWorldNormal = normalize(mat3(modelMatrix) * objectNormal);')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvStoneBaseWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        '#include <common>\nvarying vec3 vStoneBaseWorldPosition;\nvarying vec3 vStoneBaseWorldNormal;\nuniform float stoneBaseHeight;\nuniform float stoneBaseSlabWidth;\nuniform vec3 stoneBaseColor;\nuniform float stoneBaseMortar;\nuniform vec3 stoneBaseMortarColor;',
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        `if (vStoneBaseWorldPosition.y <= stoneBaseHeight + 0.0001) {
+  float slabWidth = stoneBaseSlabWidth;
+  float jointHalf = stoneBaseMortar * 0.5;
+  float horizontal = abs(vStoneBaseWorldNormal.x) > abs(vStoneBaseWorldNormal.z)
+    ? vStoneBaseWorldPosition.z
+    : vStoneBaseWorldPosition.x;
+  float slabX = mod(horizontal, slabWidth);
+  float edgeDistance = min(slabX, slabWidth - slabX);
+  float antialias = max(fwidth(edgeDistance), 0.0005);
+  float mortarMask = 1.0 - smoothstep(jointHalf, jointHalf + antialias, edgeDistance);
+  float variation = 0.94 + 0.08 * fract(sin(floor(horizontal / slabWidth) * 127.1) * 43758.5453);
+  vec3 slabColor = stoneBaseColor * variation;
+  diffuseColor.rgb = mix(slabColor, stoneBaseMortarColor, mortarMask);
+}
+#include <roughnessmap_fragment>`,
+      );
+  };
+  material.customProgramCacheKey = () => `${previousCacheKey?.() || 'standard'}|stone-base-v2`;
+  material.needsUpdate = true;
   return material;
 }
 
@@ -379,7 +577,9 @@ function configureRaisedBorderBrickMaterial(material, walls, archMapping = null)
     shader.uniforms.raisedBrickMortarColor = { value: new THREE.Color(mortarColor) };
     shader.uniforms.raisedArchEnabled = { value: archMapping?.enabled === true ? 1 : 0 };
     shader.uniforms.raisedArchCenterX = { value: archMapping?.centerX || 0 };
+    shader.uniforms.raisedArchRedOffset = { value: archMapping?.redOffset || 0 };
     shader.uniforms.raisedArchRedHeight = { value: archMapping?.redHeight || 0 };
+    shader.uniforms.raisedArchRedStartAngle = { value: archMapping?.redStartAngle || 0 };
     shader.uniforms.raisedArchGreenOffset = { value: archMapping?.greenOffset || 0 };
     shader.uniforms.raisedArchGreenHeight = { value: archMapping?.greenHeight || 0 };
     shader.uniforms.raisedArchRedRadius = { value: archMapping?.redRadius || 1 };
@@ -393,6 +593,9 @@ function configureRaisedBorderBrickMaterial(material, walls, archMapping = null)
     shader.uniforms.raisedStraightInnerHalfWidth = { value: archMapping?.straightInnerHalfWidth ?? 1e6 };
     shader.uniforms.raisedStraightOuterHalfWidth = { value: archMapping?.straightOuterHalfWidth ?? 1e6 };
     shader.uniforms.raisedStraightSideBandWidth = { value: archMapping?.straightSideBandWidth || brickWidth };
+    shader.uniforms.raisedBorderIsSoldier = { value: material.userData.raisedBorderOrientation === 'horizontal' ? 1 : 0 };
+    shader.uniforms.raisedBorderIsJamb = { value: material.userData.raisedBorderOrientation === 'vertical' ? 1 : 0 };
+    shader.uniforms.raisedBorderCourseUsesWorldZ = { value: material.userData.raisedBorderCourseAxis === 'z' ? 1 : 0 };
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -418,7 +621,9 @@ uniform float raisedBrickMortar;
 uniform vec3 raisedBrickMortarColor;
 uniform float raisedArchEnabled;
 uniform float raisedArchCenterX;
+uniform float raisedArchRedOffset;
 uniform float raisedArchRedHeight;
+uniform float raisedArchRedStartAngle;
 uniform float raisedArchGreenOffset;
 uniform float raisedArchGreenHeight;
 uniform float raisedArchRedRadius;
@@ -432,6 +637,9 @@ uniform float raisedStraightBottomY;
 uniform float raisedStraightInnerHalfWidth;
 uniform float raisedStraightOuterHalfWidth;
 uniform float raisedStraightSideBandWidth;
+uniform float raisedBorderIsSoldier;
+uniform float raisedBorderIsJamb;
+uniform float raisedBorderCourseUsesWorldZ;
 float raisedBrickHash(vec2 point) {
   return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453123);
 }`,
@@ -449,7 +657,7 @@ float raisedBrickHash(vec2 point) {
   if (raisedArchEnabled > 0.5) {
     float sideDirection = vRaisedBrickWorldPosition.x < raisedArchCenterX ? -1.0 : 1.0;
     vec2 archPoint = vec2(raisedArchCenterX + abs(vRaisedBrickWorldPosition.x - raisedArchCenterX), vRaisedBrickWorldPosition.y);
-    vec2 redCenter = vec2(raisedArchCenterX, raisedArchRedHeight);
+    vec2 redCenter = vec2(raisedArchCenterX - raisedArchRedOffset, raisedArchRedHeight);
     vec2 greenCenter = vec2(raisedArchCenterX - raisedArchGreenOffset, raisedArchGreenHeight);
     float redDistance = length(archPoint - redCenter);
     float greenDistance = length(archPoint - greenCenter);
@@ -457,11 +665,11 @@ float raisedBrickHash(vec2 point) {
     float greenCurveDistance = abs(greenDistance - raisedArchGreenRadius);
     float apexAngle = atan(raisedArchApexY - raisedArchGreenHeight, raisedArchGreenOffset);
     float greenTangentAngle = atan(raisedArchTangentY - raisedArchGreenHeight, raisedArchTangentX - (raisedArchCenterX - raisedArchGreenOffset));
-    float redTangentAngle = atan(raisedArchTangentY - raisedArchRedHeight, raisedArchTangentX - raisedArchCenterX);
+    float redTangentAngle = atan(raisedArchTangentY - raisedArchRedHeight, raisedArchTangentX - (raisedArchCenterX - raisedArchRedOffset));
     float greenSegmentLength = raisedArchGreenRadius * abs(apexAngle - greenTangentAngle);
-    float redCurrentAngle = atan(archPoint.y - raisedArchRedHeight, archPoint.x - raisedArchCenterX);
+    float redCurrentAngle = atan(archPoint.y - raisedArchRedHeight, archPoint.x - (raisedArchCenterX - raisedArchRedOffset));
     float greenCurrentAngle = atan(archPoint.y - raisedArchGreenHeight, archPoint.x - (raisedArchCenterX - raisedArchGreenOffset));
-    bool onRedArc = redCurrentAngle >= -0.0001 && redCurrentAngle <= redTangentAngle + 0.0001;
+    bool onRedArc = redCurrentAngle >= raisedArchRedStartAngle - 0.0001 && redCurrentAngle <= redTangentAngle + 0.0001;
     bool onGreenArc = greenCurrentAngle >= greenTangentAngle - 0.0001 && greenCurrentAngle <= apexAngle + 0.0001;
     float validRedDistance = onRedArc ? redCurveDistance : 1e6;
     float validGreenDistance = onGreenArc ? greenCurveDistance : 1e6;
@@ -504,6 +712,17 @@ float raisedBrickHash(vec2 point) {
       clamp(distanceFromOpeningEdge / raisedStraightSideBandWidth, 0.0, 1.0) * raisedBrickWidth,
       vRaisedBrickWorldPosition.y
     );
+    useWholeStraightBand = true;
+  } else if (!useArchMapping && raisedBorderIsSoldier > 0.5
+      && ((raisedBorderCourseUsesWorldZ < 0.5 && faceDirection.z >= max(faceDirection.x, faceDirection.y))
+        || (raisedBorderCourseUsesWorldZ > 0.5 && faceDirection.x >= max(faceDirection.z, faceDirection.y)))) {
+    // A lintel/soldier course is one solid masonry band: its short dimension
+    // runs across the band and its mortared joints step along the opening.
+    float coursePosition = mix(vRaisedBrickWorldPosition.x, vRaisedBrickWorldPosition.z, raisedBorderCourseUsesWorldZ);
+    surfacePosition = vec2(vRaisedBrickWorldPosition.y, coursePosition);
+    useWholeStraightBand = true;
+  } else if (!useArchMapping && raisedBorderIsJamb > 0.5 && faceDirection.z >= faceDirection.x) {
+    surfacePosition = vRaisedBrickWorldPosition.xy;
     useWholeStraightBand = true;
   } else if (!useArchMapping && faceDirection.y > max(faceDirection.x, faceDirection.z)) {
     surfacePosition = vRaisedBrickWorldPosition.xz;
@@ -636,7 +855,9 @@ function applyWallContinuationBrickUvs(geometry, supportSide) {
     // The roof curvature changes the surface position, not the brick phase.
     uvs.setXY(
       index,
-      followsSideWall ? positions.getZ(index) : positions.getX(index),
+      followsSideWall
+        ? (supportSide === 'west' ? -positions.getZ(index) : positions.getZ(index))
+        : positions.getX(index),
       positions.getY(index),
     );
   }
@@ -716,8 +937,11 @@ function rectangleShapeWithDoorNotch(left, right, height, door = null, holes = [
   const shape = new THREE.Shape();
   shape.moveTo(left, 0);
   shape.lineTo(doorLeft, 0);
-  shape.lineTo(doorLeft, doorTop);
-  shape.lineTo(doorRight, doorTop);
+  const headPoints = door.archPoints?.length
+    ? door.archPoints
+    : [new THREE.Vector2(doorLeft, doorTop), new THREE.Vector2(doorRight, doorTop)];
+  shape.lineTo(doorLeft, headPoints[0].y);
+  headPoints.slice(1).forEach((point) => shape.lineTo(point.x, Math.min(height, point.y)));
   shape.lineTo(doorRight, 0);
   shape.lineTo(right, 0);
   shape.lineTo(right, height);
@@ -780,21 +1004,54 @@ function sampleCircularArc(center, radius, startAngle, endAngle, segments) {
   });
 }
 
-function archCurve(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenHeight, count = 36) {
-  const redCenter = new THREE.Vector2(centerX, redHeight);
+export function pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options = {}) {
+  const redOffset = Number(options.redOffset) || 0;
   const sidePoint = new THREE.Vector2(centerX + halfSpan, sideHeight);
+  const redCenterX = centerX - redOffset;
+  const springDistanceX = Math.max(0.00001, Math.abs(sidePoint.x - redCenterX));
+  const requestedRedRadius = Number(options.redRadius);
+  const redRadius = options.redRadius != null && Number.isFinite(requestedRedRadius)
+    ? Math.max(springDistanceX, requestedRedRadius)
+    : springDistanceX;
+  const redHeight = sideHeight - Math.sqrt(Math.max(0, redRadius * redRadius - springDistanceX * springDistanceX));
+  const redCenter = new THREE.Vector2(redCenterX, redHeight);
   const greenCenter = new THREE.Vector2(centerX - greenOffset, greenHeight);
-  const redRadius = redCenter.distanceTo(sidePoint);
   const centersDistance = redCenter.distanceTo(greenCenter);
-  if (!Number.isFinite(redRadius) || redRadius <= 0.00001 || centersDistance <= 0.00001) return [];
+  if (!Number.isFinite(redRadius) || redRadius <= 0.00001 || centersDistance <= 0.00001) return null;
   const greenRadius = redRadius + centersDistance;
-  const tangentDirection = redCenter.clone().sub(greenCenter).normalize();
-  const tangentPoint = redCenter.clone().addScaledVector(tangentDirection, redRadius);
-  if (greenRadius <= greenOffset + 0.00001) return [];
+  const tangentPoint = redCenter.clone().addScaledVector(
+    redCenter.clone().sub(greenCenter).normalize(),
+    redRadius,
+  );
   const apexPoint = new THREE.Vector2(
     centerX,
     greenHeight + Math.sqrt(Math.max(0, greenRadius * greenRadius - greenOffset * greenOffset)),
   );
+  return {
+    centerX,
+    sidePoint,
+    redCenter,
+    greenCenter,
+    redOffset,
+    greenOffset,
+    greenHeight,
+    redRadius,
+    greenRadius,
+    tangentPoint,
+    apexPoint,
+  };
+}
+
+function openingHole(opening) {
+  return opening?.archPoints?.length
+    ? archOpeningPath(opening.archPoints, opening.bottom)
+    : rectangleHole(opening.left, opening.bottom, opening.right, opening.top);
+}
+
+export function archCurve(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenHeight, count = 36, options = {}) {
+  const construction = pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options);
+  if (!construction) return [];
+  const { redCenter, greenCenter, redRadius, greenRadius, sidePoint, tangentPoint, apexPoint } = construction;
   const redArc = sampleCircularArc(
     redCenter,
     redRadius,
@@ -814,27 +1071,325 @@ function archCurve(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenH
   return [...leftHalf, ...[...rightHalf].reverse().slice(1)];
 }
 
-function pointedArchBrickMapping(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenHeight, bandWidth, straightTopY, straightBottomY, straightOuterHalfWidth) {
-  const redCenter = new THREE.Vector2(centerX, redHeight);
-  const sidePoint = new THREE.Vector2(centerX + halfSpan, sideHeight);
-  const greenCenter = new THREE.Vector2(centerX - greenOffset, greenHeight);
-  const redRadius = redCenter.distanceTo(sidePoint);
-  const centersDistance = redCenter.distanceTo(greenCenter);
-  if (!Number.isFinite(redRadius) || redRadius <= 0.00001 || centersDistance <= 0.00001) return null;
-  const greenRadius = redRadius + centersDistance;
-  const tangentPoint = redCenter.clone().addScaledVector(redCenter.clone().sub(greenCenter).normalize(), redRadius);
-  const apexY = greenHeight + Math.sqrt(Math.max(0, greenRadius * greenRadius - greenOffset * greenOffset));
+/**
+ * Place the centerline point at the base of the reference rib's right leg on
+ * the corresponding base point of the opposite leg of the first rotated rib.
+ * The calculation is performed in the
+ * Karbandi plan before the shared group transform, so rotation offset, group
+ * translation, and uniform scale preserve the coincidence.
+ */
+function karbandiReferenceZCandidates(karbandi = {}, buildingDepth = 30) {
+  const candidates = [];
+  const ribCount = Math.max(2, Math.min(64, Math.round(Number(karbandi.ribCount) || 2)));
+  const halfSpan = Math.max(0.1, Number(karbandi.span) || DEFAULT_WALL_SYSTEM.karbandi.span) / 2;
+  const unfoldedLegBaseX = halfSpan;
+  const referenceAngle = Number(karbandi.referenceAngle) || DEFAULT_WALL_SYSTEM.karbandi.referenceAngle;
+  const halfFold = THREE.MathUtils.degToRad((180 - referenceAngle) / 2);
+  const foldedX = Math.cos(halfFold) * unfoldedLegBaseX;
+  const foldedZ = Math.sin(halfFold) * unfoldedLegBaseX;
+  const step = Math.PI * 2 / ribCount;
+  const minimumZ = 0.001;
+  const maximumZ = Math.max(minimumZ, Math.min(30, Number(buildingDepth) || 30) - 0.001);
+  const rotatePlan = (point, angle) => ({
+    x: Math.cos(angle) * point.x + Math.sin(angle) * point.z,
+    z: -Math.sin(angle) * point.x + Math.cos(angle) * point.z,
+  });
+
+  // Usually the adjacent rib is the first valid solution. Continue through
+  // the rotation order only for unusual folds where that coincidence becomes
+  // numerically singular or exceeds the editor's supported translation range.
+  for (let copyIndex = 1; copyIndex < ribCount; copyIndex += 1) {
+    const angle = step * copyIndex;
+    for (const referenceSide of [1, -1]) {
+      const referenceBase = { x: referenceSide * foldedX, z: foldedZ };
+      const otherBase = { x: -referenceSide * foldedX, z: foldedZ };
+      const rotatedOtherBase = rotatePlan(otherBase, angle);
+      const rotatedZAxis = rotatePlan({ x: 0, z: 1 }, angle);
+      const coefficient = { x: -rotatedZAxis.x, z: 1 - rotatedZAxis.z };
+      const constant = {
+        x: referenceBase.x - rotatedOtherBase.x,
+        z: referenceBase.z - rotatedOtherBase.z,
+      };
+      const denominator = coefficient.x ** 2 + coefficient.z ** 2;
+      if (denominator < 1e-10) continue;
+      const referenceZ = -(coefficient.x * constant.x + coefficient.z * constant.z) / denominator;
+      const residualX = constant.x + coefficient.x * referenceZ;
+      const residualZ = constant.z + coefficient.z * referenceZ;
+      if (Math.hypot(residualX, residualZ) > 1e-7 || referenceZ < minimumZ || referenceZ > maximumZ) continue;
+      const value = THREE.MathUtils.clamp(Math.round(referenceZ * 1e6) / 1e6, minimumZ, maximumZ);
+      candidates.push({ value, copyIndex, referenceSide });
+    }
+  }
+  return candidates;
+}
+
+export function karbandiReferenceZSolutions(karbandi = {}, buildingDepth = 30) {
+  return [...new Set(
+    karbandiReferenceZCandidates(karbandi, buildingDepth).map((candidate) => candidate.value.toFixed(6)),
+  )].map(Number).sort((left, right) => left - right);
+}
+
+export function karbandiReferenceZForRibCount(karbandi = {}, buildingDepth = 30) {
+  const minimumZ = 0.001;
+  const maximumZ = Math.max(minimumZ, Math.min(30, Number(buildingDepth) || 30) - 0.001);
+  const firstCandidate = karbandiReferenceZCandidates(karbandi, buildingDepth)[0];
+  if (firstCandidate) return firstCandidate.value;
+  return THREE.MathUtils.clamp(
+    Number(karbandi.referenceZ) || DEFAULT_WALL_SYSTEM.karbandi.referenceZ,
+    minimumZ,
+    maximumZ,
+  );
+}
+
+function karbandiReferenceLegCenters(karbandi = {}, building = {}, walls = {}, spanOverride = null, groupZOverride = null) {
+  const halfWidth = Math.max(1, Number(building.width) / 2 || 1);
+  const halfDepth = Math.max(1, Number(building.depth) / 2 || 1);
+  const wallThickness = Math.max(0.1, Number(building.wallThickness) || 0.4);
+  const westX = -halfWidth - (Number(walls.sideOffsets?.west) || 0);
+  const eastX = halfWidth + (Number(walls.sideOffsets?.east) || 0);
+  const northZ = -halfDepth - (Number(walls.sideOffsets?.north) || 0);
+  const southZ = halfDepth + (Number(walls.sideOffsets?.south) || 0);
+  const centerX = (westX + eastX) / 2;
+  const centerZ = northZ - wallThickness;
+  const span = spanOverride == null
+    ? Math.max(0.2, Number(karbandi.span) || DEFAULT_WALL_SYSTEM.karbandi.span)
+    : Math.max(0, Number(spanOverride) || 0);
+  const halfSpan = span / 2;
+  const referenceAngle = Number(karbandi.referenceAngle) || DEFAULT_WALL_SYSTEM.karbandi.referenceAngle;
+  const halfFold = THREE.MathUtils.degToRad((180 - referenceAngle) / 2);
+  const foldCosine = Math.cos(halfFold);
+  const foldSine = Math.sin(halfFold);
+  const referenceX = Number(karbandi.referenceX) || 0;
+  const referenceZ = Number(karbandi.referenceZ) || 0;
+  const ribRotation = THREE.MathUtils.degToRad(
+    (Number(karbandi.rotationOffset) || 0) + (Number(karbandi.referenceRotation) || 0),
+  );
+  const groupRotation = THREE.MathUtils.degToRad(Number(karbandi.groupRotationY) || 0);
+  const groupScale = Math.max(0.05, Number(karbandi.groupScale) || 1);
+  const groupX = Number(karbandi.groupX) || 0;
+  const groupZ = groupZOverride == null
+    ? (Number(karbandi.groupZ) || 0)
+    : Number(groupZOverride) || 0;
+  const ribCosine = Math.cos(ribRotation);
+  const ribSine = Math.sin(ribRotation);
+  const groupCosine = Math.cos(groupRotation);
+  const groupSine = Math.sin(groupRotation);
+  const points = [-1, 1].map((side) => {
+    const unfoldedX = side * halfSpan;
+    const foldedX = foldCosine * unfoldedX;
+    const foldedZ = side * foldSine * unfoldedX;
+    const localX = foldedX + referenceX;
+    const localZ = foldedZ + referenceZ;
+    const rotatedX = ribCosine * localX + ribSine * localZ;
+    const rotatedZ = -ribSine * localX + ribCosine * localZ;
+    const scaledX = rotatedX * groupScale;
+    const scaledZ = rotatedZ * groupScale;
+    return {
+      side: side < 0 ? 'left' : 'right',
+      x: centerX + groupX + groupCosine * scaledX + groupSine * scaledZ,
+      z: centerZ + groupZ - groupSine * scaledX + groupCosine * scaledZ,
+    };
+  });
+  return { points, bounds: { westX, eastX, northZ, southZ } };
+}
+
+/**
+ * Resize the reference rib so its two leg centre-lines seat on the nearest
+ * pair of finite interior wall faces. Move Z is solved for every candidate,
+ * so span and assembly translation are selected as one architectural fit.
+ */
+export function karbandiSpanForWallLegCenters(karbandi = {}, building = {}, walls = {}) {
+  const minimumSpan = 0.2;
+  const maximumSpan = 40;
+  const currentSpan = THREE.MathUtils.clamp(
+    Number(karbandi.span) || DEFAULT_WALL_SYSTEM.karbandi.span,
+    minimumSpan,
+    maximumSpan,
+  );
+  const zero = karbandiReferenceLegCenters(karbandi, building, walls, 0, 0);
+  const unit = karbandiReferenceLegCenters(karbandi, building, walls, 1, 0);
+  const { westX, eastX, northZ, southZ } = zero.bounds;
+  const candidates = [currentSpan];
+  const addCandidate = (value) => {
+    if (!Number.isFinite(value) || value < minimumSpan - 0.000001 || value > maximumSpan + 0.000001) return;
+    candidates.push(THREE.MathUtils.clamp(value, minimumSpan, maximumSpan));
+  };
+  zero.points.forEach((point, index) => {
+    const xPerSpan = unit.points[index].x - point.x;
+    if (Math.abs(xPerSpan) < 0.0000001) return;
+    addCandidate((westX - point.x) / xPerSpan);
+    addCandidate((eastX - point.x) / xPerSpan);
+  });
+  const xSeparationPerSpan = (unit.points[1].x - unit.points[0].x)
+    - (zero.points[1].x - zero.points[0].x);
+  const zSeparationPerSpan = (unit.points[1].z - unit.points[0].z)
+    - (zero.points[1].z - zero.points[0].z);
+  if (Math.abs(xSeparationPerSpan) > 0.0000001) addCandidate(Math.abs((eastX - westX) / xSeparationPerSpan));
+  if (Math.abs(zSeparationPerSpan) > 0.0000001) addCandidate(Math.abs((southZ - northZ) / zSeparationPerSpan));
+
+  const wallDistance = (point, wall) => {
+    if (wall === 'west' || wall === 'east') {
+      const wallX = wall === 'west' ? westX : eastX;
+      const clampedZ = THREE.MathUtils.clamp(point.z, northZ, southZ);
+      return Math.hypot(point.x - wallX, point.z - clampedZ);
+    }
+    const wallZ = wall === 'north' ? northZ : southZ;
+    const clampedX = THREE.MathUtils.clamp(point.x, westX, eastX);
+    return Math.hypot(point.x - clampedX, point.z - wallZ);
+  };
+  const wallNames = ['west', 'east', 'north', 'south'];
+  const scored = [...new Set(candidates.map((value) => Math.round(value * 1e9) / 1e9))].map((span) => {
+    const withSpan = { ...karbandi, span };
+    const groupZ = karbandiGroupZForWallLegCenters(withSpan, building, walls);
+    const { points } = karbandiReferenceLegCenters(withSpan, building, walls, span, groupZ);
+    let bestPair = null;
+    wallNames.forEach((leftWall) => {
+      wallNames.forEach((rightWall) => {
+        if (leftWall === rightWall) return;
+        const distances = [wallDistance(points[0], leftWall), wallDistance(points[1], rightWall)];
+        const pair = {
+          maximumDistance: Math.max(...distances),
+          totalDistance: distances[0] + distances[1],
+        };
+        if (!bestPair
+          || pair.maximumDistance < bestPair.maximumDistance
+          || (Math.abs(pair.maximumDistance - bestPair.maximumDistance) < 0.0000001
+            && pair.totalDistance < bestPair.totalDistance)) bestPair = pair;
+      });
+    });
+    return {
+      span,
+      maximumDistance: bestPair?.maximumDistance ?? Infinity,
+      totalDistance: bestPair?.totalDistance ?? Infinity,
+      change: Math.abs(span - currentSpan),
+    };
+  });
+  scored.sort((left, right) => (
+    left.maximumDistance - right.maximumDistance
+    || left.totalDistance - right.totalDistance
+    || left.change - right.change
+    || left.span - right.span
+  ));
+  return scored[0]?.span ?? currentSpan;
+}
+
+/**
+ * Translate the whole Karbandi assembly in Z so the centreline of a south-wall
+ * leg sits on the interior face while retaining the best available east/west
+ * wall supports. Ties resolve to the solution nearest the current Move Z.
+ */
+export function karbandiGroupZForWallLegCenters(karbandi = {}, building = {}, walls = {}) {
+  const halfWidth = Math.max(1, Number(building.width) / 2 || 1);
+  const halfDepth = Math.max(1, Number(building.depth) / 2 || 1);
+  const wallThickness = Math.max(0.1, Number(building.wallThickness) || 0.4);
+  const westX = -halfWidth - (Number(walls.sideOffsets?.west) || 0);
+  const eastX = halfWidth + (Number(walls.sideOffsets?.east) || 0);
+  const northZ = -halfDepth - (Number(walls.sideOffsets?.north) || 0);
+  const southZ = halfDepth + (Number(walls.sideOffsets?.south) || 0);
+  const centerX = (westX + eastX) / 2;
+  const centerZ = northZ - wallThickness;
+  const ribCount = Math.max(2, Math.min(64, Math.round(Number(karbandi.ribCount) || DEFAULT_WALL_SYSTEM.karbandi.ribCount)));
+  const halfSpan = Math.max(0.1, Number(karbandi.span) || DEFAULT_WALL_SYSTEM.karbandi.span) / 2;
+  const referenceAngle = Number(karbandi.referenceAngle) || DEFAULT_WALL_SYSTEM.karbandi.referenceAngle;
+  const halfFold = THREE.MathUtils.degToRad((180 - referenceAngle) / 2);
+  const foldCosine = Math.cos(halfFold);
+  const foldSine = Math.sin(halfFold);
+  const referenceX = Number(karbandi.referenceX) || 0;
+  const referenceZ = Number(karbandi.referenceZ) || 0;
+  const ribRotation = THREE.MathUtils.degToRad(
+    (Number(karbandi.rotationOffset) || 0) + (Number(karbandi.referenceRotation) || 0),
+  );
+  const groupRotation = THREE.MathUtils.degToRad(Number(karbandi.groupRotationY) || 0);
+  const groupScale = Math.max(0.05, Number(karbandi.groupScale) || 1);
+  const groupX = Number(karbandi.groupX) || 0;
+  const currentGroupZ = Number.isFinite(Number(karbandi.groupZ))
+    ? Number(karbandi.groupZ)
+    : DEFAULT_WALL_SYSTEM.karbandi.groupZ;
+  const groupCosine = Math.cos(groupRotation);
+  const groupSine = Math.sin(groupRotation);
+  const endpoints = [];
+  for (let ribIndex = 0; ribIndex < ribCount; ribIndex += 1) {
+    const angle = ribRotation + Math.PI * 2 * ribIndex / ribCount;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    for (const side of [-1, 1]) {
+      const unfoldedX = side * halfSpan;
+      const foldedX = foldCosine * unfoldedX;
+      const foldedZ = side * foldSine * unfoldedX;
+      const localX = foldedX + referenceX;
+      const localZ = foldedZ + referenceZ;
+      const rotatedX = cosine * localX + sine * localZ;
+      const rotatedZ = -sine * localX + cosine * localZ;
+      const scaledX = rotatedX * groupScale;
+      const scaledZ = rotatedZ * groupScale;
+      endpoints.push({
+        ribIndex,
+        side: side < 0 ? 'left' : 'right',
+        x: centerX + groupX + groupCosine * scaledX + groupSine * scaledZ,
+        z: centerZ - groupSine * scaledX + groupCosine * scaledZ,
+      });
+    }
+  }
+  const candidates = endpoints
+    .filter((point) => point.x >= westX - wallThickness && point.x <= eastX + wallThickness)
+    .map((point) => THREE.MathUtils.clamp(southZ - point.z, -40, 40));
+  if (!candidates.length) return currentGroupZ;
+  const contactReach = wallThickness + Math.max(
+    Number(karbandi.ribWidth) || DEFAULT_WALL_SYSTEM.karbandi.ribWidth,
+    Number(karbandi.ribDepth) || DEFAULT_WALL_SYSTEM.karbandi.ribDepth,
+  ) * groupScale;
+  const score = (groupZ) => {
+    const wallDistances = { west: Infinity, east: Infinity, south: Infinity };
+    endpoints.forEach((point) => {
+      const z = point.z + groupZ;
+      if (z >= northZ - wallThickness && z <= southZ + wallThickness) {
+        const westDistance = Math.abs(point.x - westX);
+        const eastDistance = Math.abs(point.x - eastX);
+        if (westDistance <= contactReach) wallDistances.west = Math.min(wallDistances.west, westDistance);
+        if (eastDistance <= contactReach) wallDistances.east = Math.min(wallDistances.east, eastDistance);
+      }
+      if (point.x >= westX - wallThickness && point.x <= eastX + wallThickness) {
+        const southDistance = Math.abs(z - southZ);
+        if (southDistance <= contactReach) wallDistances.south = Math.min(wallDistances.south, southDistance);
+      }
+    });
+    const finiteDistances = Object.values(wallDistances).filter(Number.isFinite);
+    return {
+      groupZ,
+      wallCount: finiteDistances.length,
+      maximumDistance: finiteDistances.length ? Math.max(...finiteDistances) : Infinity,
+      totalDistance: finiteDistances.reduce((sum, distance) => sum + distance, 0),
+      movement: Math.abs(groupZ - currentGroupZ),
+    };
+  };
+  const solutions = [...new Set(candidates.map((candidate) => Math.round(candidate * 1e9) / 1e9))].map(score);
+  solutions.sort((left, right) => (
+    right.wallCount - left.wallCount
+    || left.movement - right.movement
+    || left.maximumDistance - right.maximumDistance
+    || left.totalDistance - right.totalDistance
+    || left.groupZ - right.groupZ
+  ));
+  return solutions[0]?.groupZ ?? currentGroupZ;
+}
+
+function pointedArchBrickMapping(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenHeight, bandWidth, straightTopY, straightBottomY, straightOuterHalfWidth, options = {}) {
+  const construction = pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options);
+  if (!construction) return null;
+  const { redCenter, redOffset, redRadius, greenRadius, sidePoint, tangentPoint, apexPoint } = construction;
   return {
     enabled: true,
     centerX,
-    redHeight,
+    redOffset,
+    redHeight: redCenter.y,
+    redStartAngle: Math.atan2(sidePoint.y - redCenter.y, sidePoint.x - redCenter.x),
     greenOffset,
     greenHeight,
     redRadius,
     greenRadius,
     tangentX: tangentPoint.x,
     tangentY: tangentPoint.y,
-    apexY,
+    apexY: apexPoint.y,
     bandWidth: Math.max(0.01, Number(bandWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth),
     straightTopY: Number.isFinite(straightTopY) ? straightTopY : 1e6,
     straightBottomY: Number.isFinite(straightBottomY) ? straightBottomY : -1e6,
@@ -1233,17 +1788,21 @@ function brickMaterial(walls, side, width, height, rotate = false, worldUv = fal
   });
   material.userData.generatedTexture = texture;
   material.userData.isFlatBrickBond = true;
-  return material;
+  return configureStoneBaseMaterial(material, walls, { clipPattern: true });
 }
 
-function raisedBorderMaterial(walls, side, width, height, orientation = 'horizontal', archMapping = null) {
+export function raisedBorderMaterial(walls, side, width, height, orientation = 'horizontal', archMapping = null, courseAxis = 'x') {
   const material = new THREE.MeshStandardMaterial({
     color: walls.color,
     roughness: 0.78,
     metalness: 0,
     side: THREE.DoubleSide,
   });
-  return configureRaisedBorderBrickMaterial(material, walls, archMapping);
+  material.userData.raisedBorderOrientation = orientation;
+  material.userData.raisedBorderCourseAxis = courseAxis;
+  material.userData.isSoldierBoundaryCourse = orientation === 'horizontal';
+  material.userData.raisedStraightBottomY = archMapping?.straightBottomY ?? null;
+  return configureStoneBaseMaterial(configureRaisedBorderBrickMaterial(material, walls, archMapping), walls);
 }
 
 function soldierMaterial(walls, side, width, height) {
@@ -1332,6 +1891,13 @@ function addBrickFace(group, shape, side, width, height, planePosition, rotation
   // Shape UVs already map their horizontal axis to the wall length after the
   // mesh is rotated into place, so east/west faces must not swap width/height.
   const material = brickMaterial(walls, side, width, height, false, true, phaseU, false);
+  // This skin is already positioned 6–15 mm in front of its owning wall face.
+  // A negative polygon offset can incorrectly win the depth test through an
+  // intersecting east/west return wall when the south face is viewed obliquely.
+  material.polygonOffset = false;
+  material.polygonOffsetFactor = 0;
+  material.polygonOffsetUnits = 0;
+  material.userData.isInteriorWallBondFace = true;
   const geometry = new THREE.ShapeGeometry(shape, 48);
   applyWorldAlignedBrickUvs(geometry);
   if (Number.isFinite(mirrorCenterX)) applyMirroredNorthFaceUvs(geometry, mirrorCenterX);
@@ -1365,30 +1931,14 @@ function addEdges(group, mesh, walls) {
   edges.rotation.copy(mesh.rotation);
   edges.scale.copy(mesh.scale);
   edges.userData.isWallEdge = true;
+  edges.userData.wallSide = mesh.userData.wallSide;
+  edges.userData.isKarbandi = mesh.userData.isKarbandi === true;
+  edges.userData.isKarbandiReference = mesh.userData.isKarbandiReference === true;
+  edges.userData.karbandiRibIndex = mesh.userData.karbandiRibIndex;
+  edges.userData.isKarbandiCover = mesh.userData.isKarbandiCover === true;
+  edges.userData.karbandiRoofPanel = mesh.userData.karbandiRoofPanel;
   edges.userData.requestedThickness = walls.edges.thickness;
   edges.renderOrder = 6;
-  group.add(edges);
-}
-
-function addKarbandiReferenceHighlight(group, mesh) {
-  if (!mesh?.geometry) return;
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry, 18),
-    new THREE.LineBasicMaterial({
-      color: '#18c7d4',
-      transparent: true,
-      opacity: 0.95,
-      depthTest: true,
-    }),
-  );
-  edges.position.copy(mesh.position);
-  edges.rotation.copy(mesh.rotation);
-  edges.scale.copy(mesh.scale);
-  edges.userData.isWallEdge = true;
-  edges.userData.isKarbandiReferenceHighlight = true;
-  edges.userData.requestedThickness = 3;
-  edges.renderOrder = 12;
-  edges.visible = false;
   group.add(edges);
 }
 
@@ -1476,7 +2026,277 @@ function addSolidBorder(group, side, x, y, width, height, z, walls, orientation 
   }
 }
 
-function addCurvedNorthBorderBricks(group, archPoints, centerX, inset, z, walls) {
+const MAX_GYPSUM_RECT_CUTOUTS = 32;
+const MAX_GYPSUM_CAPSULE_CUTOUTS = 96;
+
+function gypsumZoneCutouts(zones, surfaceId, walls) {
+  const normalizedSurface = {
+    east: 'east_interior',
+    west: 'west_interior',
+    south: 'south_interior',
+    south_arch: 'south_interior',
+  }[surfaceId] || surfaceId;
+  const mortar = Math.max(0.001, Number(walls.bricks?.mortar) || 0.01);
+  return (Array.isArray(zones) ? zones : []).flatMap((zone) => {
+    const zoneSurface = zone?.surfaceId === 'south_facade' ? 'south_interior' : zone?.surfaceId;
+    if (zoneSurface !== normalizedSurface || !zone?.bounds) return [];
+    const u = Number(zone.bounds.u);
+    const v = Number(zone.bounds.v);
+    const width = Math.max(0, Number(zone.bounds.width));
+    const height = Math.max(0, Number(zone.bounds.height));
+    if (![u, v, width, height].every(Number.isFinite) || width <= 0.001 || height <= 0.001) return [];
+    const soldierHeight = zone.soldierCourses === true && walls.bricks?.enabled !== false
+      ? Math.min(height / 2, Math.max(0.05, Number(walls.bricks?.brickWidth) || 0.15))
+      : 0;
+    const clearance = 0.003;
+    return [{
+      kind: 'rect',
+      minU: u - width / 2 - clearance,
+      maxU: u + width / 2 + clearance,
+      minY: v - height / 2 - soldierHeight - (soldierHeight ? mortar : 0) - clearance,
+      maxY: v + height / 2 + soldierHeight + (soldierHeight ? mortar : 0) + clearance,
+    }];
+  });
+}
+
+function openingSoldierCutouts(openingRects, walls, gypsumBaseTop) {
+  if (walls.bricks?.enabled === false) return [];
+  const inset = Math.max(walls.bricks.brickHeight, walls.bricks.brickWidth);
+  const clearance = Math.max(0.003, walls.bricks.mortar * 0.5);
+  const cutouts = [];
+  const addOpening = (profile, type) => {
+    if (!profile) return;
+    const jambBottom = type === 'door' ? gypsumBaseTop : profile.bottom;
+    if (profile.springTop > jambBottom) {
+      cutouts.push(
+        { kind: 'rect', minU: profile.left - inset - clearance, maxU: profile.left + clearance, minY: jambBottom - clearance, maxY: profile.springTop + clearance },
+        { kind: 'rect', minU: profile.right - clearance, maxU: profile.right + inset + clearance, minY: jambBottom - clearance, maxY: profile.springTop + clearance },
+      );
+    }
+    if (profile.archPoints?.length) {
+      // The opening is already removed from the ShapeGeometry. These capsules
+      // remove the gypsum directly behind the raised curved soldier ring.
+      const points = profile.archPoints;
+      const stride = Math.max(1, Math.ceil((points.length - 1) / 36));
+      for (let index = 0; index < points.length - 1; index += stride) {
+        const end = points[Math.min(points.length - 1, index + stride)];
+        cutouts.push({
+          kind: 'capsule',
+          ax: points[index].x,
+          ay: points[index].y,
+          bx: end.x,
+          by: end.y,
+          radius: inset + clearance,
+        });
+      }
+    } else {
+      const bearing = Math.max(inset, walls.bricks.brickHeight, walls.bricks.mortar * 2);
+      cutouts.push({
+        kind: 'rect',
+        minU: profile.left - bearing - clearance,
+        maxU: profile.right + bearing + clearance,
+        minY: profile.top - clearance,
+        maxY: profile.top + inset + clearance,
+      });
+    }
+    if (type === 'window') {
+      const bearing = Math.max(inset, walls.bricks.brickHeight, walls.bricks.mortar * 2);
+      cutouts.push({
+        kind: 'rect',
+        minU: profile.left - bearing - clearance,
+        maxU: profile.right + bearing + clearance,
+        minY: profile.bottom - inset - clearance,
+        maxY: profile.bottom + clearance,
+      });
+    }
+  };
+  addOpening(openingRects.door, 'door');
+  addOpening(openingRects.window, 'window');
+  return cutouts;
+}
+
+function writeGypsumCutoutUniforms(material) {
+  const all = [...(material.userData.gypsumStaticCutouts || []), ...(material.userData.gypsumZoneCutouts || [])];
+  const rects = all.filter((cutout) => cutout.kind === 'rect').slice(0, MAX_GYPSUM_RECT_CUTOUTS);
+  const capsules = all.filter((cutout) => cutout.kind === 'capsule').slice(0, MAX_GYPSUM_CAPSULE_CUTOUTS);
+  const uniforms = material.userData.gypsumCutoutUniforms;
+  uniforms.rectCount.value = rects.length;
+  uniforms.capsuleCount.value = capsules.length;
+  uniforms.rects.value.fill(0);
+  uniforms.capsules.value.fill(0);
+  uniforms.radii.value.fill(0);
+  rects.forEach((cutout, index) => uniforms.rects.value.set([cutout.minU, cutout.maxU, cutout.minY, cutout.maxY], index * 4));
+  capsules.forEach((cutout, index) => {
+    uniforms.capsules.value.set([cutout.ax, cutout.ay, cutout.bx, cutout.by], index * 4);
+    uniforms.radii.value[index] = cutout.radius;
+  });
+  material.userData.gypsumCutouts = all;
+}
+
+function gypsumMaterial(walls, minimumWorldY = 0, axis = 'x', staticCutouts = [], zoneCutouts = []) {
+  const material = new THREE.MeshStandardMaterial({
+    color: walls.interiorGypsum.color,
+    roughness: 0.94,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -8,
+    polygonOffsetUnits: -8,
+    side: THREE.DoubleSide,
+  });
+  if (minimumWorldY > 0.001) {
+    material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -minimumWorldY)];
+    material.clipShadows = true;
+  }
+  material.userData.isPortalInteriorGypsum = true;
+  material.userData.gypsumCutoutAxis = axis;
+  material.userData.gypsumStaticCutouts = staticCutouts;
+  material.userData.gypsumZoneCutouts = zoneCutouts;
+  material.userData.gypsumCutoutUniforms = {
+    rectCount: { value: 0 },
+    capsuleCount: { value: 0 },
+    rects: { value: new Float32Array(MAX_GYPSUM_RECT_CUTOUTS * 4) },
+    capsules: { value: new Float32Array(MAX_GYPSUM_CAPSULE_CUTOUTS * 4) },
+    radii: { value: new Float32Array(MAX_GYPSUM_CAPSULE_CUTOUTS) },
+  };
+  writeGypsumCutoutUniforms(material);
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, material.userData.gypsumCutoutUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGypsumWorldPosition;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvGypsumWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    const coordinate = axis === 'z' ? 'vGypsumWorldPosition.z' : 'vGypsumWorldPosition.x';
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vGypsumWorldPosition;\nuniform int rectCount;\nuniform int capsuleCount;\nuniform vec4 rects[${MAX_GYPSUM_RECT_CUTOUTS}];\nuniform vec4 capsules[${MAX_GYPSUM_CAPSULE_CUTOUTS}];\nuniform float radii[${MAX_GYPSUM_CAPSULE_CUTOUTS}];`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        vec2 gypsumPoint = vec2(${coordinate}, vGypsumWorldPosition.y);
+        for (int i = 0; i < ${MAX_GYPSUM_RECT_CUTOUTS}; i++) {
+          if (i >= rectCount) break;
+          vec4 area = rects[i];
+          if (gypsumPoint.x >= area.x && gypsumPoint.x <= area.y && gypsumPoint.y >= area.z && gypsumPoint.y <= area.w) discard;
+        }
+        for (int i = 0; i < ${MAX_GYPSUM_CAPSULE_CUTOUTS}; i++) {
+          if (i >= capsuleCount) break;
+          vec4 segment = capsules[i];
+          vec2 delta = segment.zw - segment.xy;
+          float lengthSquared = max(dot(delta, delta), 0.000001);
+          float along = clamp(dot(gypsumPoint - segment.xy, delta) / lengthSquared, 0.0, 1.0);
+          if (distance(gypsumPoint, segment.xy + along * delta) <= radii[i]) discard;
+        }`);
+  };
+  material.customProgramCacheKey = () => `mehraz-gypsum-cutouts-${axis}`;
+  return material;
+}
+
+function addInteriorGypsumFace(group, shape, selectionSide, planePosition, rotation, walls, minimumWorldY = 0, staticCutouts = [], zoneCutouts = []) {
+  if (!walls.interiorGypsum?.enabled || !shape) return null;
+  const geometry = new THREE.ShapeGeometry(shape, 48);
+  const axis = selectionSide === 'east' || selectionSide === 'west' ? 'z' : 'x';
+  const material = gypsumMaterial(walls, minimumWorldY, axis, staticCutouts, zoneCutouts);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(...planePosition);
+  mesh.rotation.set(...rotation);
+  mesh.receiveShadow = true;
+  mesh.userData.wallSide = selectionSide;
+  mesh.userData.isPortalInteriorGypsum = true;
+  mesh.renderOrder = 8;
+  group.add(mesh);
+  return mesh;
+}
+
+export function updateGypsumZoneCutouts(root, zones, walls) {
+  if (!root) return;
+  root.traverse((child) => {
+    if (!child.isMesh || child.userData?.isPortalInteriorGypsum !== true) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (!material?.userData?.gypsumCutoutUniforms) return;
+      material.userData.gypsumZoneCutouts = gypsumZoneCutouts(zones, child.userData.wallSide, walls);
+      writeGypsumCutoutUniforms(material);
+    });
+  });
+}
+
+function addAhangSoffitGypsum(group, archPoints, northZ, southZ, walls) {
+  if (!walls.interiorGypsum?.enabled || archPoints.length < 2) return null;
+  const positions = [];
+  const indices = [];
+  archPoints.forEach((point) => {
+    positions.push(point.x, point.y - 0.012, northZ, point.x, point.y - 0.012, southZ);
+  });
+  for (let index = 0; index < archPoints.length - 1; index += 1) {
+    const start = index * 2;
+    indices.push(start, start + 1, start + 3, start, start + 3, start + 2);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  const mesh = new THREE.Mesh(geometry, gypsumMaterial(walls));
+  mesh.userData.wallSide = 'arch';
+  mesh.userData.isPortalInteriorGypsum = true;
+  mesh.userData.isAhangSoffitGypsum = true;
+  mesh.receiveShadow = true;
+  mesh.renderOrder = 8;
+  group.add(mesh);
+  return mesh;
+}
+
+function addRaisedOpeningSoldierCourse(group, openingType, x, y, openingWidth, height, z, walls, courseRole = 'lintel') {
+  if (!walls.bricks.enabled || openingWidth <= 0.02 || height <= 0.02) return;
+  // Horizontal courses pass fully behind both vertical jamb courses, so their
+  // bearing must equal the complete jamb band width rather than one short brick.
+  const bearing = Math.max(height, walls.bricks.brickHeight, walls.bricks.mortar * 2);
+  const width = openingWidth + bearing * 2;
+  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  const shape = rectanglePanelShape(x - width / 2, x + width / 2, y - height / 2, y + height / 2);
+  if (!shape) return;
+  const panel = extrudedShape(
+    shape,
+    projection,
+    z - projection,
+    raisedBorderMaterial(walls, 'south', width, height, 'horizontal'),
+    'south',
+  );
+  panel.renderOrder = 7;
+  panel.userData.isSoldierCourse = true;
+  panel.userData.isSouthOpeningSoldierCourse = true;
+  panel.userData.openingType = openingType;
+  panel.userData.soldierCourseRole = courseRole;
+  panel.userData.openingWidth = openingWidth;
+  panel.userData.soldierBearing = bearing;
+  group.add(panel);
+}
+
+function addRaisedOpeningJambCourses(group, openingType, profile, bottom, width, z, walls) {
+  const top = profile?.springTop;
+  if (!walls.bricks.enabled || !Number.isFinite(top) || top - bottom <= 0.02 || width <= 0.02) return;
+  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  [
+    ['left', profile.left - width / 2],
+    ['right', profile.right + width / 2],
+  ].forEach(([jambSide, centerX]) => {
+    const shape = rectanglePanelShape(centerX - width / 2, centerX + width / 2, bottom, top);
+    if (!shape) return;
+    const panel = extrudedShape(
+      shape,
+      projection,
+      z - projection,
+      raisedBorderMaterial(walls, 'south', width, top - bottom, 'vertical'),
+      'south',
+    );
+    panel.renderOrder = 7;
+    panel.userData.isSoldierCourse = true;
+    panel.userData.isSouthOpeningSoldierCourse = true;
+    panel.userData.openingType = openingType;
+    panel.userData.soldierCourseRole = 'jamb';
+    panel.userData.jambSide = jambSide;
+    panel.userData.jambBottom = bottom;
+    panel.userData.jambTop = top;
+    group.add(panel);
+  });
+}
+
+function addCurvedBorderBricks(group, side, archPoints, centerX, inset, z, walls) {
   if (!walls.bricks.enabled || !archPoints?.length) return;
   const brickLength = Math.max(0.01, walls.bricks.brickHeight);
   // The curved border is the same raised ring as the straight borders, so its
@@ -1528,8 +2348,10 @@ function addCurvedNorthBorderBricks(group, archPoints, centerX, inset, z, walls)
     brick.castShadow = true;
     brick.receiveShadow = true;
     brick.renderOrder = 7;
-    brick.userData.isNorthCurveBorderBrick = true;
-    brick.userData.wallSide = 'north';
+    brick.userData.isCurvedOpeningBorderBrick = true;
+    brick.userData.isNorthCurveBorderBrick = side === 'north';
+    brick.userData.isSouthOpeningArchBrick = side === 'south';
+    brick.userData.wallSide = side;
     group.add(brick);
   }
 }
@@ -1556,7 +2378,7 @@ function addRaisedNorthPanel(group, meshes, left, right, bottom, top, z, depth, 
   meshes.push(panel);
 }
 
-function offsetArchPoint(points, index, centerX, inset) {
+function offsetArchPoint(points, index, centerX, inset, centerY = 0) {
   const point = points[index];
   const previous = points[Math.max(0, index - 1)];
   const next = points[Math.min(points.length - 1, index + 1)];
@@ -1567,7 +2389,7 @@ function offsetArchPoint(points, index, centerX, inset) {
   tangent.normalize();
   const normalA = new THREE.Vector2(-tangent.y, tangent.x);
   const normalB = normalA.clone().multiplyScalar(-1);
-  const fromCenter = point.clone().sub(new THREE.Vector2(centerX, 0));
+  const fromCenter = point.clone().sub(new THREE.Vector2(centerX, centerY));
   const outward = normalA.dot(fromCenter) >= normalB.dot(fromCenter) ? normalA : normalB;
   return point.clone().addScaledVector(outward, inset);
 }
@@ -1730,7 +2552,7 @@ function addNorthBoundary(group, state, layout, archPoints) {
       addSolidBorder(group, 'north', openingLeft - borderWidth / 2, (outerBottom + springHeight) / 2, borderWidth, springHeight - outerBottom, z, state, 'vertical');
       addSolidBorder(group, 'north', openingRight + borderWidth / 2, (outerBottom + springHeight) / 2, borderWidth, springHeight - outerBottom, z, state, 'vertical');
     }
-    addCurvedNorthBorderBricks(group, mapped, layout.centerX, borderWidth, z, state);
+    addCurvedBorderBricks(group, 'north', mapped, layout.centerX, borderWidth, z, state);
   } else {
     addSolidBorder(group, 'north', (outerLeft + outerRight) / 2, outerBottom + borderWidth / 2, outerRight - outerLeft, borderWidth, z, state, 'horizontal');
   }
@@ -1743,6 +2565,74 @@ function openingRect(opening, center, wallWidth, wallHeight, bottom = 0) {
   const left = Math.max(wallLeft, Math.min(wallRight - width, center + opening.position - width / 2));
   const top = Math.min(wallHeight, bottom + opening.height);
   return { left, right: left + width, bottom, top, width, height: top - bottom };
+}
+
+function addRaisedOpeningArchCourse(group, openingType, profile, opening, inset, z, walls) {
+  if (!walls.bricks.enabled || !profile?.archPoints?.length || inset <= 0.02) return;
+  const outerPoints = profile.archPoints.map((_, index) => (
+    offsetArchPoint(profile.archPoints, index, profile.center, inset, profile.bottom)
+  ));
+  const shape = new THREE.Shape();
+  shape.moveTo(outerPoints[0].x, outerPoints[0].y);
+  outerPoints.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
+  [...profile.archPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
+  shape.closePath();
+  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  const archMapping = pointedArchBrickMapping(
+    profile.center,
+    profile.width / 2,
+    profile.springTop,
+    profile.springTop,
+    Number(opening.arch?.greenOffset) || profile.width / 2,
+    profile.greenHeight,
+    inset,
+    1e6,
+    -1e6,
+    1e6,
+    { redOffset: opening.arch?.redOffset, redRadius: opening.arch?.redRadius },
+  );
+  const panel = extrudedShape(
+    shape,
+    projection,
+    z - projection,
+    raisedBorderMaterial(walls, 'south', profile.width, inset, 'horizontal', archMapping),
+    'south',
+  );
+  panel.renderOrder = 7;
+  panel.userData.isSoldierCourse = true;
+  panel.userData.isSouthOpeningArchCourse = true;
+  panel.userData.openingType = openingType;
+  panel.userData.soldierCourseRole = 'arch-head';
+  group.add(panel);
+}
+
+export function southOpeningProfile(opening, center, wallWidth, wallHeight, bottom = 0) {
+  const profile = openingRect(opening, center, wallWidth, wallHeight, bottom);
+  profile.head = opening?.head === 'arch' ? 'arch' : 'lintel';
+  profile.springTop = profile.top;
+  profile.center = (profile.left + profile.right) / 2;
+  if (profile.head !== 'arch') return profile;
+  const arch = opening.arch || {};
+  const greenHeight = profile.springTop + Number(arch.greenHeightOffset || 0);
+  const points = archCurve(
+    profile.center,
+    profile.width / 2,
+    profile.springTop,
+    profile.springTop,
+    Number(arch.greenOffset) || profile.width / 2,
+    greenHeight,
+    36,
+    { redOffset: arch.redOffset, redRadius: arch.redRadius },
+  );
+  if (!points.length) {
+    profile.head = 'lintel';
+    return profile;
+  }
+  profile.archPoints = points;
+  profile.greenHeight = greenHeight;
+  profile.top = Math.max(...points.map((point) => point.y));
+  profile.height = profile.top - profile.bottom;
+  return profile;
 }
 
 function setShadow(group, enabled) {
@@ -1807,8 +2697,9 @@ function addKarbandiVault(group, layout, walls) {
     new THREE.Plane(new THREE.Vector3(0, 0, -1), southExteriorZ),
     new THREE.Plane(new THREE.Vector3(0, 1, 0), -Math.max(0, sideTop - 0.01)),
   ];
-  const inner = archCurve(0, halfSpan, springY, springY, greenOffset, greenHeight, 28);
-  const outer = archCurve(0, halfSpan + ribWidth, springY, springY, greenOffset, greenHeight, 28);
+  const ribArchOptions = { redOffset: Number(walls.karbandi.redOffset) || 0 };
+  const inner = archCurve(0, halfSpan, springY, springY, greenOffset, greenHeight, 28, ribArchOptions);
+  const outer = archCurve(0, halfSpan + ribWidth, springY, springY, greenOffset, greenHeight, 28, ribArchOptions);
   if (!inner.length || !outer.length) return [];
   const apexIndex = inner.reduce((closest, point, index) => (
     Math.abs(point.x) < Math.abs(inner[closest].x) ? index : closest
@@ -1840,23 +2731,7 @@ function addKarbandiVault(group, layout, walls) {
       right: points.slice(apexIndex).reverse(),
     };
   });
-  const outsideClipBounds = (point) => (
-    point.x < westExteriorX - 0.000001
-    || point.x > eastExteriorX + 0.000001
-    || point.z < northZ - 0.000001
-    || point.z > southExteriorZ + 0.000001
-  );
-  const legTouchesClipBoundary = (ribIndex, side) => {
-    if (!clipPlanes) return false;
-    const endpointIndex = side === 'left' ? 0 : inner.length - 1;
-    const angle = ribAngles[ribIndex];
-    const endpointCandidates = [inner[endpointIndex], outer[endpointIndex]];
-    return endpointCandidates.some((point) => (
-      outsideClipBounds(transformRibPoint(point, angle, -ribDepth / 2))
-      || outsideClipBounds(transformRibPoint(point, angle, ribDepth / 2))
-    ));
-  };
-  const legTouchesVerticalWall = (ribIndex, side) => {
+  const verticalWallContactsForLeg = (ribIndex, side) => {
     const endpointIndex = side === 'left' ? 0 : inner.length - 1;
     const angle = ribAngles[ribIndex];
     const contactTolerance = Math.max(0.012, Math.max(ribWidth, ribDepth) * groupScale * 0.55);
@@ -1864,7 +2739,9 @@ function addKarbandiVault(group, layout, walls) {
       transformRibPoint(point, angle, -ribDepth / 2),
       transformRibPoint(point, angle, ribDepth / 2),
     ]);
-    return endpointCandidates.some((point) => {
+    const centerlinePoint = transformRibPoint(inner[endpointIndex], angle);
+    const contacts = new Map();
+    endpointCandidates.forEach((point) => {
       const touchesWest = (
         point.x >= westExteriorX - contactTolerance
         && point.x <= westX + contactTolerance
@@ -1883,9 +2760,13 @@ function addKarbandiVault(group, layout, walls) {
         && point.x >= westExteriorX - contactTolerance
         && point.x <= eastExteriorX + contactTolerance
       );
-      return touchesWest || touchesEast || touchesSouth;
+      if (touchesWest) contacts.set('west', Math.abs(centerlinePoint.x - westX));
+      if (touchesEast) contacts.set('east', Math.abs(centerlinePoint.x - eastX));
+      if (touchesSouth) contacts.set('south', Math.abs(centerlinePoint.z - southZ));
     });
+    return [...contacts].map(([wall, distance]) => ({ wall, distance }));
   };
+  const legTouchesVerticalWall = (ribIndex, side) => verticalWallContactsForLeg(ribIndex, side).length > 0;
   const segmentIntersectionXZ = (a, b, c, d) => {
     const rx = b.x - a.x;
     const rz = b.z - a.z;
@@ -1900,11 +2781,12 @@ function addKarbandiVault(group, layout, walls) {
     if (t < -0.000001 || t > 1.000001 || u < -0.000001 || u > 1.000001) return null;
     return { t: Math.max(0, Math.min(1, t)), u: Math.max(0, Math.min(1, u)) };
   };
-  const firstRibIntersection = (ribIndex, side, minimumProgress = 0) => {
+  const firstRibIntersection = (ribIndex, side, minimumProgress = 0, allowedOtherRibs = null) => {
     const leg = ribLegs[ribIndex][side];
     let first = null;
     for (let otherIndex = 0; otherIndex < ribCount; otherIndex += 1) {
       if (otherIndex === ribIndex) continue;
+      if (allowedOtherRibs && !allowedOtherRibs.has(otherIndex)) continue;
       for (const otherSide of ['left', 'right']) {
         const otherLeg = ribLegs[otherIndex][otherSide];
         for (let segmentIndex = 0; segmentIndex < leg.length - 1; segmentIndex += 1) {
@@ -1927,41 +2809,123 @@ function addKarbandiVault(group, layout, walls) {
               leg[segmentIndex + 1].originalIndex,
               crossing.t,
             );
-            first = { progress, originalIndex };
+            first = { progress, originalIndex, otherIndex };
           }
         }
       }
     }
     return first;
   };
-  const intersectionCutCache = new Map();
-  const firstIntersectionForLeg = (ribIndex, side) => {
-    const key = `${ribIndex}:${side}`;
-    if (!intersectionCutCache.has(key)) {
-      intersectionCutCache.set(key, firstRibIntersection(ribIndex, side));
-    }
-    return intersectionCutCache.get(key);
-  };
   const automaticCuts = new Map();
-  if (clipPlanes) {
+  const wallLegCandidates = new Map();
+  if (clipPlanes && walls.karbandi.autoClip) {
     for (let ribIndex = 0; ribIndex < ribCount; ribIndex += 1) {
       for (const side of ['left', 'right']) {
-        const extendsBeyondWalls = legTouchesClipBoundary(ribIndex, side);
-        const supportedByVerticalWall = legTouchesVerticalWall(ribIndex, side);
-        if (!extendsBeyondWalls && supportedByVerticalWall) continue;
-        // Legs extending outside the portal and legs whose feet do not reach
-        // the south/east/west walls are unsupported. Remove each one through
-        // its first physical rib crossing so no short floating leg remains.
-        // If there is no crossing, remove the whole leg through its apex.
-        const intersection = firstIntersectionForLeg(ribIndex, side);
-        automaticCuts.set(`${ribIndex}:${side}`, intersection || {
-          originalIndex: apexIndex,
-          progress: Number.POSITIVE_INFINITY,
+        verticalWallContactsForLeg(ribIndex, side).forEach(({ wall, distance }) => {
+          if (!wallLegCandidates.has(wall)) wallLegCandidates.set(wall, []);
+          wallLegCandidates.get(wall).push({ wall, ribIndex, side, distance });
         });
       }
     }
   }
-  const cutSet = new Set((walls.karbandi.manualCuts || []).map((cut) => `${cut.ribIndex}:${cut.side}`));
+  // Symmetric wall-parallel ribs have two equally close feet. Keep both; the
+  // tolerance only absorbs floating-point differences and does not admit the
+  // visibly deeper diagonal feet.
+  const closestWallDistanceTolerance = 0.0001;
+  const closestWallLegs = [...wallLegCandidates.values()].flatMap((candidates) => {
+    const closestDistance = Math.min(...candidates.map(({ distance }) => distance));
+    return candidates.filter(({ distance }) => distance <= closestDistance + closestWallDistanceTolerance);
+  });
+  const wallSupportedRibIndexes = new Set(
+    [...wallLegCandidates.values()].flatMap((candidates) => candidates.map(({ ribIndex }) => ribIndex)),
+  );
+  const closestWallSupportedRibIndexes = new Set(closestWallLegs.map(({ ribIndex }) => ribIndex));
+  const closestWallLegKeys = new Set(closestWallLegs.map(({ wall, ribIndex, side }) => `${wall}:${ribIndex}:${side}`));
+  const closestWallSupportedRibIndexesByWall = new Map([...wallLegCandidates.keys()].map((wall) => [
+    wall,
+    new Set(closestWallLegs.filter((leg) => leg.wall === wall).map((leg) => leg.ribIndex)),
+  ]));
+  const closestWallLegsByRib = new Map();
+  closestWallLegs.forEach((leg) => {
+    if (!closestWallLegsByRib.has(leg.ribIndex)) closestWallLegsByRib.set(leg.ribIndex, []);
+    closestWallLegsByRib.get(leg.ribIndex).push(leg);
+  });
+  let redundantWallLegCutCount = 0;
+  const redundantWallCutRibIndexes = new Set();
+  const redundantWallLegCuts = [];
+  if (clipPlanes && walls.karbandi.autoClip) {
+    for (let ribIndex = 0; ribIndex < ribCount; ribIndex += 1) {
+      for (const side of ['left', 'right']) {
+        const wallContacts = verticalWallContactsForLeg(ribIndex, side);
+        const supportedByVerticalWall = wallContacts.length > 0;
+        const legKey = `${ribIndex}:${side}`;
+        const sideWallContacts = wallContacts.filter(({ wall }) => wall === 'east' || wall === 'west');
+        const targetWallContacts = sideWallContacts.length ? sideWallContacts : wallContacts;
+        const highlightedSupportLeg = targetWallContacts.some(({ wall }) => (
+          closestWallLegKeys.has(`${wall}:${ribIndex}:${side}`)
+        ));
+        if (highlightedSupportLeg) continue;
+        const supportFrameIntersection = firstRibIntersection(
+          ribIndex,
+          side,
+          0,
+          closestWallSupportedRibIndexes,
+        );
+        if (supportedByVerticalWall) {
+          // The nearest wall-seated ribs form one highlighted clipping frame.
+          // Every other wall-touching leg stops at that frame rather than at an
+          // arbitrary intermediate rib, removing the bay between both ribs.
+          const frameCut = supportFrameIntersection || {
+            originalIndex: apexIndex,
+            progress: Number.POSITIVE_INFINITY,
+            otherIndex: null,
+          };
+          automaticCuts.set(legKey, {
+            ...frameCut,
+            clippedToHighlightedSupportFrame: true,
+          });
+          redundantWallLegCutCount += 1;
+          redundantWallCutRibIndexes.add(ribIndex);
+          redundantWallLegCuts.push({
+            ribIndex,
+            side,
+            walls: targetWallContacts.map(({ wall }) => wall),
+            originalIndex: frameCut.originalIndex,
+            supportRibIndex: frameCut.otherIndex,
+            supportWall: closestWallLegs.find(({ ribIndex: supportRibIndex }) => (
+              supportRibIndex === frameCut.otherIndex
+            ))?.wall || null,
+          });
+          continue;
+        }
+        // A leg with no wall support is hanging regardless of whether its foot
+        // lies inside or outside the building bounds. Skip crossings with other
+        // hanging ribs and clip it through to the first rib whose foot is among
+        // the closest supports at an interior wall face.
+        const supportedIntersection = firstRibIntersection(
+          ribIndex,
+          side,
+          0,
+          closestWallSupportedRibIndexes,
+        );
+        automaticCuts.set(legKey, supportedIntersection ? {
+          ...supportedIntersection,
+          clippedToWallSupportedRib: true,
+          clippedToHighlightedSupportFrame: true,
+        } : {
+          originalIndex: apexIndex,
+          progress: Number.POSITIVE_INFINITY,
+          otherIndex: null,
+          clippedToWallSupportedRib: true,
+          clippedToHighlightedSupportFrame: true,
+        });
+      }
+    }
+  }
+  const manualCutSteps = new Map((walls.karbandi.manualCuts || []).map((cut) => [
+    `${cut.ribIndex}:${cut.side}`,
+    Math.max(1, Math.round(Number(cut.steps) || 1)),
+  ]));
   const pointAtCurveIndex = (curve, value) => {
     const lower = Math.max(0, Math.min(curve.length - 1, Math.floor(value)));
     const upper = Math.max(0, Math.min(curve.length - 1, Math.ceil(value)));
@@ -1977,17 +2941,23 @@ function addKarbandiVault(group, layout, walls) {
     return points;
   };
   const visibleRibRanges = new Map();
-  const makeRibShape = (ribIndex) => {
-    const automaticLeft = automaticCuts.get(`${ribIndex}:left`);
-    const automaticRight = automaticCuts.get(`${ribIndex}:right`);
+  const visibleRangeForRib = (ribIndex, cuts = automaticCuts) => {
+    const automaticLeft = cuts.get(`${ribIndex}:left`);
+    const automaticRight = cuts.get(`${ribIndex}:right`);
     const manualCutIndex = (side, automaticCut) => {
-      if (!cutSet.has(`${ribIndex}:${side}`)) return null;
-      // When portal clipping has already removed the first segment, manual
-      // cutting advances to the next crossing along the still-visible leg.
-      const intersection = automaticCut
-        ? firstRibIntersection(ribIndex, side, automaticCut.progress)
-        : firstIntersectionForLeg(ribIndex, side);
-      return intersection?.originalIndex ?? apexIndex;
+      const steps = manualCutSteps.get(`${ribIndex}:${side}`) || 0;
+      if (!steps) return null;
+      // Each click advances from the currently visible endpoint to the next
+      // physical junction. Portal clipping contributes its own initial cut.
+      let progress = automaticCut?.progress || 0;
+      let originalIndex = automaticCut?.originalIndex ?? (side === 'left' ? 0 : inner.length - 1);
+      for (let step = 0; step < steps; step += 1) {
+        const intersection = firstRibIntersection(ribIndex, side, progress);
+        if (!intersection) return apexIndex;
+        progress = intersection.progress;
+        originalIndex = intersection.originalIndex;
+      }
+      return originalIndex;
     };
     const manualLeft = manualCutIndex('left', automaticLeft);
     const manualRight = manualCutIndex('right', automaticRight);
@@ -2000,7 +2970,111 @@ function addKarbandiVault(group, layout, walls) {
       automaticRight == null ? inner.length - 1 : automaticRight.originalIndex,
     );
     if (end - start < 3) return null;
-    visibleRibRanges.set(ribIndex, { start, end });
+    return { start, end };
+  };
+  for (let ribIndex = 0; ribIndex < ribCount; ribIndex += 1) {
+    const range = visibleRangeForRib(ribIndex);
+    if (range) visibleRibRanges.set(ribIndex, range);
+  }
+  group.userData.karbandiClosestWallLegs = closestWallLegs;
+  group.userData.karbandiWallSupportedRibIndexes = [...closestWallSupportedRibIndexes];
+  group.userData.karbandiHighlightedWallSupportRibIndexes = [...closestWallSupportedRibIndexes].sort((a, b) => a - b);
+  group.userData.karbandiHighlightedWallSupportRibIndexesByWall = Object.fromEntries(
+    [...closestWallSupportedRibIndexesByWall].map(([wall, indexes]) => [
+      wall,
+      [...indexes].sort((a, b) => a - b),
+    ]),
+  );
+  group.userData.karbandiAutoClipSupportFrame = walls.karbandi.autoClip
+    ? 'nearest-interior-wall-ribs'
+    : null;
+  group.userData.karbandiAllWallTouchingRibIndexes = [...wallSupportedRibIndexes];
+  group.userData.karbandiRedundantWallLegCutCount = redundantWallLegCutCount;
+  group.userData.karbandiRedundantWallLegCuts = redundantWallLegCuts;
+  group.userData.karbandiAutoClipEnabled = walls.karbandi.autoClip;
+  group.userData.karbandiAutomaticCutCount = automaticCuts.size;
+
+  const attachedRibs = new Map([...visibleRibRanges.keys()].map((ribIndex) => [ribIndex, new Set()]));
+  const visibleJunctions = new Map([...visibleRibRanges.keys()].map((ribIndex) => [ribIndex, []]));
+  const originalIndexInsideRange = (ribIndex, originalIndex) => {
+    const range = visibleRibRanges.get(ribIndex);
+    return range && originalIndex >= range.start - 0.001 && originalIndex <= range.end + 0.001;
+  };
+  const connectVisibleRibsAtJunctions = (firstIndex, secondIndex) => {
+    for (const firstSide of ['left', 'right']) {
+      const firstLeg = ribLegs[firstIndex][firstSide];
+      for (const secondSide of ['left', 'right']) {
+        const secondLeg = ribLegs[secondIndex][secondSide];
+        for (let firstSegment = 0; firstSegment < firstLeg.length - 1; firstSegment += 1) {
+          const a = firstLeg[firstSegment];
+          const b = firstLeg[firstSegment + 1];
+          for (let secondSegment = 0; secondSegment < secondLeg.length - 1; secondSegment += 1) {
+            const c = secondLeg[secondSegment];
+            const d = secondLeg[secondSegment + 1];
+            const crossing = segmentIntersectionXZ(a.point, b.point, c.point, d.point);
+            if (!crossing) continue;
+            const firstY = THREE.MathUtils.lerp(a.point.y, b.point.y, crossing.t);
+            const secondY = THREE.MathUtils.lerp(c.point.y, d.point.y, crossing.u);
+            if (Math.abs(firstY - secondY) > ribWidth * groupScale * 1.5) continue;
+            const firstOriginalIndex = THREE.MathUtils.lerp(a.originalIndex, b.originalIndex, crossing.t);
+            const secondOriginalIndex = THREE.MathUtils.lerp(c.originalIndex, d.originalIndex, crossing.u);
+            if (!originalIndexInsideRange(firstIndex, firstOriginalIndex)
+              || !originalIndexInsideRange(secondIndex, secondOriginalIndex)) continue;
+            attachedRibs.get(firstIndex)?.add(secondIndex);
+            attachedRibs.get(secondIndex)?.add(firstIndex);
+            visibleJunctions.get(firstIndex)?.push({ otherIndex: secondIndex, originalIndex: firstOriginalIndex });
+            visibleJunctions.get(secondIndex)?.push({ otherIndex: firstIndex, originalIndex: secondOriginalIndex });
+            return;
+          }
+        }
+      }
+    }
+  };
+  const visibleRibIndexes = [...visibleRibRanges.keys()];
+  for (let first = 0; first < visibleRibIndexes.length; first += 1) {
+    for (let second = first + 1; second < visibleRibIndexes.length; second += 1) {
+      connectVisibleRibsAtJunctions(visibleRibIndexes[first], visibleRibIndexes[second]);
+    }
+  }
+  const supportedRibs = visibleRibIndexes.filter((ribIndex) => {
+    const range = visibleRibRanges.get(ribIndex);
+    const leftSupported = range.start <= 0.001 && legTouchesVerticalWall(ribIndex, 'left');
+    const rightSupported = range.end >= inner.length - 1 - 0.001 && legTouchesVerticalWall(ribIndex, 'right');
+    return leftSupported || rightSupported;
+  });
+  const visibleRibIntervals = new Map([...visibleRibRanges].map(([ribIndex, range]) => [ribIndex, [range]]));
+  const hangingClipIntervals = [];
+  const redundantWallLegCutKeys = new Set(redundantWallLegCuts.map(({ ribIndex, side }) => `${ribIndex}:${side}`));
+  // All automatic hanging cuts now follow the same orientation as wall-foot
+  // cuts: remove the endpoint-to-junction interval and retain the inward span.
+  // Never reconstruct the outer pieces or delete the middle of a rib.
+  if (walls.karbandi.autoClip) automaticCuts.forEach((cut, key) => {
+    if (redundantWallLegCutKeys.has(key)) return;
+    const [ribIndexText, side] = key.split(':');
+    const ribIndex = Number(ribIndexText);
+    hangingClipIntervals.push({
+      ribIndex,
+      side,
+      supportRibIndex: cut.otherIndex,
+      clippedToWallSupportedRib: cut.clippedToWallSupportedRib === true,
+      start: side === 'left' ? 0 : cut.originalIndex,
+      end: side === 'left' ? cut.originalIndex : inner.length - 1,
+    });
+  });
+  group.userData.karbandiAutomaticHangingClipCount = hangingClipIntervals.length;
+  group.userData.karbandiAutomaticHangingClipIntervals = hangingClipIntervals;
+  group.userData.karbandiRedundantWallLegCutRibIndexes = [...redundantWallCutRibIndexes];
+  const connectedToWall = wallConnectedRibIndexes(attachedRibs, supportedRibs);
+  const detachedRibIndexes = visibleRibIndexes.filter((ribIndex) => (
+    !connectedToWall.has(ribIndex)
+  ));
+  detachedRibIndexes.forEach((ribIndex) => visibleRibIntervals.delete(ribIndex));
+  group.userData.karbandiDetachedRibCount = detachedRibIndexes.length;
+  group.userData.karbandiDetachedRibsRemoved = detachedRibIndexes;
+
+  const makeRibShape = (range) => {
+    if (!range) return null;
+    const { start, end } = range;
     const innerSlice = sliceCurveAtIndices(inner, start, end);
     const outerSlice = sliceCurveAtIndices(outer, start, end);
     const ribShape = new THREE.Shape();
@@ -2012,9 +3086,16 @@ function addKarbandiVault(group, layout, walls) {
   };
   for (let index = 0; index < ribCount; index += 1) {
     const angle = offset + referenceRotation + (Math.PI * 2 * index) / ribCount;
-    const shape = makeRibShape(index);
-    if (!shape) continue;
+    const componentRanges = visibleRibIntervals.get(index) || [];
+    componentRanges.forEach((componentRange, componentIndex) => {
+    const shape = makeRibShape(componentRange);
+    if (!shape) return;
     const material = wallMaterial(walls, null);
+    const referenceRibColor = walls.karbandi.referenceRibColor.toLowerCase() === walls.karbandi.ribColor.toLowerCase()
+      ? (walls.karbandi.ribColor.toLowerCase() === '#ffd400' ? '#18c7d4' : '#ffd400')
+      : walls.karbandi.referenceRibColor;
+    // Reference highlighting is an editor interaction state applied by
+    // MehrazScene, not a persistent construction material.
     material.color.set(walls.karbandi.ribColor);
     material.roughness = 0.82;
     // The rib crown is intentionally tangent to the roof underside. Bias the
@@ -2059,9 +3140,20 @@ function addKarbandiVault(group, layout, walls) {
     rib.userData.wallSide = 'arch';
     rib.userData.isKarbandi = true;
     rib.userData.isKarbandiReference = index === 0;
+    rib.userData.karbandiDisplayColor = walls.karbandi.ribColor;
+    rib.userData.karbandiReferenceHighlightColor = index === 0 ? referenceRibColor : null;
     rib.userData.karbandiRibIndex = index;
+    const closestWallSupportLegs = closestWallLegsByRib.get(index) || [];
+    rib.userData.isKarbandiClosestWallSupport = closestWallSupportLegs.length > 0;
+    rib.userData.karbandiClosestWallSupportLegs = closestWallSupportLegs.map((leg) => ({ ...leg }));
     rib.userData.karbandiPortalCuts = ['left', 'right'].filter((side) => automaticCuts.has(`${index}:${side}`));
-    rib.userData.karbandiManualCuts = ['left', 'right'].filter((side) => cutSet.has(`${index}:${side}`));
+    rib.userData.karbandiManualCuts = Object.fromEntries(['left', 'right'].map((side) => [
+      side,
+      manualCutSteps.get(`${index}:${side}`) || 0,
+    ]));
+    rib.userData.karbandiVisibleRange = [componentRange.start, componentRange.end];
+    rib.userData.karbandiRibComponentIndex = componentIndex;
+    rib.userData.karbandiRibComponentCount = componentRanges.length;
     rib.userData.karbandiCenter = [centerX + (Number(walls.karbandi.groupX) || 0), centerZ + (Number(walls.karbandi.groupZ) || 0)];
     rib.userData.karbandiAngle = angle + groupRotationY;
     // THREE.RotationY maps local +X toward world -Z for a positive angle.
@@ -2072,8 +3164,8 @@ function addKarbandiVault(group, layout, walls) {
       -Math.sin(angle + groupRotationY),
     ];
     group.add(rib);
-    if (index === 0) addKarbandiReferenceHighlight(group, rib);
     meshes.push(rib);
+    });
   }
   if (walls.karbandi.coverEnabled) {
     const webOptions = normalizeKarbandiWebOptions(walls.karbandi.web);
@@ -2186,8 +3278,8 @@ function addKarbandiVault(group, layout, walls) {
     };
 
     ribAngles.forEach((angle, ribIndex) => {
-      const visibleRange = visibleRibRanges.get(ribIndex);
-      if (!visibleRange) return;
+      const visibleComponents = visibleRibIntervals.get(ribIndex) || [];
+      visibleComponents.forEach((visibleRange, componentIndex) => {
       const visibleOuter = sliceCurveAtIndices(outer, visibleRange.start, visibleRange.end);
       const seatingOffsets = [
         -ribDepth / 2 - webOptions.seatingOffset,
@@ -2212,11 +3304,29 @@ function addKarbandiVault(group, layout, walls) {
             transformRibPoint(visibleOuter[index + 1], angle, seatOffset),
             'rib-seat',
             `${ribIndex}:${seatIndex}`,
-            { ribSegmentIndex: index, seatingSide: seatIndex },
+            {
+              ribSegmentIndex: componentIndex * outer.length + index,
+              seatingSide: seatIndex,
+              visibleRangeStart: visibleRange.start,
+              visibleRangeEnd: visibleRange.end,
+            },
           );
         }
       });
+      });
     });
+    group.userData.karbandiRoofTopologyRibIndexes = [...new Set(rawSegments
+      .filter((segment) => segment.kind === 'rib-seat')
+      .map((segment) => String(segment.sourceId ?? '').match(/^(\d+):[01]$/)?.[1])
+      .filter(Boolean)
+      .map(Number))].sort((left, right) => left - right);
+    const roofTopologyRibIndexSet = new Set(group.userData.karbandiRoofTopologyRibIndexes);
+    group.userData.karbandiRoofTopologyRibRanges = [...visibleRibIntervals].flatMap(([ribIndex, ranges]) => (
+      roofTopologyRibIndexSet.has(ribIndex)
+        ? ranges.map((range) => ({ ribIndex, start: range.start, end: range.end }))
+        : []
+    ));
+    group.userData.karbandiRoofTopologyUsesVisibleRibsOnly = true;
     group.userData.karbandiRibFootClosureCount = rawSegments.filter((segment) => (
       segment.kind === 'rib-seat' && /^\d+:(left|right):[01]$/.test(String(segment.sourceId))
     )).length;
@@ -2303,6 +3413,37 @@ function addKarbandiVault(group, layout, walls) {
 
     const visibleRibSegments = rawSegments.filter((segment) => segment.kind === 'rib-seat');
     const curvedRibSegments = visibleRibSegments.filter((segment) => /^\d+:[01]$/.test(String(segment.sourceId)));
+    const wallContactTolerance = Math.max(0.0025, ribDepth * groupScale * 0.12);
+    const pointTouchesWall = (point) => (
+      Math.abs(point.x - roofWestX) <= wallContactTolerance
+      || Math.abs(point.x - roofEastX) <= wallContactTolerance
+      || Math.abs(point.z - roofNorthZ) <= wallContactTolerance
+      || Math.abs(point.z - roofSouthZ) <= wallContactTolerance
+    );
+    const wallConnectedComponentsBySource = new Map();
+    const segmentsBySource = new Map();
+    curvedRibSegments.forEach((segment) => {
+      const sourceId = String(segment.sourceId);
+      if (!segmentsBySource.has(sourceId)) segmentsBySource.set(sourceId, []);
+      segmentsBySource.get(sourceId).push(segment);
+    });
+    segmentsBySource.forEach((segments, sourceId) => {
+      const ordered = [...segments].sort((left, right) => (
+        (Number(left.ribSegmentIndex) || 0) - (Number(right.ribSegmentIndex) || 0)
+      ));
+      const components = [];
+      ordered.forEach((segment) => {
+        const current = components[components.length - 1];
+        if (!current || current[current.length - 1].b.distanceToSquared(segment.a) > wallContactTolerance ** 2) {
+          components.push([segment]);
+        } else current.push(segment);
+      });
+      const wallConnected = components.filter((component) => (
+        pointTouchesWall(component[0].a) || pointTouchesWall(component[component.length - 1].b)
+      ));
+      if (wallConnected.length) wallConnectedComponentsBySource.set(sourceId, wallConnected);
+    });
+    const wallConnectedCurvedRibSegments = [...wallConnectedComponentsBySource.values()].flat(2);
     const cornerGuideDiagnostics = [];
     const boundingRibsForGuide = (foot, target) => {
       const direction = target.clone().sub(foot);
@@ -2311,7 +3452,7 @@ function addKarbandiVault(group, layout, walls) {
       direction.normalize();
       const probe = foot.clone().lerp(target, 0.42);
       const nearestByRib = new Map();
-      curvedRibSegments.forEach((segment) => {
+      wallConnectedCurvedRibSegments.forEach((segment) => {
         const dx = segment.b.x - segment.a.x;
         const dz = segment.b.z - segment.a.z;
         const denominator = dx * dx + dz * dz;
@@ -2338,8 +3479,20 @@ function addKarbandiVault(group, layout, walls) {
       return [selectedLeft, right].filter(Boolean);
     };
     const ribProfileForGuide = (sourceId, foot, guideLength, count) => {
-      let points = curvedRibSegments
-        .filter((segment) => String(segment.sourceId) === String(sourceId))
+      const components = wallConnectedComponentsBySource.get(String(sourceId)) || [];
+      const component = components.reduce((nearest, candidate) => {
+        if (!nearest) return candidate;
+        const candidateDistance = Math.min(
+          candidate[0].a.distanceToSquared(foot),
+          candidate[candidate.length - 1].b.distanceToSquared(foot),
+        );
+        const nearestDistance = Math.min(
+          nearest[0].a.distanceToSquared(foot),
+          nearest[nearest.length - 1].b.distanceToSquared(foot),
+        );
+        return candidateDistance < nearestDistance ? candidate : nearest;
+      }, null);
+      let points = (component || [])
         .flatMap((segment, index) => (index ? [segment.b.clone()] : [segment.a.clone(), segment.b.clone()]));
       if (points.length < 2) return null;
       if (points[points.length - 1].distanceToSquared(foot) < points[0].distanceToSquared(foot)) points = points.reverse();
@@ -2360,9 +3513,13 @@ function addKarbandiVault(group, layout, walls) {
       const chord = Math.max(0.05, direction.length());
       const boundingRibs = boundingRibsForGuide(foot, target);
       const sampleCount = 17;
-      const profiles = boundingRibs
-        .map((item) => ribProfileForGuide(item.segment.sourceId, foot, chord, sampleCount))
-        .filter(Boolean);
+      const profiles = boundingRibs.map((item) => ({
+        item,
+        points: ribProfileForGuide(item.segment.sourceId, foot, chord, sampleCount),
+      })).filter((profile) => profile.points);
+      const guideBlend = label === 'south-west'
+        ? webOptions.southWestGuideBlend
+        : webOptions.southEastGuideBlend;
       let guidePoints;
       if (profiles.length) {
         let previousPlan = 0;
@@ -2370,9 +3527,9 @@ function addKarbandiVault(group, layout, walls) {
         guidePoints = Array.from({ length: sampleCount }, (_, pointIndex) => {
           const fallbackProgress = pointIndex / (sampleCount - 1);
           const normalized = profiles.map((profile) => {
-            const startPoint = profile[0];
-            const endPoint = profile[profile.length - 1];
-            const point = profile[pointIndex];
+            const startPoint = profile.points[0];
+            const endPoint = profile.points[profile.points.length - 1];
+            const point = profile.points[pointIndex];
             const finalPlan = Math.hypot(endPoint.x - startPoint.x, endPoint.z - startPoint.z);
             const currentPlan = Math.hypot(point.x - startPoint.x, point.z - startPoint.z);
             const finalRise = endPoint.y - startPoint.y;
@@ -2381,8 +3538,10 @@ function addKarbandiVault(group, layout, walls) {
               rise: Math.abs(finalRise) > 0.000001 ? (point.y - startPoint.y) / finalRise : fallbackProgress,
             };
           });
-          let planProgress = normalized.reduce((sum, value) => sum + value.plan, 0) / normalized.length;
-          let riseProgress = normalized.reduce((sum, value) => sum + value.rise, 0) / normalized.length;
+          const weights = normalized.length > 1 ? [1 - guideBlend, guideBlend] : [1];
+          const weightTotal = weights.slice(0, normalized.length).reduce((sum, weight) => sum + weight, 0) || 1;
+          let planProgress = normalized.reduce((sum, value, index) => sum + value.plan * (weights[index] ?? 0), 0) / weightTotal;
+          let riseProgress = normalized.reduce((sum, value, index) => sum + value.rise * (weights[index] ?? 0), 0) / weightTotal;
           // Rib legs rise monotonically from the wall. Numerical noise in a
           // clipped seating polyline must not make the transferred guide fold.
           planProgress = THREE.MathUtils.clamp(Math.max(previousPlan, planProgress), 0, 1);
@@ -2415,7 +3574,9 @@ function addKarbandiVault(group, layout, walls) {
         adjacentRibIds: boundingRibs.map((item) => item.ribId),
         leftRibId: boundingRibs[0]?.ribId ?? null,
         rightRibId: boundingRibs[1]?.ribId ?? null,
-        profileConstraint: 'average-full-left-right-rib-bend-and-slope',
+        wallConnectedRibsOnly: true,
+        guideBlend,
+        profileConstraint: 'weighted-wall-connected-left-right-rib-profiles',
         guidePoints: guidePoints.map((point) => point.toArray()),
         startTangent: startTangent.toArray(),
         endTangent: endTangent.toArray(),
@@ -2494,9 +3655,10 @@ function addKarbandiVault(group, layout, walls) {
     addReferenceAlignedCornerGuide(roofEastX);
     group.userData.karbandiHiddenCornerGuideCount = hiddenCornerGuideCount;
     group.userData.karbandiCornerGuides = cornerGuideDiagnostics;
-    group.userData.karbandiCornerGuideConstraint = 'hidden-rib-left-right-full-profile';
+    group.userData.karbandiCornerGuideConstraint = 'hidden-wall-connected-left-right-rib-profiles';
 
     const ribBandQuads = buildRibBandQuads(rawSegments);
+    const ribCenterlines = buildRibCenterlines(rawSegments);
     const topology = buildWebTopology(rawSegments.map((segment) => ({
       a: segment.a,
       b: segment.b,
@@ -2626,14 +3788,55 @@ function addKarbandiVault(group, layout, walls) {
         return bearingVectorForSupportSides([...new Set(sides)], bearingDistance);
       };
       const boundaryCurves = groupFaceBoundaryCurves(topologyFace, nodes);
+      // Four-rib cells are defined by the intersections of the rib axes, not
+      // by one arbitrary side of each rib band. The centerline cell is the
+      // complete red-polyline region; the visible ribs subsequently cover the
+      // portions of this roof panel that lie beneath their physical width.
+      const centerlineRegionOptions = {
+        wallTopY: sideTop,
+        wallTopTolerance: Math.max(0.01, ribDepth * groupScale * 0.2),
+        wallBoundaryTolerance: Math.max(0.02, ribDepth * groupScale * 1.5),
+        wallBoundaries: [
+          { axis: 'x', value: roofWestX, height: wallHeights.west },
+          { axis: 'x', value: roofEastX, height: wallHeights.east },
+          { axis: 'z', value: roofNorthZ, height: wallHeights.north },
+          { axis: 'z', value: roofSouthZ, height: wallHeights.south },
+        ],
+      };
+      let centerlineRegionCurves = fourRibCenterlineRegion(boundaryCurves, ribCenterlines, {
+        ...centerlineRegionOptions,
+        anchorWallBoundary: false,
+      });
+      const perimeterCenterlineCurves = centerlineRegionCurves
+        ? null
+        : ribCenteredPerimeterRegion(boundaryCurves, ribCenterlines);
+      let patchBoundaryCurves = centerlineRegionCurves || perimeterCenterlineCurves || boundaryCurves;
       const southCornerGuideCurve = boundaryCurves.find((curve) => (
         curve.kind === 'guide'
         && /^south-corner:(east|west)$/.test(String(curve.sourceId))
       ));
-      const patch = buildStructuredWebPatch(boundaryCurves, {
+      let patch = buildStructuredWebPatch(patchBoundaryCurves, {
         resolution: 8,
         courseWidth: ribDepth * groupScale,
       });
+      let usesSmallFourRibIntersectionPolyline = false;
+      if (centerlineRegionCurves && patch?.smallCellFallback) {
+        // Only the compact four-rib cells along the final enclosed row use the
+        // explicit purple construction polygon. Their four corners are the
+        // adjacent rib-axis intersections; intermediate samples from the long
+        // parent rib curves can rise outside this tiny region and form a spike.
+        // Leave every larger roof cell untouched.
+        centerlineRegionCurves = centerlineRegionCurves.map((curve) => ({
+          ...curve,
+          points: [curve.points[0], curve.points[curve.points.length - 1]],
+        }));
+        patchBoundaryCurves = centerlineRegionCurves;
+        patch = buildStructuredWebPatch(patchBoundaryCurves, {
+          resolution: 8,
+          courseWidth: ribDepth * groupScale,
+        });
+        usesSmallFourRibIntersectionPolyline = true;
+      }
       if (!patch) return;
       const wallContinuationSide = patch.type === 'north-crown-sliced-inward-courses'
         ? null
@@ -2652,7 +3855,12 @@ function addKarbandiVault(group, layout, walls) {
       }), { x: 0, z: 0 });
       const topVertices = patch.vertices.map((vertex, index) => {
         const bearing = bearingAtPoint(vertex.x, vertex.z);
-        const normal = patch.normals[index];
+        // Every four-rib centerline region extrudes along one best-fit surface
+        // normal. This keeps recovered/split-boundary cells perpendicular to
+        // their boundary surface and identical to ordinary four-rib cells.
+        const normal = centerlineRegionCurves && patch.regionNormal
+          ? patch.regionNormal
+          : patch.normals[index];
         return {
           x: vertex.x + normal.x * coverThickness + bearing.x,
           y: vertex.y + normal.y * coverThickness,
@@ -2809,7 +4017,7 @@ function addKarbandiVault(group, layout, walls) {
       geometry.computeVertexNormals();
       if (wallContinuationSide) applyWallContinuationBrickUvs(geometry, wallContinuationSide);
       else applyWorldAlignedBrickUvs(geometry);
-      if (patch.brickMapping === 'offset-rib-courses' && patch.masonryUvs?.length === patch.vertices.length) {
+      if (!wallContinuationSide && patch.brickMapping === 'offset-rib-courses' && patch.masonryUvs?.length === patch.vertices.length) {
         const geometryUvs = geometry.getAttribute('uv');
         patch.masonryUvs.forEach((uv, index) => {
           // Texture repeat is world-scaled, so these are real metre distances:
@@ -2826,11 +4034,7 @@ function addKarbandiVault(group, layout, walls) {
         && patch.brickMapping === 'offset-rib-courses'
         && (
           patch.type === 'north-crown-sliced-inward-courses'
-          || (
-            topologyFace.classification === 'InteriorCell'
-            && boundaryCurves.length === 4
-            && boundaryCurves.every((curve) => curve.kind === 'rib-seat')
-          )
+          || patch.fourRibRegion === true
         )
       );
       const panelBaseMaterial = usesOffsetCourseBrickMaterial
@@ -2870,23 +4074,47 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.northWallClipped = requiresNorthWallClip;
       panel.userData.wallClippedSides = [...wallSides];
       panel.userData.webPatchSolver = patch.type;
+      panel.userData.webPatchFallbackFrom = patch.replacedPatchType ?? null;
+      panel.userData.webPatchReplacedInvertedTriangleCount = patch.replacedInvertedTriangleCount ?? 0;
       panel.userData.webPatchSurfaceVertexCount = patch.vertices.length;
       panel.userData.webPatchInvertedTriangleCount = patch.invertedTriangleCount;
       panel.userData.webInwardCourseCount = patch.courseCount ?? 0;
       panel.userData.webInwardCourseWidth = patch.courseWidth ?? null;
       panel.userData.webSmallCellFallback = patch.smallCellFallback === true;
+      panel.userData.webRegionNormal = patch.regionNormal?.toArray?.() || null;
+      panel.userData.webRegionNormalMode = patch.normalMode || 'vertex-surface-normal';
+      panel.userData.webExtrusionAngleDegrees = patch.fourRibRegion === true && patch.regionNormal ? 90 : null;
+      panel.userData.webFourRibRegion = patch.fourRibRegion === true;
+      panel.userData.webFourRibBoundaryMode = centerlineRegionCurves
+        ? (usesSmallFourRibIntersectionPolyline
+          ? 'small-four-rib-centerline-intersection-purple-polyline'
+          : 'four-rib-centerline-intersections-red-polyline')
+        : (patch.fourRibRegion === true ? 'four-visible-rib-seat-boundary' : null);
+      panel.userData.webPerimeterRibBoundaryMode = perimeterCenterlineCurves
+        ? 'rib-centerlines-with-wall-support-boundary'
+        : null;
+      panel.userData.webWallTopAnchoredCorners = centerlineRegionCurves
+        ? centerlineRegionCurves.filter((curve) => curve.wallTopAnchoredStart).length
+        : 0;
+      panel.userData.webRegionCorners = patch.regionCorners?.map((point) => [point.x, point.y, point.z]) || [];
+      panel.userData.webRegionBoundary = patch.regionBoundary?.map((point) => [point.x, point.y, point.z]) || [];
       panel.userData.roofBrickMapping = wallContinuationSide
         ? 'wall-continuation'
         : (patch.brickMapping || 'world-aligned');
       panel.userData.wallContinuationSide = wallContinuationSide;
       panel.userData.wallContinuationPatternSide = wallContinuationSide;
+      panel.userData.wallContinuationUAxis = wallContinuationSide === 'west'
+        ? '-world-z'
+        : wallContinuationSide === 'east'
+          ? '+world-z'
+          : '+world-x';
       panel.userData.wallContinuationClippedByRibs = Boolean(wallContinuationSide);
       panel.userData.wallContinuationCourseAxis = wallContinuationSide ? 'world-y' : null;
       panel.userData.wallContinuationFollowsCornerGuide = Boolean(southCornerGuideCurve);
       panel.userData.wallContinuationMethod = wallContinuationSide ? 'bent-topology-patch' : null;
       panel.userData.southCornerGuideId = southCornerGuideCurve?.sourceId ?? null;
       panel.userData.southCornerGuideProfileConstraint = southCornerGuideCurve
-        ? 'average-full-left-right-rib-bend-and-slope'
+        ? 'weighted-wall-connected-left-right-rib-profiles'
         : null;
       panel.userData.roofBrickHorizontalMortarOnly = usesOffsetCourseBrickMaterial;
       panel.userData.roofInfillBrickColor = usesOffsetCourseBrickMaterial ? webOptions.infillBrickColor : null;
@@ -2948,7 +4176,7 @@ function addKarbandiVault(group, layout, walls) {
   return meshes;
 }
 
-export function buildWallSystem(building, value = {}) {
+export function buildWallSystem(building, value = {}, zones = []) {
   const walls = normalizeWallSystem(value, building);
   const group = new THREE.Group();
   group.name = 'Mehraz architectural wall system';
@@ -2983,6 +4211,7 @@ export function buildWallSystem(building, value = {}) {
   // This keeps the corners closed as butt joints without intersecting volumes.
   const sideWallDepth = depth;
   const sideWallCenterZ = centerZ;
+  const gypsumBaseTop = walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0;
   const decorativeJointTrim = Math.max(0.01, Math.min(0.06, walls.bricks.mortar * 2 + 0.012, thickness * 0.16));
   const sideNorthTrim = decorativeJointTrim;
   const sideSouthTrim = decorativeJointTrim;
@@ -3006,6 +4235,7 @@ export function buildWallSystem(building, value = {}) {
     meshes.push(mesh);
     const faceShape = rectangleShape(eastDecorMin, eastDecorMax, height('east'));
     addBrickFace(group, faceShape, 'east', eastDecorDepth, height('east'), [eastX - 0.015, 0, sideWallCenterZ], [0, -Math.PI / 2, 0], walls, bondPhase.east);
+    addInteriorGypsumFace(group, rectangleShape(-sideWallDepth / 2, sideWallDepth / 2, height('east')), 'east', [eastX - 0.02, 0, sideWallCenterZ], [0, -Math.PI / 2, 0], walls, gypsumBaseTop, [], gypsumZoneCutouts(zones, 'east', walls));
   }
   if (!walls.openSides.includes('west')) {
     const mesh = box(
@@ -3020,12 +4250,17 @@ export function buildWallSystem(building, value = {}) {
     meshes.push(mesh);
     const faceShape = rectangleShape(westDecorMin, westDecorMax, height('west'));
     addBrickFace(group, faceShape, 'west', westDecorDepth, height('west'), [westX + 0.015, 0, sideWallCenterZ], [0, Math.PI / 2, 0], walls, bondPhase.west);
+    addInteriorGypsumFace(group, rectangleShape(-sideWallDepth / 2, sideWallDepth / 2, height('west')), 'west', [westX + 0.02, 0, sideWallCenterZ], [0, Math.PI / 2, 0], walls, gypsumBaseTop, [], gypsumZoneCutouts(zones, 'west', walls));
   }
 
   const sideTop = Math.max(height('east'), height('west'));
   const archHalfSpan = Math.max(0.5, Math.min(width / 2, Number(building.openingWidth) / 2 || width * 0.32));
   const greenOffset = walls.pointedArch.greenOffset ?? archHalfSpan;
   const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - archHalfSpan * 0.6);
+  const archCircleOptions = {
+    redOffset: walls.pointedArch.redOffset,
+    redRadius: walls.pointedArch.redRadius,
+  };
   const archPoints = archCurve(
     centerX,
     archHalfSpan,
@@ -3033,60 +4268,100 @@ export function buildWallSystem(building, value = {}) {
     sideTop,
     greenOffset,
     greenHeight,
+    36,
+    archCircleOptions,
   );
   const archApex = archPoints.length
     ? Math.max(...archPoints.map((point) => point.y))
     : Math.max(sideTop + 0.2, Number(building.openingHeight) || sideTop + archHalfSpan);
   const ahangEnabled = walls.ahang.enabled && walls.pointedArch.enabled;
+  const archBand = thickness;
+  const outerArchPoints = ahangEnabled
+    ? archCurve(
+      centerX,
+      archHalfSpan + archBand,
+      sideTop,
+      sideTop,
+      greenOffset,
+      greenHeight,
+      36,
+      {
+        ...archCircleOptions,
+        redRadius: archCircleOptions.redRadius == null ? null : archCircleOptions.redRadius + archBand,
+      },
+    )
+    : [];
+  const outerArchApex = outerArchPoints.length
+    ? Math.max(...outerArchPoints.map((point) => point.y))
+    : archApex;
   const southBaseHeight = ahangEnabled ? Math.max(height('south'), sideTop) : height('south');
-  const southWallHeight = ahangEnabled ? Math.max(southBaseHeight, archApex) : southBaseHeight;
+  const southWallHeight = ahangEnabled ? Math.max(southBaseHeight, archApex, outerArchApex) : southBaseHeight;
   const southHoles = [];
   const openingRects = {};
   if (walls.southOpenings.door.enabled) {
-    openingRects.door = openingRect(walls.southOpenings.door, centerX, width, southBaseHeight, 0);
+    openingRects.door = southOpeningProfile(walls.southOpenings.door, centerX, width, southBaseHeight, 0);
   }
   if (walls.southOpenings.window.enabled) {
     const sill = Math.min(southBaseHeight - 0.3, walls.southOpenings.window.sillHeight);
-    openingRects.window = openingRect(walls.southOpenings.window, centerX, width, southBaseHeight, sill);
-    southHoles.push(rectangleHole(openingRects.window.left, sill, openingRects.window.right, openingRects.window.top));
+    openingRects.window = southOpeningProfile(walls.southOpenings.window, centerX, width, southBaseHeight, sill);
+    southHoles.push(openingHole(openingRects.window));
   }
   const southShape = rectangleShapeWithDoorNotch(westX - thickness, eastX + thickness, southBaseHeight, openingRects.door, southHoles);
+  const southSoldierCutouts = openingSoldierCutouts(openingRects, walls, gypsumBaseTop);
+  const southZoneCutouts = gypsumZoneCutouts(zones, 'south', walls);
   if (!walls.openSides.includes('south')) {
     const mesh = extrudedShape(southShape, thickness, southZ, wallMaterial(walls, 'south', width + thickness * 2, southBaseHeight, true, bondPhase.south), 'south');
     group.add(mesh);
     meshes.push(mesh);
     const southDecorShape = rectangleShapeWithDoorNotch(westX, eastX, southBaseHeight, openingRects.door, southHoles);
     addBrickFace(group, southDecorShape, 'south', width, southBaseHeight, [0, 0, southZ - 0.015], [0, 0, 0], walls, bondPhase.south);
-    if (ahangEnabled && archPoints.length) {
-      const capShape = archCapShape(westX - thickness, eastX + thickness, southBaseHeight, archPoints);
+    addInteriorGypsumFace(group, southDecorShape, 'south', [0, 0, southZ - 0.02], [0, 0, 0], walls, gypsumBaseTop, southSoldierCutouts, southZoneCutouts);
+    if (ahangEnabled && outerArchPoints.length) {
+      // The end wall rises to the vault's outer profile. The vault stops at
+      // the wall's inner face, so both solids share a closed butt joint while
+      // the full arch band remains filled through the south wall thickness.
+      const capShape = archCapShape(westX - thickness, eastX + thickness, southBaseHeight, outerArchPoints);
       if (capShape) {
         const capMesh = extrudedShape(capShape, thickness, southZ, wallMaterial(walls, 'south', width + thickness * 2, southWallHeight, true, bondPhase.south), 'south_arch');
         capMesh.userData.isSouthArchCap = true;
+        capMesh.userData.archInterfaceProfile = 'outer';
         group.add(capMesh);
         meshes.push(capMesh);
       }
-      const capDecorShape = archCapShape(westX, eastX, southBaseHeight, archPoints);
-      if (capDecorShape) addBrickFace(group, capDecorShape, 'arch', width, southWallHeight, [0, 0, southZ - 0.015], [0, 0, 0], walls, bondPhase.south, 'south_arch');
+      const capDecorShape = archCapShape(westX, eastX, southBaseHeight, outerArchPoints);
+      if (capDecorShape) {
+        addBrickFace(group, capDecorShape, 'arch', width, southWallHeight, [0, 0, southZ - 0.015], [0, 0, 0], walls, bondPhase.south, 'south_arch');
+        addInteriorGypsumFace(group, capDecorShape, 'south_arch', [0, 0, southZ - 0.02], [0, 0, 0], walls, 0, southSoldierCutouts, southZoneCutouts);
+      }
     }
     const soldierHeight = Math.max(walls.bricks.brickHeight, walls.bricks.brickWidth);
     const southTrimZ = southZ - 0.008;
     if (openingRects.door) {
-      addSolidBorder(
-        group,
-        'south',
-        (openingRects.door.left + openingRects.door.right) / 2,
-        openingRects.door.top + soldierHeight / 2,
-        openingRects.door.width,
-        soldierHeight,
-        southTrimZ,
-        walls,
-        'horizontal',
-      );
+      if (openingRects.door.archPoints?.length) {
+        addRaisedOpeningArchCourse(group, 'door', openingRects.door, walls.southOpenings.door, soldierHeight, southTrimZ, walls);
+      } else {
+        addRaisedOpeningSoldierCourse(
+          group,
+          'door',
+          openingRects.door.center,
+          openingRects.door.top + soldierHeight / 2,
+          openingRects.door.width,
+          soldierHeight,
+          southTrimZ,
+          walls,
+        );
+      }
+      const doorJambBottom = walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0;
+      addRaisedOpeningJambCourses(group, 'door', openingRects.door, doorJambBottom, soldierHeight, southTrimZ, walls);
     }
     if (openingRects.window) {
-      const center = (openingRects.window.left + openingRects.window.right) / 2;
-      addSolidBorder(group, 'south', center, openingRects.window.top + soldierHeight / 2, openingRects.window.width, soldierHeight, southTrimZ, walls, 'horizontal');
-      addSolidBorder(group, 'south', center, openingRects.window.bottom - soldierHeight / 2, openingRects.window.width, soldierHeight, southTrimZ, walls, 'horizontal');
+      if (openingRects.window.archPoints?.length) {
+        addRaisedOpeningArchCourse(group, 'window', openingRects.window, walls.southOpenings.window, soldierHeight, southTrimZ, walls);
+      } else {
+        addRaisedOpeningSoldierCourse(group, 'window', openingRects.window.center, openingRects.window.top + soldierHeight / 2, openingRects.window.width, soldierHeight, southTrimZ, walls);
+      }
+      addRaisedOpeningSoldierCourse(group, 'window', openingRects.window.center, openingRects.window.bottom - soldierHeight / 2, openingRects.window.width, soldierHeight, southTrimZ, walls, 'sill');
+      addRaisedOpeningJambCourses(group, 'window', openingRects.window, openingRects.window.bottom, soldierHeight, southTrimZ, walls);
     }
   }
 
@@ -3107,6 +4382,9 @@ export function buildWallSystem(building, value = {}) {
     const recessDepth = walls.northBoundary.enabled ? Math.min(thickness - 0.02, walls.northBoundary.depth) : 0;
     const outerFaceZ = northExteriorZ;
     const recessedFaceZ = outerFaceZ + recessDepth;
+    const northStoneBaseTop = walls.stoneBase.enabled
+      ? Math.min(northHeight, Math.max(0, walls.stoneBase.height))
+      : 0;
     northSections.forEach(({ shape: northShape, section: northSectionSide, mirror: mirrorNorthBond }) => {
       const northHasImportedBond = walls.bricks.sideBonds[northSectionSide]?.source === 'library';
       const northBaseWalls = recessDepth > 0.001 && northHasImportedBond
@@ -3147,6 +4425,29 @@ export function buildWallSystem(building, value = {}) {
       const openingRight = walls.pointedArch.enabled && archPoints.length
         ? Math.max(archPoints[0].x, archPoints[archPoints.length - 1].x)
         : northOpeningRight;
+      if (northStoneBaseTop > 0.001) {
+        [
+          [northLeft, openingLeft],
+          [openingRight, northRight],
+        ].forEach(([left, right]) => {
+          const baseShape = rectanglePanelShape(left, right, 0, northStoneBaseTop);
+          if (!baseShape) return;
+          const basePanel = extrudedShape(
+            baseShape,
+            recessDepth,
+            outerFaceZ,
+            wallMaterial(walls, 'north_sides', right - left, northStoneBaseTop, true, bondPhase.north),
+            'north_sides',
+          );
+          basePanel.userData.isNorthFlushStoneBase = true;
+          basePanel.userData.stoneBaseOuterFaceZ = outerFaceZ;
+          basePanel.userData.stoneBaseRecessFillDepth = recessDepth;
+          group.add(basePanel);
+          meshes.push(basePanel);
+        });
+      }
+      const raisedBoundaryBottom = northStoneBaseTop;
+      const raisedBoundaryCourseTop = Math.min(northHeight, raisedBoundaryBottom + inset);
       const northRaisedArchMapping = walls.pointedArch.enabled && openingLeft != null && openingRight != null
         ? pointedArchBrickMapping(
           centerX,
@@ -3157,8 +4458,9 @@ export function buildWallSystem(building, value = {}) {
           greenHeight,
           inset,
           northHeight - inset,
-          inset,
+          raisedBoundaryCourseTop,
           Math.max(0.01, (northRight - northLeft) / 2),
+          archCircleOptions,
         )
         : null;
       const northSideHasImportedBond = walls.bricks.sideBonds.north_sides?.source === 'library';
@@ -3184,43 +4486,34 @@ export function buildWallSystem(building, value = {}) {
         });
       }
       addRaisedNorthPanel(group, meshes, northLeft, northRight, northHeight - inset, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
-      addRaisedNorthPanel(group, meshes, northLeft, northLeft + inset, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
-      addRaisedNorthPanel(group, meshes, northRight - inset, northRight, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+      addRaisedNorthPanel(group, meshes, northLeft, northLeft + inset, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+      addRaisedNorthPanel(group, meshes, northRight - inset, northRight, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
       if (openingLeft != null && openingRight != null) {
-        addRaisedNorthPanel(group, meshes, northLeft, openingLeft, 0, inset, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
-        addRaisedNorthPanel(group, meshes, openingRight, northRight, 0, inset, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
+        addRaisedNorthPanel(group, meshes, northLeft, openingLeft, raisedBoundaryBottom, raisedBoundaryCourseTop, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
+        addRaisedNorthPanel(group, meshes, openingRight, northRight, raisedBoundaryBottom, raisedBoundaryCourseTop, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
       } else {
-        addRaisedNorthPanel(group, meshes, northLeft, northRight, 0, inset, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
+        addRaisedNorthPanel(group, meshes, northLeft, northRight, raisedBoundaryBottom, raisedBoundaryCourseTop, outerFaceZ, recessDepth, walls, bondPhase.north, 'horizontal', northRaisedArchMapping);
       }
       if (openingLeft != null && openingRight != null) {
         const springHeight = Math.max(0, Math.min(archPoints[0].y, archPoints[archPoints.length - 1].y));
         if (walls.pointedArch.enabled) {
           addRaisedCurvedNorthBorderPanel(group, meshes, archPoints, centerX, inset, outerFaceZ, recessDepth, walls, bondPhase.north, northRaisedArchMapping);
-          if (springHeight > inset + 0.02) {
-            addRaisedNorthPanel(group, meshes, openingLeft - inset, openingLeft, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
-            addRaisedNorthPanel(group, meshes, openingRight, openingRight + inset, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+          if (springHeight > raisedBoundaryBottom + 0.02) {
+            addRaisedNorthPanel(group, meshes, openingLeft - inset, openingLeft, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+            addRaisedNorthPanel(group, meshes, openingRight, openingRight + inset, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
           }
-        } else if (northHeight > inset + 0.02) {
-          addRaisedNorthPanel(group, meshes, openingLeft - inset, openingLeft, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
-          addRaisedNorthPanel(group, meshes, openingRight, openingRight + inset, 0, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+        } else if (northHeight > raisedBoundaryBottom + 0.02) {
+          addRaisedNorthPanel(group, meshes, openingLeft - inset, openingLeft, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
+          addRaisedNorthPanel(group, meshes, openingRight, openingRight + inset, raisedBoundaryBottom, northHeight, outerFaceZ, recessDepth, walls, bondPhase.north, 'vertical', northRaisedArchMapping);
         }
       }
     }
   }
 
   if (ahangEnabled && !walls.openSides.includes('south')) {
-    const band = thickness;
-    const outer = archCurve(
-      centerX,
-      archHalfSpan + band,
-      sideTop,
-      sideTop,
-      greenOffset,
-      greenHeight,
-    );
     const shape = new THREE.Shape();
-    shape.moveTo(outer[0].x, outer[0].y);
-    outer.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
+    shape.moveTo(outerArchPoints[0].x, outerArchPoints[0].y);
+    outerArchPoints.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
     [...archPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
     shape.closePath();
     // The vault meets both end walls at their inside faces instead of
@@ -3230,7 +4523,7 @@ export function buildWallSystem(building, value = {}) {
     geometry.translate(0, 0, northZ);
     geometry.computeVertexNormals();
     applyBentArchBrickUvs(geometry, archPoints, sideTop);
-    const mesh = new THREE.Mesh(geometry, wallMaterial(walls, 'south', archHalfSpan * 2 + band * 2, archApex + band, true, bondPhase.south));
+    const mesh = new THREE.Mesh(geometry, wallMaterial(walls, 'south', archHalfSpan * 2 + archBand * 2, outerArchApex, true, bondPhase.south));
     mesh.userData.wallSide = 'arch';
     mesh.userData.isPointedArch = true;
     mesh.userData.archBrickMapping = 'constant-height-bent-courses';
@@ -3238,6 +4531,7 @@ export function buildWallSystem(building, value = {}) {
     mesh.receiveShadow = true;
     group.add(mesh);
     meshes.push(mesh);
+    addAhangSoffitGypsum(group, archPoints, northZ, southZ, walls);
   }
 
   meshes.push(...addKarbandiVault(group, {
@@ -3277,7 +4571,10 @@ export function wallArchHeightAtX(building, value, x) {
   const halfSpan = Math.max(0.5, Math.min((eastX - westX) / 2, Number(building.openingWidth) / 2 || (eastX - westX) * 0.32));
   const greenOffset = walls.pointedArch.greenOffset ?? halfSpan;
   const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - halfSpan * 0.6);
-  const curve = archCurve(centerX, halfSpan, sideTop, sideTop, greenOffset, greenHeight);
+  const curve = archCurve(centerX, halfSpan, sideTop, sideTop, greenOffset, greenHeight, 36, {
+    redOffset: walls.pointedArch.redOffset,
+    redRadius: walls.pointedArch.redRadius,
+  });
   if (!curve.length || x < curve[0].x || x > curve[curve.length - 1].x) return sideTop;
   for (let index = 0; index < curve.length - 1; index += 1) {
     const first = curve[index];

@@ -136,13 +136,17 @@ test('roof thickness and bearing remain independent from embed tolerance', () =>
     infillBrickColor: '#aa6633',
     infillBrickColor2: '#774422',
     infillBrickHeight: 0.075,
+    southWestGuideBlend: -1,
+    southEastGuideBlend: 2,
   });
-  assert.equal(options.roofThickness, 0.18);
+  assert.equal(options.roofThickness, 0.05);
   assert.equal(options.wallBearingDepth, 0.2);
   assert.equal(options.wallEmbedTolerance, 0.006);
   assert.equal(options.infillBrickColor, '#aa6633');
   assert.equal(options.infillBrickColor2, '#774422');
   assert.equal(options.infillBrickHeight, 0.075);
+  assert.equal(options.southWestGuideBlend, 0);
+  assert.equal(options.southEastGuideBlend, 1);
   assert.deepEqual(bearingVectorForSupportSides(['west', 'north'], 0.206), { x: -0.206, z: -0.206 });
 });
 
@@ -152,6 +156,8 @@ test('hidden Karbandi seating adjustments default to zero', () => {
   assert.equal(options.wallEmbedTolerance, 0);
   assert.equal(options.ribEmbedTolerance, 0);
   assert.equal(options.seatingOffset, 0);
+  assert.equal(options.southWestGuideBlend, 0.5);
+  assert.equal(options.southEastGuideBlend, 0.5);
 });
 
 test('saved web options normalize on load and wall-height regeneration changes springing geometry', () => {

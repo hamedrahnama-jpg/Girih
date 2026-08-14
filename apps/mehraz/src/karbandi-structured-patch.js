@@ -93,6 +93,32 @@ function computeNormals(vertices, triangles) {
   return normals;
 }
 
+function bestFitRegionNormal(vertices, boundaryIndices) {
+  const normal = new THREE.Vector3();
+  for (let index = 0; index < boundaryIndices.length; index += 1) {
+    const current = vertices[boundaryIndices[index]];
+    const next = vertices[boundaryIndices[(index + 1) % boundaryIndices.length]];
+    // Newell's method gives a stable normal for a slightly non-planar region
+    // and does not collapse when small-cell triangle normals cancel out.
+    normal.x += (current.y - next.y) * (current.z + next.z);
+    normal.y += (current.z - next.z) * (current.x + next.x);
+    normal.z += (current.x - next.x) * (current.y + next.y);
+  }
+  if (normal.lengthSq() < 1e-18) {
+    for (let index = 2; index < boundaryIndices.length; index += 1) {
+      const origin = vertices[boundaryIndices[0]];
+      const first = vertices[boundaryIndices[index - 1]];
+      const second = vertices[boundaryIndices[index]];
+      normal.add(new THREE.Vector3(first.x - origin.x, first.y - origin.y, first.z - origin.z)
+        .cross(new THREE.Vector3(second.x - origin.x, second.y - origin.y, second.z - origin.z)));
+    }
+  }
+  if (normal.lengthSq() < 1e-18) normal.set(0, 1, 0);
+  else normal.normalize();
+  if (normal.y < 0) normal.multiplyScalar(-1);
+  return normal;
+}
+
 function finalize(type, vertices, triangles, boundarySegments, details = {}) {
   let positive = 0;
   let negative = 0;
@@ -114,6 +140,15 @@ function finalize(type, vertices, triangles, boundarySegments, details = {}) {
 }
 
 function coonsPatch(curves, resolution, courseWidth) {
+  const physicalRibIds = curves.map((curve) => (
+    String(curve.sourceId ?? '').match(/^(\d+):(?:[01]|centerline)$/)?.[1] ?? null
+  ));
+  const fourRibRegion = curves.length === 4
+    && curves.every((curve) => curve.kind === 'rib-seat')
+    && (
+      physicalRibIds.every((ribId) => ribId == null)
+      || (physicalRibIds.every(Boolean) && new Set(physicalRibIds).size === 4)
+    );
   const denseCount = 257;
   const bottom = resample(curves[0].points, denseCount);
   const right = resample(curves[1].points, denseCount);
@@ -200,7 +235,7 @@ function coonsPatch(curves, resolution, courseWidth) {
     const current = side * segmentsPerSide + index;
     boundarySegments.push({ a: outer[current], b: outer[(current + 1) % outer.length], metadata: curves[side] });
   }
-  return finalize(
+  const patch = finalize(
     smallCellFallback ? 'small-four-edge-cap' : 'four-edge-inward-courses',
     vertices,
     triangles,
@@ -209,10 +244,21 @@ function coonsPatch(curves, resolution, courseWidth) {
       courseCount: smallCellFallback ? 0 : courseCount,
       courseWidth: scaledCourseWidth,
       smallCellFallback,
+      wallStarted: curves.some((curve) => curve.kind === 'support'),
       masonryUvs,
-      brickMapping: 'offset-rib-courses',
+      brickMapping: fourRibRegion ? 'offset-rib-courses' : 'world-aligned',
     },
   );
+  if (fourRibRegion) {
+    const regionNormal = bestFitRegionNormal(vertices, rings[0]);
+    patch.normals = vertices.map(() => regionNormal.clone());
+    patch.regionNormal = regionNormal;
+    patch.normalMode = 'best-fit-four-rib-region-90-degree';
+    patch.fourRibRegion = true;
+    patch.regionCorners = curves.map((curve) => clone(curve.points[0]));
+    patch.regionBoundary = rings[0].map((vertexIndex) => clone(vertices[vertexIndex]));
+  }
+  return patch;
 }
 
 function triangularPatch(curves, resolution) {
@@ -444,10 +490,55 @@ function ruledPerimeterPatch(curves, resolution, courseWidth) {
   );
 }
 
+function boundaryTriangulatedPatch(curves) {
+  const vertices = [];
+  const boundarySegments = [];
+  const samePoint = (left, right) => left && right && distance(left, right) < 1e-7;
+  const vertexIndex = (point, allowFirst = false) => {
+    if (allowFirst && samePoint(point, vertices[0])) return 0;
+    if (samePoint(point, vertices[vertices.length - 1])) return vertices.length - 1;
+    vertices.push(clone(point));
+    return vertices.length - 1;
+  };
+  curves.forEach((curve, curveIndex) => {
+    for (let pointIndex = 0; pointIndex < curve.points.length - 1; pointIndex += 1) {
+      const a = vertexIndex(curve.points[pointIndex]);
+      const closesBoundary = curveIndex === curves.length - 1 && pointIndex === curve.points.length - 2;
+      const b = vertexIndex(curve.points[pointIndex + 1], closesBoundary);
+      if (a !== b) boundarySegments.push({ a, b, metadata: curve });
+    }
+  });
+  if (vertices.length < 3) return null;
+  const triangles = THREE.ShapeUtils.triangulateShape(
+    vertices.map((point) => new THREE.Vector2(point.x, point.z)),
+    [],
+  );
+  if (!triangles.length) return null;
+  return finalize('boundary-constrained-polygon', vertices, triangles, boundarySegments, {
+    wallStarted: curves.some((curve) => curve.kind === 'support'),
+    courseCount: 1,
+    courseWidth: 0,
+    masonryUvs: null,
+    brickMapping: 'world-aligned',
+    boundaryFallback: true,
+    preservedBoundaryVertexCount: vertices.length,
+  });
+}
+
 export function buildStructuredWebPatch(curves, options = {}) {
   const resolution = Math.max(4, Math.min(20, Math.round(Number(options.resolution) || 8)));
-  if (curves.length === 4) return coonsPatch(curves, resolution, options.courseWidth);
-  if (curves.length === 3) return triangularPatch(curves, resolution);
-  if (curves.length > 4 && curves.filter((curve) => curve.kind === 'support').length === 1) return ruledPerimeterPatch(curves, resolution, options.courseWidth);
-  return null;
+  let preferred = null;
+  if (curves.length === 4) preferred = coonsPatch(curves, resolution, options.courseWidth);
+  else if (curves.length === 3) preferred = triangularPatch(curves, resolution);
+  else if (curves.length > 4 && curves.filter((curve) => curve.kind === 'support').length === 1) {
+    preferred = ruledPerimeterPatch(curves, resolution, options.courseWidth);
+  }
+  if (preferred && preferred.invertedTriangleCount === 0) return preferred;
+  const fallback = boundaryTriangulatedPatch(curves);
+  if (fallback) {
+    fallback.replacedPatchType = preferred?.type ?? null;
+    fallback.replacedInvertedTriangleCount = preferred?.invertedTriangleCount ?? 0;
+    return fallback;
+  }
+  return preferred;
 }

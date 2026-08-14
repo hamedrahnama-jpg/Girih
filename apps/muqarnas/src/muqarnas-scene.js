@@ -147,6 +147,11 @@ export class MuqarnasScene {
     if ('physicallyCorrectLights' in this.renderer) this.renderer.physicallyCorrectLights = false;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.shadowMapDirty = true;
+    this.boundsDirty = true;
+    this.cachedVisibleModuleBounds = null;
+    this.cachedCompleteModelBounds = null;
     this.renderer.localClippingEnabled = true;
     this.container.appendChild(this.renderer.domElement);
 
@@ -160,6 +165,7 @@ export class MuqarnasScene {
     this.orbit.maxDistance = 45;
     this.orbit.screenSpacePanning = false;
     this.orbit.target.set(0, 1.2, 0);
+    this.orbit.addEventListener('change', () => this.invalidate());
 
     this.transform = new TransformControls(this.camera, this.renderer.domElement);
     this.transform.setSize(0.78);
@@ -179,6 +185,7 @@ export class MuqarnasScene {
     });
     this.transform.addEventListener('objectChange', () => {
       if (this.transform.object === this.groupProxy) this.applyGroupProxyTransform();
+      this.markBoundsDirty();
       this.refreshSelectionHighlights();
       this.emitSelection();
     });
@@ -380,7 +387,7 @@ export class MuqarnasScene {
     this.resizeObserver.observe(container);
     this.resize();
     this.resetHistory();
-    this.animate();
+    this.invalidate(true);
   }
 
   addEnvironment() {
@@ -1055,6 +1062,7 @@ export class MuqarnasScene {
   }
 
   updateLibraryAppearance(libraryId, patch, recordHistory = true) {
+    this.invalidate(true);
     const item = this.library.get(libraryId);
     if (!item) return null;
     if (recordHistory) this.prepareHistoryChange();
@@ -1170,6 +1178,7 @@ export class MuqarnasScene {
   }
 
   setMode(mode) {
+    this.invalidate();
     const safeMode = ['select', 'box-select', 'translate', 'rotate', 'scale', 'slice'].includes(mode) ? mode : 'translate';
     if (this.mode === 'slice' && safeMode !== 'slice') this.clearSliceGuides();
     this.mode = safeMode;
@@ -1271,6 +1280,7 @@ export class MuqarnasScene {
   }
 
   updateSlicePointerPreview(clientX, clientY) {
+    this.invalidate();
     if (!this.sliceDraft?.start) return;
     const corner = this.sliceCornerAtClientPoint(clientX, clientY);
     this.sliceDraft.preview = corner?.position?.clone() || this.sliceDraft.start.clone();
@@ -1434,11 +1444,13 @@ export class MuqarnasScene {
   }
 
   setConnectorsVisible(visible) {
+    this.invalidate();
     this.connectorsVisible = !!visible;
     this.connectorGroup.visible = this.connectorsVisible;
   }
 
   setShadowsEnabled(enabled) {
+    this.invalidate(true);
     this.shadowsEnabled = !!enabled;
     this.renderer.shadowMap.enabled = this.shadowsEnabled;
     if (this.sun) this.sun.castShadow = this.shadowsEnabled;
@@ -1472,6 +1484,7 @@ export class MuqarnasScene {
   }
 
   emitNightLights() {
+    this.invalidate(true);
     this.callbacks.onNightLights?.({
       preview: this.nightPreview,
       guides: this.nightLightGuidesVisible,
@@ -1481,6 +1494,7 @@ export class MuqarnasScene {
   }
 
   rebuildNightLights() {
+    this.invalidate(true);
     this.nightLightObjects.forEach(({ helper, marker, targetMarker }) => {
       helper?.dispose?.();
       marker?.geometry?.dispose?.();
@@ -1657,6 +1671,7 @@ export class MuqarnasScene {
   }
 
   playAssemblyAnimation(durationSeconds = 15) {
+    this.invalidate(true);
     if (!this.instances.size) return;
     if (this.assemblyAnimation) this.stopAssemblyAnimation(false);
     this.syncWalls(true);
@@ -2096,6 +2111,7 @@ export class MuqarnasScene {
   }
 
   setWallState(state, recordHistory = false, historyLabel = 'Edit frame walls') {
+    this.markBoundsDirty();
     if (recordHistory) this.prepareHistoryChange();
     this.walls = {
       enabled: state?.enabled === true,
@@ -2632,6 +2648,7 @@ export class MuqarnasScene {
   }
 
   setGlobalMaterial(material) {
+    this.invalidate(true);
     this.globalMaterial = ['matte', 'glossy', 'metallic', 'stone'].includes(material) ? material : 'matte';
     this.library.forEach((item) => applyAppearanceToObject(item.source, item.appearance, this.globalMaterial));
     this.instances.forEach((root) => {
@@ -2643,6 +2660,7 @@ export class MuqarnasScene {
   }
 
   setEdgeSettings(patch, recordHistory = true) {
+    this.invalidate();
     if (recordHistory) this.prepareHistoryChange();
     const rebuildGeometry = patch.verticalLines !== undefined
       && (patch.verticalLines !== false) !== this.edgeSettings.verticalLines;
@@ -2679,6 +2697,7 @@ export class MuqarnasScene {
   }
 
   updateBoxSelection(event) {
+    this.invalidate();
     if (!this.boxSelection) return;
     const { startX, startY, bounds } = this.boxSelection;
     const left = Math.max(bounds.left, Math.min(startX, event.clientX));
@@ -2813,6 +2832,7 @@ export class MuqarnasScene {
   }
 
   setActiveLevel(levelId) {
+    this.invalidate();
     if (!this.levels.some((level) => level.id === levelId)) return;
     this.activeLevelId = levelId;
     if (this.selected && this.selected.userData.levelId !== levelId) this.select(null);
@@ -3217,6 +3237,7 @@ export class MuqarnasScene {
   }
 
   recordHistory(label) {
+    this.markBoundsDirty();
     if (this.restoringHistory) return;
     const state = this.captureHistoryState();
     const signature = JSON.stringify(state);
@@ -3239,6 +3260,7 @@ export class MuqarnasScene {
   }
 
   emitHistory() {
+    this.invalidate(true);
     this.callbacks.onHistory?.({
       canUndo: this.historyIndex > 0,
       canRedo: this.historyIndex >= 0 && this.historyIndex < this.history.length - 1,
@@ -3317,6 +3339,7 @@ export class MuqarnasScene {
   }
 
   emitSelection() {
+    this.invalidate();
     if (!this.selected) { this.callbacks.onSelection?.(null); return; }
     this.callbacks.onSelection?.({
       id: this.selected.userData.instanceId,
@@ -3330,22 +3353,27 @@ export class MuqarnasScene {
   }
 
   emitStats() {
+    this.markBoundsDirty();
     let triangles = 0;
     this.instances.forEach((root) => { triangles += this.library.get(root.userData.libraryId)?.triangles || 0; });
     this.callbacks.onStats?.({ modules: this.instances.size, triangles });
   }
 
   completeModelBounds() {
+    if (this.cachedCompleteModelBounds) return this.cachedCompleteModelBounds.clone();
     const bounds = new THREE.Box3().setFromObject(this.assembly);
     if (this.wallGroup.visible) bounds.expandByObject(this.wallGroup);
+    this.cachedCompleteModelBounds = bounds.clone();
     return bounds;
   }
 
   visibleModuleBounds() {
+    if (this.cachedVisibleModuleBounds) return this.cachedVisibleModuleBounds.clone();
     const bounds = new THREE.Box3();
     this.instances.forEach((root) => {
       if (root.visible) bounds.expandByObject(root);
     });
+    this.cachedVisibleModuleBounds = bounds.clone();
     return bounds;
   }
 
@@ -3410,6 +3438,7 @@ export class MuqarnasScene {
   }
 
   setWalkEnabled(enabled) {
+    this.invalidate();
     const next = enabled === true;
     if (next === this.walk.enabled) return;
     if (next) {
@@ -3536,6 +3565,7 @@ export class MuqarnasScene {
   }
 
   emitViewLayout() {
+    this.invalidate();
     this.callbacks.onViewLayout?.({
       main: this.mainView,
       front: this.miniViewAssignments.front,
@@ -3579,6 +3609,7 @@ export class MuqarnasScene {
   setOverviewView(view) {
     if (!['front', 'top'].includes(view)) return;
     this.overviewView = view;
+    this.invalidate();
   }
 
   attachMiniViews(frontContainer, topContainer) {
@@ -3658,6 +3689,7 @@ export class MuqarnasScene {
   }
 
   updateMiniDrag(event) {
+    this.markBoundsDirty();
     const drag = this.miniDrag;
     if (!drag) return;
     this.setPointerFromMiniEvent(event, drag.renderer, drag.camera);
@@ -4443,6 +4475,7 @@ export class MuqarnasScene {
   }
 
   resize() {
+    this.invalidate();
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     if (this.mainView === 'perspective') {
@@ -4453,17 +4486,46 @@ export class MuqarnasScene {
     this.northBoundaryMaterial?.resolution.set(width, height);
   }
 
+  invalidate(shadows = false) {
+    if (shadows) this.shadowMapDirty = true;
+    if (typeof requestAnimationFrame !== 'function') return;
+    if (this.frame == null) this.frame = requestAnimationFrame(this.animate);
+  }
+
+  markBoundsDirty() {
+    this.boundsDirty = true;
+    this.cachedVisibleModuleBounds = null;
+    this.cachedCompleteModelBounds = null;
+    this.wallSignature = '';
+    this.invalidate(true);
+  }
+
   animate = (time = performance.now()) => {
-    this.frame = requestAnimationFrame(this.animate);
+    this.frame = null;
+    if (this.transform.dragging || this.miniDrag || this.freeDrag || this.assemblyAnimation) {
+      this.boundsDirty = true;
+      this.cachedVisibleModuleBounds = null;
+      this.cachedCompleteModelBounds = null;
+      this.shadowMapDirty = true;
+    }
     this.updateWalkCamera(time);
-    if (!this.walk.enabled && !this.assemblyAnimation) this.orbit.update();
+    const orbitChanged = !this.walk.enabled && !this.assemblyAnimation ? this.orbit.update() : false;
     this.updateAssemblyAnimation(time);
-    if (!this.assemblyAnimation) this.syncWalls();
+    if (!this.assemblyAnimation && this.boundsDirty) {
+      this.syncWalls();
+      this.boundsDirty = false;
+      this.cachedCompleteModelBounds = null;
+    }
     if (this.selected) {
       this.updateSelectionHighlightMatrices();
       if (this.transform.dragging) this.updateConnectorMarkers();
     }
+    if (this.shadowMapDirty) this.renderer.shadowMap.needsUpdate = true;
     this.renderMiniViews();
+    this.shadowMapDirty = false;
+    if (orbitChanged || this.walk.enabled || this.assemblyAnimation || this.transform.dragging || this.miniDrag || this.freeDrag) {
+      this.invalidate();
+    }
   };
 
   dispose() {

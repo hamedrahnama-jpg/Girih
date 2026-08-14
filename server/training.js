@@ -8,9 +8,53 @@ const APP_URLS = {
 };
 const APP_IDS = new Set(Object.keys(APP_URLS));
 const LEVELS = new Set(['Foundation', 'Intermediate', 'Advanced']);
+const EMBEDDED_ORIGIN = /^https:\/\/(?:[a-z0-9-]+\.)?girihstudio\.com$/i;
 
 function cleanText(value, max = 500) {
   return String(value || '').trim().slice(0, max);
+}
+
+function allowEmbeddedTrainingRequest(req, res) {
+  const origin = String(req.headers?.origin || '');
+  const localOrigin = /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(origin);
+  if (EMBEDDED_ORIGIN.test(origin) || localOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  }
+}
+
+export function moduleTaskIds(module) {
+  return (module?.lessons || []).flatMap((lesson, lessonIndex) => {
+    const steps = (lesson?.steps || []).filter(Boolean);
+    return steps.length
+      ? steps.map((_, stepIndex) => `${lessonIndex}:${stepIndex}`)
+      : [`${lessonIndex}:lesson`];
+  });
+}
+
+async function embeddedTrainingPayload(supabase, user, appId) {
+  if (!APP_IDS.has(appId)) throw httpError(400, 'Choose a supported Girih Studio app.');
+  const { data: modules, error: moduleError } = await supabase
+    .from('training_modules')
+    .select('id,slug,app_id,title,description,level,estimated_minutes,lessons')
+    .eq('app_id', appId)
+    .is('owner_id', null)
+    .eq('status', 'published')
+    .eq('is_published', true)
+    .order('created_at', { ascending: true });
+  if (moduleError) throw moduleError;
+  const moduleIds = (modules || []).map((module) => module.id);
+  const { data: progress, error: progressError } = moduleIds.length
+    ? await supabase
+      .from('training_self_progress')
+      .select('module_id,completed_tasks,started_at,completed_at,updated_at')
+      .eq('user_id', user.id)
+      .in('module_id', moduleIds)
+    : { data: [], error: null };
+  if (progressError) throw progressError;
+  return { appId, modules: modules || [], progress: progress || [] };
 }
 
 function moduleInput(body = {}) {
@@ -86,15 +130,46 @@ async function academyPayload(supabase, user, profile) {
 }
 
 export default async function handler(req, res) {
+  allowEmbeddedTrainingRequest(req, res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
   try {
     const supabase = createSupabaseAdmin();
     const user = await requireAuthenticatedUser(req, supabase);
     const profile = await getProfile(supabase, user.id);
+    const embeddedAppId = cleanText(req.query?.app, 20);
+    if (req.method === 'GET' && embeddedAppId) return res.status(200).json(await embeddedTrainingPayload(supabase, user, embeddedAppId));
     if (req.method === 'GET') return res.status(200).json(await academyPayload(supabase, user, profile));
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
 
     const action = cleanText(req.body?.action, 40);
-    if (action === 'activate-teacher') {
+    if (action === 'task-progress') {
+      const moduleId = cleanText(req.body?.moduleId, 60);
+      const { data: module, error: moduleError } = await supabase
+        .from('training_modules')
+        .select('id,owner_id,status,is_published,lessons')
+        .eq('id', moduleId)
+        .maybeSingle();
+      if (moduleError) throw moduleError;
+      if (!module || module.owner_id || module.status !== 'published' || !module.is_published) {
+        throw httpError(404, 'This built-in training module is not available.');
+      }
+      const validTaskIds = moduleTaskIds(module);
+      const requestedTasks = Array.isArray(req.body?.completedTasks) ? req.body.completedTasks : [];
+      const completedTasks = [...new Set(requestedTasks.map((item) => cleanText(item, 40)))]
+        .filter((item) => validTaskIds.includes(item));
+      const now = new Date().toISOString();
+      const complete = validTaskIds.length > 0 && completedTasks.length === validTaskIds.length;
+      const { error } = await supabase.from('training_self_progress').upsert({
+        user_id: user.id,
+        module_id: module.id,
+        completed_tasks: completedTasks,
+        started_at: completedTasks.length ? now : null,
+        completed_at: complete ? now : null,
+        updated_at: now,
+      }, { onConflict: 'user_id,module_id' });
+      if (error) throw error;
+      return res.status(200).json({ moduleId: module.id, completedTasks, percent: validTaskIds.length ? Math.round(completedTasks.length / validTaskIds.length * 100) : 0 });
+    } else if (action === 'activate-teacher') {
       if (profile.account_type === 'student') throw httpError(403, 'Student profiles cannot be converted from this page.');
       const { error } = await supabase.from('profiles').update({ account_type: 'teacher', updated_at: new Date().toISOString() }).eq('id', user.id);
       if (error) throw error;

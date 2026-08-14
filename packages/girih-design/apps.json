@@ -45,11 +45,11 @@
   },
   {
     "id": "academy",
-    "name": "Girih Studio Academy",
-    "shortName": "Academy",
+    "name": "Training",
+    "shortName": "Training",
     "url": "https://girihstudio.com/training",
     "homeUrl": "https://girihstudio.com/training",
-    "description": "Complete guided app training, practical models, assignments, and teacher reviews.",
+    "description": "Follow guided tasks while working in the current design app.",
     "category": "Training and assessment",
     "access": "Teacher and student profiles",
     "status": "available"

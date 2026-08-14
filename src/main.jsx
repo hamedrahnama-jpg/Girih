@@ -3146,7 +3146,7 @@ function resetAdminGroupSizeSettings(group, nextPieces) {
           <button type="button" className="girih-button girih-editor-save-button" disabled={!placed.length || sharedLibraryBusy} onClick={saveCurrentModelFromHeader}><Save size={15} /> {sharedLibraryBusy ? 'Saving...' : 'Save project'}</button>
         </div>
         <nav className="girih-header-end" aria-label="Girih App navigation">
-          <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+          <a className="girih-training-button" href="/training?app=girih"><GraduationCap size={15} /> Training</a>
           <button type="button" onClick={() => { setSharedLibraryDialogOpen(true); refreshGirihLibrary(); }}><FolderOpen size={15} /> Library</button>
           <a href="/profile"><User size={15} /> Profile</a>
           <girih-app-switcher current-app="girih" compact></girih-app-switcher>
@@ -3230,7 +3230,7 @@ function resetAdminGroupSizeSettings(group, nextPieces) {
           </button>
           {accountMenuOpen && <nav className="profile-account-menu" aria-label="User account">
             <a href="/profile"><User size={15} /> Profile</a>
-            <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+            <a className="girih-training-button" href="/training?app=girih"><GraduationCap size={15} /> Training</a>
             <a href="/marketplace" aria-label="Marketplace"><Store size={15} /> Market place</a>
             {isAdminUser && <a href="/admin"><BarChart3 size={15} /> User overview</a>}
           </nav>}
@@ -3491,7 +3491,7 @@ function resetAdminGroupSizeSettings(group, nextPieces) {
           </button>
           {accountMenuOpen && <nav className="profile-account-menu" aria-label="User account">
             <a href="/profile"><User size={15} /> Profile</a>
-            <a href="/training?app=girih"><GraduationCap size={15} /> Academy</a>
+            <a className="girih-training-button" href="/training?app=girih"><GraduationCap size={15} /> Training</a>
             <a href="/marketplace" aria-label="Marketplace"><Store size={15} /> Market place</a>
             {isAdminUser && <a href="/admin"><BarChart3 size={15} /> User overview</a>}
           </nav>}
@@ -4992,7 +4992,7 @@ function LandingPage() {
           <p className="suite-kicker">Begin here</p>
           <h2>Academy sits above the complete studio.</h2>
           <p>Students follow structured lessons for every app, complete a practical model, and submit it for review. Teachers build curriculum, assign modules, and track progress from one workspace.</p>
-          <div className="suite-inline-actions"><a className="suite-button suite-button-dark" href={academy?.url || '/training'}>Open Academy <ArrowRight size={17} /></a><a className="suite-text-link" href="/training">View training modules</a></div>
+          <div className="suite-inline-actions"><a className="suite-button suite-button-primary girih-training-button" href={academy?.url || '/training'}>Open Academy <ArrowRight size={17} /></a><a className="suite-text-link" href="/training">View training modules</a></div>
         </div>
         <div className="suite-academy-preview">
           <div className="suite-preview-toolbar"><span><GraduationCap size={17} />Academy</span><div><b>Class</b><b className="active">Curriculum</b></div></div>
@@ -7126,6 +7126,7 @@ function GirihStage({
   });
   const rendererRef = useRef(null);
   const stageSyncDirtyRef = useRef(true);
+  const stageInvalidateRef = useRef(null);
 
   useEffect(() => {
     stateRef.current = {
@@ -7170,7 +7171,8 @@ function GirihStage({
 
   useEffect(() => {
     stageSyncDirtyRef.current = true;
-  }, [placed, selectedId, selectedIds, activeGroupId, material, glassSettings, style, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform, mobileViewport, frameMode, framePoints]);
+    stageInvalidateRef.current?.(true);
+  }, [placed, selectedId, selectedIds, activeGroupId, material, glassSettings, style, cameraMode, backgroundColor, edgeColor, edgeThickness, edgeMode, edgeOffsetCount, edgeOffsetDistance, liveShadowsEnabled, modelTransform, mobileViewport, cameraVideoPlaying, cameraVideoPreset, cameraVideoDurationMs, frameMode, framePoints]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -7194,13 +7196,19 @@ function GirihStage({
     }
     updatePaperCameraProjection();
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
+    });
     let rendererPixelRatio = Math.min(window.devicePixelRatio, 2);
     let rendererUsingExportSize = false;
     renderer.setPixelRatio(rendererPixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setClearColor(initialBackground, 1);
     renderer.shadowMap.enabled = !!stateRef.current.liveShadowsEnabled;
+    renderer.shadowMap.autoUpdate = false;
+    let shadowMapDirty = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.toneMappingExposure = 1;
@@ -7212,6 +7220,14 @@ function GirihStage({
     let hdrEnvironmentTarget = null;
     let hdrLoadStarted = false;
     let stageDisposed = false;
+    let frame = null;
+
+    function requestStageRender(shadows = false) {
+      if (stageDisposed) return;
+      if (shadows) shadowMapDirty = true;
+      if (frame == null) frame = requestAnimationFrame(animate);
+    }
+    stageInvalidateRef.current = requestStageRender;
 
     function ensureGlassEnvironment() {
       if (hdrLoadStarted || hdrEnvironmentTarget || stageDisposed) return;
@@ -7234,6 +7250,7 @@ function GirihStage({
           pmremGenerator = null;
           scene.environment = normalizeMaterialName(stateRef.current.material) === 'glass' ? hdrEnvironmentTarget.texture : null;
           stageSyncDirtyRef.current = true;
+          requestStageRender(true);
         },
         undefined,
         (error) => {
@@ -7251,6 +7268,7 @@ function GirihStage({
     controls.maxDistance = 18;
     controls.maxPolarAngle = Math.PI * 0.47;
     controls.target.set(0, 0, 0);
+    controls.addEventListener('change', () => requestStageRender());
     const cameraView = { mode: null };
     const cameraOrbit = { startTime: null, completed: false, lastReportedProgress: -1 };
 
@@ -8068,14 +8086,20 @@ function GirihStage({
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       composer.setPixelRatio(rendererPixelRatio);
       composer.setSize(mount.clientWidth, mount.clientHeight);
+      requestStageRender();
     }
     window.addEventListener('resize', resize);
 
-    let frame;
+    const requestPointerRender = () => requestStageRender();
+    renderer.domElement.addEventListener('pointerdown', requestPointerRender);
+    renderer.domElement.addEventListener('pointermove', requestPointerRender);
+    renderer.domElement.addEventListener('pointerup', requestPointerRender);
     function animate() {
+      frame = null;
       if (stageSyncDirtyRef.current && !drag.active) {
         syncMeshes();
         stageSyncDirtyRef.current = false;
+        shadowMapDirty = true;
       }
       const isCameraVideo = !!stateRef.current.cameraVideoPlaying;
       const exportingCameraVideo = Number.isFinite(stateRef.current.cameraVideoProgressRef?.current);
@@ -8140,17 +8164,23 @@ function GirihStage({
       ssrPass.camera = camera;
       light.shadow.intensity = isGlass ? 0.3 : 1;
       applyLiveShadowState(renderer, light, stageFloor, !isPaper && stateRef.current.liveShadowsEnabled && !isGlass);
-      if (!applyCameraVideoOrbit(performance.now())) controls.update();
+      const cameraAnimating = applyCameraVideoOrbit(performance.now());
+      const controlsChanged = cameraAnimating ? false : controls.update();
       reportViewBounds();
       reportCameraSnapshot();
+      if (shadowMapDirty && renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
       if (ssaoPass.enabled || bloomPass.enabled || ssrPass.enabled) composer.render();
       else renderer.render(scene, camera);
-      frame = requestAnimationFrame(animate);
+      shadowMapDirty = false;
+      if (controlsChanged || cameraAnimating || isCameraVideo || exportingCameraVideo || drag.active || selectionDrag.active) {
+        requestStageRender();
+      }
     }
-    animate();
+    requestStageRender(true);
 
     return () => {
       stageDisposed = true;
+      stageInvalidateRef.current = null;
       cancelAnimationFrame(frame);
       window.removeEventListener('resize', resize);
       renderer.domElement.removeEventListener('pointerdown', pointerDown);
@@ -8158,6 +8188,9 @@ function GirihStage({
       renderer.domElement.removeEventListener('pointerup', pointerUp);
       renderer.domElement.removeEventListener('pointercancel', pointerCancel);
       renderer.domElement.removeEventListener('contextmenu', contextMenu);
+      renderer.domElement.removeEventListener('pointerdown', requestPointerRender);
+      renderer.domElement.removeEventListener('pointermove', requestPointerRender);
+      renderer.domElement.removeEventListener('pointerup', requestPointerRender);
       cancelLongPress(true);
       controls.dispose();
       composer.dispose();
