@@ -60,3 +60,21 @@ export function portalMuqarnasTransform(building, walls, payload = null) {
     scale: [scale, scale, scale],
   };
 }
+
+export function roomDomeMuqarnasTransform(building, walls, payload = null) {
+  const roomWidth = Math.max(1, finite(building.width, 4));
+  const roomLength = Math.max(1, finite(building.length ?? building.depth, 4));
+  const wallTop = Math.max(
+    ...['north', 'east', 'south', 'west'].map((side) => (
+      Math.max(0.05, finite(building.height, 6) + finite(walls.extraHeights?.[side]))
+    )),
+  );
+  const metrics = muqarnasPreviewMetrics(payload || {});
+  const targetWidth = Math.max(0.5, Math.min(roomWidth, roomLength));
+  const scale = Math.max(0.05, targetWidth / Math.max(0.05, metrics.width));
+  return {
+    position: [0, wallTop - metrics.minY * scale, roomLength / 2],
+    rotation: [0, 0, 0],
+    scale: [scale, scale, scale],
+  };
+}

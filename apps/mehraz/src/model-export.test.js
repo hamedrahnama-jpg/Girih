@@ -11,6 +11,7 @@ function exportFixture() {
   scene.archInfillGroup = new THREE.Group();
   scene.zoneDecorationGroup = new THREE.Group();
   scene.placementGroup = new THREE.Group();
+  scene.projectInstanceGroup = new THREE.Group();
 
   const walls = new THREE.Group();
   walls.userData.wallSystem = true;
@@ -33,14 +34,40 @@ class TestFileReader {
 }
 
 test('STL export produces a valid binary model and excludes hidden construction geometry', async () => {
-  const blob = exportFixture().exportStlBlob();
+  const scene = exportFixture();
+  const visualGuide = new THREE.Mesh(new THREE.BoxGeometry(12, 12, 12));
+  visualGuide.userData.isKarbandi = true;
+  visualGuide.userData.isKarbandiVisualGuide = true;
+  scene.buildingGroup.children[0].add(visualGuide);
+  const blob = scene.exportStlBlob();
   const data = await blob.arrayBuffer();
   const view = new DataView(data);
   const triangles = view.getUint32(80, true);
 
   assert.equal(blob.type, 'model/stl');
-  assert.equal(triangles, 12);
+  assert.equal(triangles, 12, 'visible Karbandi display guides must not enter model exports');
   assert.equal(data.byteLength, 84 + triangles * 50);
+});
+
+test('model export includes added project groups with their complete transform', () => {
+  const scene = exportFixture();
+  const instance = new THREE.Group();
+  instance.userData.projectInstanceId = 'instance-1';
+  instance.position.set(8, 0, -2);
+  instance.rotation.y = Math.PI / 4;
+  instance.scale.setScalar(1.5);
+  instance.add(new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial()));
+  scene.projectInstanceGroup.add(instance);
+
+  const exported = scene.createExportModelRoot();
+  let exportedInstance = null;
+  exported.traverse((object) => {
+    if (object.isGroup && Math.abs(object.position.x - 8) < 0.000001) exportedInstance = object;
+  });
+  assert.ok(exportedInstance);
+  assert.deepEqual(exportedInstance.position.toArray(), [8, 0, -2]);
+  assert.ok(Math.abs(exportedInstance.rotation.y - Math.PI / 4) < 0.000001);
+  assert.deepEqual(exportedInstance.scale.toArray(), [1.5, 1.5, 1.5]);
 });
 
 test('STL export handles hydrated Muqarnas runtime placement references', async () => {

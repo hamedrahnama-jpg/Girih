@@ -36,6 +36,12 @@ const VIDEO_BITRATE = 20000000;
 export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'empty', title: 'Site / empty stage', detail: 'Start with the ground and layout only.' },
   { id: 'lower-walls', title: 'Lower vertical walls', detail: 'Raise the south, east, west, and north-side walls together to the arch spring line.' },
+  { id: 'room-karbandi-ribs', title: 'Room Karbandi ribs', detail: 'Construct every Room Karbandi rib one by one without a Portal guide arch.' },
+  { id: 'room-karbandi-roof', title: 'Room Karbandi roof', detail: 'Cover the completed Room rib network panel by panel.' },
+  { id: 'room-transition-cover', title: 'Transition cover', detail: 'Cover the completed Room rib network up to the drum.' },
+  { id: 'room-drum', title: 'Raise the drum', detail: 'Raise the cylindrical dome drum vertically.' },
+  { id: 'room-dome', title: 'Construct the dome', detail: 'Build the dome upward, one brick-height layer at a time.' },
+  { id: 'room-decoration', title: 'Room brick and pattern decoration', detail: 'Apply the configured Room wall, transition, drum, and dome decoration after construction.' },
   { id: 'south-arch-guide', title: 'South arch guide rib', detail: 'Place a narrow guide segment above the south wall.' },
   { id: 'north-arch-guide', title: 'North arch guide rib', detail: 'Place the matching narrow guide segment above the north wall.' },
   { id: 'south-wall', title: 'South wall under arch', detail: 'Fill the vertical south end wall from the spring line up to the pointed arch beneath both guides.' },
@@ -53,6 +59,50 @@ export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'decorate-arch', title: 'Arch decoration', detail: 'Apply imported bonding or Girih pattern to the arch surface.' },
   { id: 'complete', title: 'Complete training model', detail: 'Show the finished wall, arch, Muqarnas, and library decorations.' },
 ]);
+
+const ROOM_CONSTRUCTION_STEP_IDS = new Set([
+  'empty',
+  'lower-walls',
+  'room-karbandi-ribs',
+  'room-karbandi-roof',
+  'room-transition-cover',
+  'room-drum',
+  'room-dome',
+  'room-decoration',
+  'complete',
+]);
+const ROOM_ONLY_CONSTRUCTION_STEP_IDS = new Set([
+  'room-karbandi-ribs',
+  'room-karbandi-roof',
+  'room-transition-cover',
+  'room-drum',
+  'room-dome',
+  'room-decoration',
+]);
+
+export function constructionStepsForBuilding(buildingType = 'iwan') {
+  return CONSTRUCTION_STEPS
+    .map((step, index) => ({ ...step, index }))
+    .filter((entry) => (
+      buildingType === 'room'
+        ? ROOM_CONSTRUCTION_STEP_IDS.has(entry.id)
+        : !ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(entry.id)
+    ))
+    .map((entry) => {
+      if (buildingType !== 'room') return entry;
+      if (entry.id === 'lower-walls') return {
+        ...entry,
+        title: 'Stone base and vertical walls',
+        detail: 'Construct the stone base first, then raise all four Room walls with their door and window openings.',
+      };
+      if (entry.id === 'complete') return {
+        ...entry,
+        title: 'Complete Room model',
+        detail: 'Show the finished Room walls, Karbandi transition, drum, dome, and configured decoration.',
+      };
+      return entry;
+    });
+}
 
 const CONSTRUCTION_STEP_INDEX = Object.freeze(Object.fromEntries(CONSTRUCTION_STEPS.map((step, index) => [step.id, index])));
 const WALL_DECORATION_STEP = Object.freeze({
@@ -75,7 +125,7 @@ const SURFACE_DECORATION_STEP = Object.freeze({
 
 function removeInvisibleExportBranches(root) {
   [...root.children].forEach((child) => {
-    if (!child.visible) {
+    if (!child.visible || child.userData?.isKarbandiVisualGuide === true) {
       root.remove(child);
       return;
     }
@@ -106,6 +156,7 @@ function cloneForModelExport(source) {
       child.userData = {
         ...(userData?.isKarbandi === true ? { isKarbandi: true } : {}),
         ...(userData?.isKarbandiCover === true ? { isKarbandiCover: true } : {}),
+        ...(userData?.isKarbandiVisualGuide === true ? { isKarbandiVisualGuide: true } : {}),
         ...(Number.isFinite(userData?.karbandiRibIndex) ? { karbandiRibIndex: userData.karbandiRibIndex } : {}),
       };
     });
@@ -186,7 +237,7 @@ function clippedGeometryForPlanes(mesh, planes) {
 function bakeKarbandiExportClipping(root) {
   root.updateMatrixWorld(true);
   root.traverse((child) => {
-    if (!child.isMesh || child.userData?.isKarbandi !== true || child.userData?.isKarbandiCover === true) return;
+    if (!child.isMesh || child.userData?.isKarbandi !== true || child.userData?.isKarbandiCover === true || child.userData?.isKarbandiVisualGuide === true) return;
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     const planes = materials.flatMap((material) => material?.clippingPlanes || []);
     const uniquePlanes = planes.filter((plane, index) => planes.findIndex((candidate) => (
@@ -258,32 +309,349 @@ function visibleZoneIdFromHits(hits, boundary) {
   return hit?.object?.userData?.zoneId || null;
 }
 
+function projectInstanceIdFromHits(hits, boundary) {
+  for (const hit of hits) {
+    let current = hit.object;
+    while (current && current !== boundary) {
+      if (current.userData?.projectInstanceId) return current.userData.projectInstanceId;
+      current = current.parent;
+    }
+  }
+  return null;
+}
+
 const DEFAULT_BUILDING = Object.freeze({
   type: 'iwan',
+  buildingType: 'portal',
+  portalPlanShape: 'square',
+  roomPlanShape: 'square',
+  roomPolygonSides: 6,
+  roomExteriorColumnsEnabled: false,
+  roomExteriorColumnProfile: 'circle',
+  roomExteriorColumnRadius: 0.2,
+  roomExteriorSquareColumnRotation: 0,
+  roomExteriorCircleColumnCount: 8,
   width: 4,
   depth: 2,
+  iwanDepth: 2,
+  length: 4,
   height: 6,
   wallThickness: 0.35,
   openingWidth: 4,
+  domeEnabled: true,
+  domeCoverType: 'dome',
+  domeCoverHeight: 5,
+  domeTransition: 'karbandi',
+  domeTransitionHeight: 1.2,
+  domeTransitionCoverEnabled: false,
+  domeDrumHeight: 0.5,
+  domeRise: 2,
+  domeColor: '#49b5ca',
+  domeExtraLegColor: '#49b5ca',
+  domeRingColor: '#49b5ca',
+  domeOuterRingEnabledByCoverType: {
+    dome: true,
+    cone: true,
+    pyramid: true,
+  },
+  domeOuterLegExtensionByCoverType: {
+    dome: 0,
+    cone: 1,
+    pyramid: 1,
+  },
+  domePatternCoverage: 85,
+  innerDomeEnabled: false,
+  innerDomeEnabledByTransition: {
+    karbandi: false,
+    squinch: true,
+    pendentive: false,
+    muqarnas: false,
+  },
+  innerDomeColor: '#b88b5f',
+  innerDomePatternCoverage: 85,
+  betweenDomeSupportWallsEnabled: true,
+  betweenDomeSupportWallsCoverage: 60,
+  domeDrumColor: '#b3a62c',
+  domeArch: {
+    redOffset: 0,
+    redRadius: null,
+    greenOffset: 2,
+    greenHeightOffset: -3.7,
+    legExtension: 0,
+  },
+  innerDomeArch: {
+    redOffset: -0.75,
+    redRadius: null,
+    greenOffset: 0.95,
+    greenHeightOffset: -1.75,
+  },
+  domeTransitionSettings: {
+    karbandi: { ribCount: 16, ribWidth: 0.04 },
+    squinch: {
+      archCount: 8,
+      ribWidth: 0.1,
+      ribDepth: 0.46,
+      ribColor: '#3490b7',
+      legGap: 0,
+      legExtension: 1,
+      openWallArchBays: false,
+      springHeightOffset: 0,
+      redOffset: -0.1,
+      greenOffset: 0.45,
+      greenHeightOffset: -0.65,
+    },
+    pendentive: { curvature: 1.45, subdivisions: 10 },
+    muqarnas: { courseCount: 6, courseWidth: 0.045 },
+  },
   wallColor: '#d8b678',
   groundColor: '#f4e7c2',
 });
 
 export function normalizeBuilding(value = {}) {
+  const buildingTypes = new Set(['portal', 'room', 'vestibule']);
+  const savedBuildingType = buildingTypes.has(value.buildingType) ? value.buildingType : null;
+  const buildingType = value.type === 'vestibule' || (value.type === 'room' && savedBuildingType === 'vestibule')
+    ? 'vestibule'
+    : value.type === 'room'
+      ? 'room'
+      : value.type === 'iwan'
+        ? 'portal'
+        : savedBuildingType || DEFAULT_BUILDING.buildingType;
+  const type = buildingType === 'portal' ? 'iwan' : 'room';
+  const roomPlanShapes = new Set(['square', 'octagon', 'circle', 'polygon']);
+  const portalPlanShapes = new Set(['square', 'octagon', 'circle']);
+  const portalPlanShape = portalPlanShapes.has(value.portalPlanShape)
+    ? value.portalPlanShape
+    : DEFAULT_BUILDING.portalPlanShape;
+  const roomPlanShape = buildingType === 'vestibule'
+    ? 'octagon'
+    : roomPlanShapes.has(value.roomPlanShape)
+      ? value.roomPlanShape
+      : DEFAULT_BUILDING.roomPlanShape;
+  const domeCoverTypes = new Set(['dome', 'cone', 'pyramid']);
+  let domeCoverType = domeCoverTypes.has(value.domeCoverType) ? value.domeCoverType : DEFAULT_BUILDING.domeCoverType;
+  if (roomPlanShape === 'circle' && domeCoverType === 'pyramid') domeCoverType = 'dome';
+  const domeOuterRingEnabledByCoverType = Object.fromEntries([...domeCoverTypes].map((coverType) => [
+    coverType,
+    value.domeOuterRingEnabledByCoverType?.[coverType] == null
+      ? DEFAULT_BUILDING.domeOuterRingEnabledByCoverType[coverType]
+      : value.domeOuterRingEnabledByCoverType[coverType] === true,
+  ]));
+  const domeTransitions = new Set(['karbandi', 'squinch', 'pendentive', 'muqarnas']);
+  const domeTransition = buildingType === 'vestibule'
+    ? 'karbandi'
+    : domeTransitions.has(value.domeTransition) ? value.domeTransition : DEFAULT_BUILDING.domeTransition;
+  const roomLength = Math.max(2, Math.min(30, Number(value.length ?? (type === 'room' ? value.depth : null)) || DEFAULT_BUILDING.length));
+  const iwanDepth = Math.max(2, Math.min(30, Number(value.iwanDepth ?? (type === 'iwan' ? value.depth : null)) || DEFAULT_BUILDING.iwanDepth));
+  const domeArch = value.domeArch || {};
+  const hasPerCoverOuterLegSettings = value.domeOuterLegExtensionByCoverType
+    && typeof value.domeOuterLegExtensionByCoverType === 'object';
+  const domeOuterLegExtensionByCoverType = Object.fromEntries([...domeCoverTypes].map((coverType) => [
+    coverType,
+    Math.max(0, Math.min(10, Number.isFinite(Number(value.domeOuterLegExtensionByCoverType?.[coverType]))
+      ? Number(value.domeOuterLegExtensionByCoverType[coverType])
+      : DEFAULT_BUILDING.domeOuterLegExtensionByCoverType[coverType])),
+  ]));
+  // Migrate the former shared input to the cover type active in that project.
+  if (!hasPerCoverOuterLegSettings && Number.isFinite(Number(domeArch.legExtension))) {
+    domeOuterLegExtensionByCoverType[domeCoverType] = Math.max(0, Math.min(10, Number(domeArch.legExtension)));
+  }
+  const innerDomeArch = value.innerDomeArch || {};
+  const domeTransitionSettings = value.domeTransitionSettings || {};
+  const hasPerTransitionInnerDomeSettings = value.innerDomeEnabledByTransition
+    && typeof value.innerDomeEnabledByTransition === 'object';
+  const innerDomeEnabledByTransition = Object.fromEntries([...domeTransitions].map((transition) => [
+    transition,
+    hasPerTransitionInnerDomeSettings
+      && value.innerDomeEnabledByTransition[transition] != null
+      ? value.innerDomeEnabledByTransition[transition] === true
+      : DEFAULT_BUILDING.innerDomeEnabledByTransition[transition] === true,
+  ]));
+  // Migrate the former single checkbox without coupling future transition
+  // choices: its saved value belongs only to the transition active in that file.
+  if (!hasPerTransitionInnerDomeSettings && value.innerDomeEnabled != null) {
+    innerDomeEnabledByTransition[domeTransition] = value.innerDomeEnabled === true;
+  }
   const normalized = {
     ...DEFAULT_BUILDING,
     ...value,
+    type,
+    buildingType,
+    portalPlanShape,
+    roomPlanShape,
+    roomPolygonSides: Math.round(Math.max(3, Math.min(32,
+      Number(value.roomPolygonSides) || DEFAULT_BUILDING.roomPolygonSides))),
+    roomExteriorColumnsEnabled: value.roomExteriorColumnsEnabled === true,
+    roomExteriorColumnProfile: value.roomExteriorColumnProfile === 'square' ? 'square' : 'circle',
+    roomExteriorColumnRadius: Math.max(0.05, Math.min(2,
+      Number(value.roomExteriorColumnRadius) || DEFAULT_BUILDING.roomExteriorColumnRadius)),
+    roomExteriorSquareColumnRotation: Math.max(-360, Math.min(360,
+      Number(value.roomExteriorSquareColumnRotation) || DEFAULT_BUILDING.roomExteriorSquareColumnRotation)),
+    roomExteriorCircleColumnCount: Math.round(Math.max(3, Math.min(64,
+      Number(value.roomExteriorCircleColumnCount) || DEFAULT_BUILDING.roomExteriorCircleColumnCount))),
     width: Math.max(2, Math.min(30, Number(value.width) || DEFAULT_BUILDING.width)),
-    depth: Math.max(2, Math.min(30, Number(value.depth) || DEFAULT_BUILDING.depth)),
+    depth: type === 'room' ? roomLength : iwanDepth,
+    iwanDepth,
+    length: roomLength,
     height: Math.max(2, Math.min(20, Number(value.height) || DEFAULT_BUILDING.height)),
     wallThickness: Math.max(0.1, Math.min(1.5, Number(value.wallThickness) || DEFAULT_BUILDING.wallThickness)),
     openingWidth: Math.max(1, Math.min(20, Number(value.openingWidth) || DEFAULT_BUILDING.openingWidth)),
+    domeEnabled: value.domeEnabled == null ? DEFAULT_BUILDING.domeEnabled : value.domeEnabled === true,
+    domeCoverType,
+    domeCoverHeight: Math.max(0.2, Math.min(20, Number(value.domeCoverHeight) || DEFAULT_BUILDING.domeCoverHeight)),
+    domeTransition,
+    domeTransitionHeight: Math.max(0.2, Math.min(10, Number(value.domeTransitionHeight) || DEFAULT_BUILDING.domeTransitionHeight)),
+    domeTransitionCoverEnabled: roomPlanShape !== 'square' && buildingType !== 'vestibule'
+      ? false
+      : value.domeTransitionCoverEnabled == null
+        ? DEFAULT_BUILDING.domeTransitionCoverEnabled
+        : value.domeTransitionCoverEnabled === true,
+    domeDrumHeight: Math.max(0, Math.min(10, Number.isFinite(Number(value.domeDrumHeight)) ? Number(value.domeDrumHeight) : DEFAULT_BUILDING.domeDrumHeight)),
+    domeRise: Math.max(0.2, Math.min(20, Number(value.domeRise) || DEFAULT_BUILDING.domeRise)),
+    domeColor: /^#[0-9a-f]{6}$/i.test(value.domeColor || '') ? value.domeColor : DEFAULT_BUILDING.domeColor,
+    domeExtraLegColor: /^#[0-9a-f]{6}$/i.test(value.domeExtraLegColor || '')
+      ? value.domeExtraLegColor
+      : /^#[0-9a-f]{6}$/i.test(value.domeColor || '') ? value.domeColor : DEFAULT_BUILDING.domeExtraLegColor,
+    domeRingColor: /^#[0-9a-f]{6}$/i.test(value.domeRingColor || '')
+      ? value.domeRingColor
+      : DEFAULT_BUILDING.domeRingColor,
+    domeOuterRingEnabledByCoverType,
+    domeOuterLegExtensionByCoverType,
+    domePatternCoverage: Math.max(0, Math.min(100, Number.isFinite(Number(value.domePatternCoverage))
+      ? Number(value.domePatternCoverage)
+      : DEFAULT_BUILDING.domePatternCoverage)),
+    innerDomeEnabledByTransition,
+    innerDomeEnabled: innerDomeEnabledByTransition[domeTransition] === true,
+    innerDomeColor: /^#[0-9a-f]{6}$/i.test(value.innerDomeColor || '')
+      ? value.innerDomeColor
+      : DEFAULT_BUILDING.innerDomeColor,
+    innerDomePatternCoverage: Math.max(0, Math.min(100, Number.isFinite(Number(value.innerDomePatternCoverage))
+      ? Number(value.innerDomePatternCoverage)
+      : DEFAULT_BUILDING.innerDomePatternCoverage)),
+    betweenDomeSupportWallsEnabled: value.betweenDomeSupportWallsEnabled == null
+      ? DEFAULT_BUILDING.betweenDomeSupportWallsEnabled
+      : value.betweenDomeSupportWallsEnabled === true,
+    betweenDomeSupportWallsCoverage: Math.max(0, Math.min(100, Number.isFinite(Number(value.betweenDomeSupportWallsCoverage))
+      ? Number(value.betweenDomeSupportWallsCoverage)
+      : DEFAULT_BUILDING.betweenDomeSupportWallsCoverage)),
+    domeDrumColor: /^#[0-9a-f]{6}$/i.test(value.domeDrumColor || '') ? value.domeDrumColor : DEFAULT_BUILDING.domeDrumColor,
+    domeArch: {
+      redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.redOffset)) ? Number(domeArch.redOffset) : DEFAULT_BUILDING.domeArch.redOffset)),
+      redRadius: domeArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(domeArch.redRadius) || 1)),
+      greenOffset: Math.max(0.05, Math.min(20, Number(domeArch.greenOffset) || DEFAULT_BUILDING.domeArch.greenOffset)),
+      greenHeightOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.greenHeightOffset)) ? Number(domeArch.greenHeightOffset) : DEFAULT_BUILDING.domeArch.greenHeightOffset)),
+      legExtension: domeOuterLegExtensionByCoverType[domeCoverType],
+    },
+    innerDomeArch: {
+      redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(innerDomeArch.redOffset)) ? Number(innerDomeArch.redOffset) : DEFAULT_BUILDING.innerDomeArch.redOffset)),
+      redRadius: innerDomeArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(innerDomeArch.redRadius) || 1)),
+      greenOffset: Math.max(0.05, Math.min(20, Number(innerDomeArch.greenOffset) || DEFAULT_BUILDING.innerDomeArch.greenOffset)),
+      greenHeightOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(innerDomeArch.greenHeightOffset)) ? Number(innerDomeArch.greenHeightOffset) : DEFAULT_BUILDING.innerDomeArch.greenHeightOffset)),
+    },
+    domeTransitionSettings: {
+      karbandi: {
+        ribCount: Math.round(Math.max(4, Math.min(64, Number(domeTransitionSettings.karbandi?.ribCount) || DEFAULT_BUILDING.domeTransitionSettings.karbandi.ribCount))),
+        ribWidth: Math.max(0.01, Math.min(0.25, Number(domeTransitionSettings.karbandi?.ribWidth) || DEFAULT_BUILDING.domeTransitionSettings.karbandi.ribWidth)),
+      },
+      squinch: {
+        // A Squinch transition is always the eight-arch system. Keep the old
+        // facetCount alias readable so saved projects migrate without becoming
+        // the former generic faceted transition.
+        archCount: 8,
+        facetCount: 8,
+        ribWidth: Math.max(0.01, Math.min(1, Number(domeTransitionSettings.squinch?.ribWidth) || DEFAULT_BUILDING.domeTransitionSettings.squinch.ribWidth)),
+        ribDepth: Math.max(0.01, Math.min(1, Number(domeTransitionSettings.squinch?.ribDepth) || DEFAULT_BUILDING.domeTransitionSettings.squinch.ribDepth)),
+        ribColor: /^#[0-9a-f]{6}$/i.test(domeTransitionSettings.squinch?.ribColor || '')
+          ? domeTransitionSettings.squinch.ribColor
+          : DEFAULT_BUILDING.domeTransitionSettings.squinch.ribColor,
+        legGap: 0,
+        legExtension: Math.max(0, Math.min(10, Number.isFinite(Number(domeTransitionSettings.squinch?.legExtension))
+          ? Number(domeTransitionSettings.squinch.legExtension)
+          : DEFAULT_BUILDING.domeTransitionSettings.squinch.legExtension)),
+        openWallArchBays: domeTransitionSettings.squinch?.openWallArchBays === true,
+        springHeightOffset: Math.max(-10, Math.min(10, Number.isFinite(Number(domeTransitionSettings.squinch?.springHeightOffset))
+          ? Number(domeTransitionSettings.squinch.springHeightOffset)
+          : DEFAULT_BUILDING.domeTransitionSettings.squinch.springHeightOffset)),
+        redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeTransitionSettings.squinch?.redOffset))
+          ? Number(domeTransitionSettings.squinch.redOffset)
+          : DEFAULT_BUILDING.domeTransitionSettings.squinch.redOffset)),
+        greenOffset: Math.max(0.05, Math.min(20, Number(domeTransitionSettings.squinch?.greenOffset) || DEFAULT_BUILDING.domeTransitionSettings.squinch.greenOffset)),
+        greenHeightOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeTransitionSettings.squinch?.greenHeightOffset))
+          ? Number(domeTransitionSettings.squinch.greenHeightOffset)
+          : DEFAULT_BUILDING.domeTransitionSettings.squinch.greenHeightOffset)),
+      },
+      pendentive: {
+        curvature: Math.max(0.35, Math.min(3, Number(domeTransitionSettings.pendentive?.curvature) || DEFAULT_BUILDING.domeTransitionSettings.pendentive.curvature)),
+        subdivisions: Math.round(Math.max(3, Math.min(32, Number(domeTransitionSettings.pendentive?.subdivisions) || DEFAULT_BUILDING.domeTransitionSettings.pendentive.subdivisions))),
+      },
+      muqarnas: {
+        courseCount: Math.round(Math.max(3, Math.min(16, Number(domeTransitionSettings.muqarnas?.courseCount) || DEFAULT_BUILDING.domeTransitionSettings.muqarnas.courseCount))),
+        courseWidth: Math.max(0.01, Math.min(0.2, Number(domeTransitionSettings.muqarnas?.courseWidth) || DEFAULT_BUILDING.domeTransitionSettings.muqarnas.courseWidth)),
+      },
+    },
   };
+  delete normalized.roomKarbandiOctagonWallsVisible;
   if (normalized.type === 'iwan') normalized.openingWidth = normalized.width;
   return normalized;
 }
 
+export function buildingForSelectedType(value, buildingType, wallExtraHeights = {}) {
+  const type = buildingType === 'portal' ? 'iwan' : 'room';
+  const roomPlanShape = buildingType === 'vestibule'
+    ? 'octagon'
+    : buildingType === 'room'
+      ? 'square'
+      : value.roomPlanShape;
+  if (buildingType !== 'vestibule') {
+    return normalizeBuilding({
+      ...value,
+      type,
+      buildingType,
+      roomPlanShape,
+      portalPlanShape: buildingType === 'portal' ? 'square' : value.portalPlanShape,
+    });
+  }
+
+  const coverTypes = ['dome', 'cone', 'pyramid'];
+  let next = normalizeBuilding({
+    ...value,
+    type,
+    buildingType,
+    roomPlanShape,
+    domeDrumHeight: 0,
+    domePatternCoverage: 85,
+    domeOuterRingEnabledByCoverType: Object.fromEntries(coverTypes.map((coverType) => [coverType, false])),
+    domeArch: {
+      ...value.domeArch,
+      redOffset: -1.2,
+      greenOffset: 1.75,
+    },
+  });
+  const highestWallTop = Math.max(...['north', 'east', 'south', 'west'].map((side) => (
+    next.height + (Number(wallExtraHeights?.[side]) || 0)
+  )));
+  const outerDomeSpringHeight = highestWallTop
+    + next.domeTransitionHeight
+    + next.domeDrumHeight
+    + (next.domeArch.legExtension || 0);
+  next = normalizeBuilding({
+    ...next,
+    domeArch: {
+      ...next.domeArch,
+      greenHeightOffset: 2 - outerDomeSpringHeight,
+    },
+  });
+  return next;
+}
+
 export function buildingSurfaces(building) {
+  if (building?.type === 'room' && (building.roomPlanShape || 'square') !== 'square') {
+    return [
+      { id: 'room_plan_interior', label: 'All interior room walls', kind: 'wall' },
+      { id: 'room_plan_exterior', label: 'All exterior room walls', kind: 'wall' },
+      { id: 'floor', label: 'Floor', kind: 'floor' },
+    ];
+  }
   const surfaces = [
     { id: 'north_interior', label: 'North interior wall', kind: 'wall' },
     { id: 'east_interior', label: 'East interior wall', kind: 'wall' },
@@ -301,11 +669,13 @@ export function surfaceIdForWallSide(side, building) {
   if (normalized === 'east') return 'east_interior';
   if (normalized === 'west') return 'west_interior';
   if (normalized === 'south') return 'south_interior';
+  if (normalized === 'room_plan_interior' || normalized === 'room_plan_exterior') return normalized;
   return null;
 }
 
-export function wallSideForSurfaceId(surfaceId) {
-  if (surfaceId === 'north_interior') return 'north_sides';
+export function wallSideForSurfaceId(surfaceId, building = null) {
+  if (surfaceId === 'room_plan_interior' || surfaceId === 'room_plan_exterior') return surfaceId;
+  if (surfaceId === 'north_interior') return building?.type === 'room' ? 'north' : 'north_sides';
   if (surfaceId === 'east_interior') return 'east';
   if (surfaceId === 'west_interior') return 'west';
   if (surfaceId === 'south_interior' || surfaceId === 'south_facade') return 'south';
@@ -1117,6 +1487,84 @@ function placementPreview(placement) {
   return group;
 }
 
+function projectInstancePreview(instance, depth = 0) {
+  const root = new THREE.Group();
+  root.name = instance.name || 'Added Mehraz project';
+  root.userData.projectInstanceId = instance.id;
+  root.userData.projectAssetId = instance.assetId || null;
+  root.userData.projectVersionId = instance.versionId || null;
+  root.userData.isProjectInstance = true;
+  const payload = instance.payload || {};
+  const building = normalizeBuilding(payload.building || {});
+  const walls = normalizeWallSystem(payload.walls || {}, building);
+  const westX = -building.width / 2 - (walls.sideOffsets?.west || 0);
+  const eastX = building.width / 2 + (walls.sideOffsets?.east || 0);
+  const northZ = -building.depth / 2 - (walls.sideOffsets?.north || 0);
+  const southZ = building.depth / 2 + (walls.sideOffsets?.south || 0);
+  root.userData.sectionCenterX = (westX + eastX) / 2;
+  root.userData.sectionCenterZ = (northZ + southZ) / 2;
+  const wallSystem = buildWallSystem(building, walls, Array.isArray(payload.zones) ? payload.zones : []);
+  root.add(wallSystem);
+  (Array.isArray(payload.placements) ? payload.placements : []).forEach((placement) => {
+    if (!placement || placement.generatedFromZone) return;
+    const preview = placementPreview(placement);
+    const baseTransform = placement.transform || defaultPlacementTransform(placement.surfaceId, building, walls);
+    const transform = placement.options?.constrain === false
+      ? baseTransform
+      : constrainPlacementTransform(baseTransform, placement.surfaceId, building, placement.options, walls);
+    preview.position.fromArray(transform.position || [0, 0, 0]);
+    preview.rotation.set(...(transform.rotation || [0, 0, 0]).map(THREE.MathUtils.degToRad));
+    preview.scale.fromArray(transform.scale || [1, 1, 1]);
+    preview.userData.placementId = null;
+    preview.userData.projectInstanceMember = true;
+    root.add(preview);
+  });
+  (Array.isArray(payload.zones) ? payload.zones : []).forEach((zone) => {
+    const world = zoneWorldTransform(zone, building, walls);
+    const pattern = zonePatternTexture(zone);
+    if (pattern) {
+      const mapTransform = zonePatternMapTransform(zone, world.bounds, pattern.unitWidth, pattern.unitHeight);
+      pattern.texture.repeat.fromArray(mapTransform.repeat);
+      pattern.texture.offset.fromArray(mapTransform.offset);
+      const decoration = new THREE.Mesh(
+        new THREE.PlaneGeometry(world.bounds.width, world.bounds.height),
+        new THREE.MeshStandardMaterial({
+          map: pattern.texture,
+          color: '#ffffff',
+          roughness: 0.84,
+          metalness: 0,
+          alphaTest: zone.assetType === 'girih_pattern' ? 0.01 : 0,
+          side: THREE.FrontSide,
+        }),
+      );
+      decoration.position.fromArray(world.position);
+      decoration.rotation.set(...world.rotation.map(THREE.MathUtils.degToRad));
+      decoration.translateZ(0.002);
+      decoration.userData.projectInstanceMember = true;
+      root.add(decoration);
+    }
+    const soldiers = zoneSoldierCourses(zone, world, walls);
+    if (soldiers) {
+      soldiers.userData.projectInstanceMember = true;
+      root.add(soldiers);
+    }
+  });
+  if (depth < 4) {
+    (Array.isArray(payload.projectInstances) ? payload.projectInstances : []).forEach((childInstance) => {
+      if (!childInstance?.payload) return;
+      const child = projectInstancePreview(childInstance, depth + 1);
+      const childTransform = childInstance.transform || {};
+      child.position.fromArray(childTransform.position || [0, 0, 0]);
+      child.rotation.set(...(childTransform.rotation || [0, 0, 0]).map(THREE.MathUtils.degToRad));
+      child.scale.fromArray(childTransform.scale || [1, 1, 1]);
+      child.userData.projectInstanceId = null;
+      child.userData.projectInstanceMember = true;
+      root.add(child);
+    });
+  }
+  return root;
+}
+
 function zoneClipPlanes(clip = {}) {
   const bounds = clip.bounds || {};
   const u = finite(bounds.u);
@@ -1406,7 +1854,7 @@ export function zoneWorldTransform(zone, building, wallValue = null) {
   // as a real decorative skin in front of the structural face, while gypsum is
   // a deeper interior finish. Use the outermost active finish instead of a
   // polygon depth override, which could make zones leak through return walls.
-  const wallSide = wallSideForSurfaceId(surfaceId);
+  const wallSide = wallSideForSurfaceId(surfaceId, b);
   const sideBond = wallSide ? walls.bricks?.sideBonds?.[wallSide] : null;
   const hasDecorativeBond = walls.bricks?.enabled !== false
     && sideBond
@@ -1464,7 +1912,7 @@ export function zoneSoldierCourses(zone, world, walls) {
   const count = Math.max(1, Math.floor((world.bounds.width + mortar) / (brickShort + mortar)));
   const projection = Math.max(0.018, Math.min(0.06, finite(walls.northBoundary?.depth, 0.03)));
   const courseAxis = ['east_interior', 'west_interior'].includes(zone.surfaceId) ? 'z' : 'x';
-  const wallSide = wallSideForSurfaceId(zone.surfaceId) || 'south';
+  const wallSide = zone.wallSide || wallSideForSurfaceId(zone.surfaceId) || 'south';
   const courseMaterial = raisedBorderMaterial(
     walls,
     wallSide,
@@ -1507,9 +1955,12 @@ export class MehrazScene {
   constructor(container, callbacks = {}) {
     this.container = container;
     this.callbacks = callbacks;
-    this.building = normalizeBuilding();
-    this.walls = normalizeWallSystem({}, this.building);
-    this.stageRenderMode = 'textured';
+    // Callers restoring a project can provide its architecture up front. This
+    // avoids synchronously constructing and discarding the large default Iwan
+    // before the requested Room scene is built.
+    this.building = normalizeBuilding(callbacks.initialBuilding);
+    this.walls = normalizeWallSystem(callbacks.initialWalls || {}, this.building);
+    this.stageRenderMode = callbacks.initialStageRenderMode === 'flat' ? 'flat' : 'textured';
     this.nightLights = [];
     this.selectedNightLightId = null;
     this.nightPreview = false;
@@ -1520,18 +1971,32 @@ export class MehrazScene {
     this.constructionStepProgress = 1;
     this.constructionTimer = null;
     this.constructionAnimationFrame = null;
+    this.constructionWatchdog = null;
+    this.constructionRunId = 0;
     this.constructionGuideKey = null;
     this.constructionTierCache = new WeakMap();
+    this.transformHandleActive = false;
     this.placements = [];
+    this.projectInstances = [];
     this.zones = [];
     this.selectedId = null;
+    this.selectedProjectInstanceId = null;
     this.selectedZoneId = null;
     this.selectedWallSide = null;
+    this.selectedWallFace = null;
     this.selectedOpeningGuide = null;
     this.selectedKarbandiRibIndex = null;
     this.karbandiReferenceEditing = false;
     this.karbandiRibArchEditing = false;
+    this.squinchArchEditing = false;
     this.wallSurfaceHighlight = null;
+    this.sectionViewEnabled = false;
+    this.sectionViewAxis = 'x';
+    this.sectionViewCameraState = null;
+    this.sectionMaterialClipping = new Map();
+    this.sectionClipPlane = null;
+    this.sectionCapGroup = new THREE.Group();
+    this.sectionCapGroup.name = 'Room section cut faces';
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#cfe7f2');
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 160);
@@ -1576,8 +2041,8 @@ export class MehrazScene {
     this.transformControls.addEventListener('objectChange', () => this.invalidate(true));
     this.transformControls.addEventListener('mouseUp', () => {
       const object = this.transformControls.object;
-      if (!object?.userData?.placementId) return;
-      this.callbacks.onTransform?.(object.userData.placementId, {
+      if (!object) return;
+      const transform = {
         position: object.position.toArray(),
         rotation: [
           THREE.MathUtils.radToDeg(object.rotation.x),
@@ -1585,7 +2050,12 @@ export class MehrazScene {
           THREE.MathUtils.radToDeg(object.rotation.z),
         ],
         scale: object.scale.toArray(),
-      });
+      };
+      if (object?.userData?.projectInstanceId) {
+        this.callbacks.onProjectInstanceTransform?.(object.userData.projectInstanceId, transform);
+      } else if (object?.userData?.placementId) {
+        this.callbacks.onTransform?.(object.userData.placementId, transform);
+      }
     });
     this.transformControls.addEventListener('mouseDown', () => {
       this.transformHandleActive = true;
@@ -1602,7 +2072,10 @@ export class MehrazScene {
     // Front/right daylight: from above the portal side toward the building.
     sun.position.set(8, 14, -9);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    // A 4096² shadow map rebuilt during construction can monopolize the GPU
+    // long enough to starve pointer and button events. 2048² remains crisp at
+    // the stage scale while keeping animated Room construction responsive.
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.bias = -0.00002;
     sun.shadow.normalBias = 0.08;
     sun.shadow.camera.left = -18;
@@ -1623,19 +2096,26 @@ export class MehrazScene {
     this.zoneDecorationGroup.name = 'Zone assigned decorations';
     this.zoneGroup = new THREE.Group();
     this.placementGroup = new THREE.Group();
+    this.projectInstanceGroup = new THREE.Group();
+    this.projectInstanceGroup.name = 'Added Mehraz project instances';
     this.nightLightGroup = new THREE.Group();
     this.nightLightGroup.name = 'Night spotlight placement guides';
-    this.scene.add(this.buildingGroup, this.archInfillGroup, this.constructionGuideGroup, this.zoneDecorationGroup, this.zoneGroup, this.placementGroup, this.placementMaskGroup, this.nightLightGroup);
+    this.scene.add(this.buildingGroup, this.archInfillGroup, this.constructionGuideGroup, this.zoneDecorationGroup, this.zoneGroup, this.placementGroup, this.projectInstanceGroup, this.placementMaskGroup, this.nightLightGroup, this.sectionCapGroup);
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
     this.onPointerUp = this.onPointerUp.bind(this);
+    this.onDoubleClick = this.onDoubleClick.bind(this);
+    this.onInteractionCancel = () => this.ensureConstructionInteractionAvailable(true);
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.addEventListener('dblclick', this.onDoubleClick);
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onInteractionCancel);
+    window.addEventListener('blur', this.onInteractionCancel);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.rebuildBuilding();
@@ -1674,7 +2154,7 @@ export class MehrazScene {
 
   applyPureSolidWallMaterials(root) {
     root?.traverse((child) => {
-      if (!child.isMesh) return;
+      if (!child.isMesh || child.userData?.isKarbandiVisualGuide === true) return;
       const oldMaterials = Array.isArray(child.material) ? child.material : [child.material];
       const side = oldMaterials[0]?.side ?? THREE.DoubleSide;
       child.material = configureStoneBaseMaterial(new THREE.MeshStandardMaterial({
@@ -1716,6 +2196,7 @@ export class MehrazScene {
 
   syncConstructionGuides(rank, wallSystem) {
     const karbandiEnabled = this.walls.karbandi?.enabled === true;
+    const northArchShiftY = Math.max(0, Number(wallSystem?.userData?.portalKarbandiNorthWallShiftY) || 0);
     const southGuideRank = CONSTRUCTION_STEP_INDEX['south-arch-guide'];
     const northGuideRank = CONSTRUCTION_STEP_INDEX['north-arch-guide'];
     const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
@@ -1723,7 +2204,7 @@ export class MehrazScene {
     if (karbandiEnabled) {
       const showNorthGuide = rank >= northGuideRank && rank <= northUpperRank;
       const guideKey = showNorthGuide
-        ? `karbandi-north:${this.building.width}:${this.building.depth}:${this.building.wallThickness}:${JSON.stringify(this.walls.pointedArch)}`
+        ? `karbandi-north:${this.building.width}:${this.building.depth}:${this.building.wallThickness}:${northArchShiftY}:${JSON.stringify(this.walls.pointedArch)}`
         : 'none';
       if (this.constructionGuideKey === guideKey) return;
       this.clearConstructionGuides();
@@ -1744,7 +2225,7 @@ export class MehrazScene {
       });
     }
     const guideKey = guideEnds.length
-      ? `${guideEnds.join('+')}:${source?.uuid || 'north-wall'}:${this.building.width}:${this.building.depth}:${this.building.wallThickness}:${JSON.stringify(this.walls.pointedArch)}`
+      ? `${guideEnds.join('+')}:${source?.uuid || 'north-wall'}:${this.building.width}:${this.building.depth}:${this.building.wallThickness}:${northArchShiftY}:${JSON.stringify(this.walls.pointedArch)}`
       : 'none';
     if (this.constructionGuideKey === guideKey) return;
     this.clearConstructionGuides();
@@ -1762,7 +2243,10 @@ export class MehrazScene {
     const sampleCount = 96;
     const innerPoints = Array.from({ length: sampleCount + 1 }, (_, index) => {
       const x = THREE.MathUtils.lerp(metrics.openingLeft, metrics.openingRight, index / sampleCount);
-      return new THREE.Vector2(x, wallArchHeightAtX(this.building, this.walls, x) ?? metrics.sideTop);
+      return new THREE.Vector2(
+        x,
+        (wallArchHeightAtX(this.building, this.walls, x) ?? metrics.baseSideTop) + metrics.archShiftY,
+      );
     });
     const guideDepth = Math.max(0.1, Number(this.building.wallThickness) || 0.4);
     const bandHeight = guideDepth;
@@ -1807,6 +2291,7 @@ export class MehrazScene {
     guide.userData.guideArchThickness = guideDepth;
     guide.userData.guideArchBandThickness = bandHeight;
     guide.userData.guideArchProfile = 'uniform-normal-offset';
+    guide.userData.guideArchShiftY = metrics.archShiftY;
     guide.userData.guideArchWidthSamples = innerPoints.map((point, index) => point.distanceTo(outerPoints[index]));
     return guide;
   }
@@ -1856,6 +2341,11 @@ export class MehrazScene {
       if (!child.isMesh || !child.userData?.constructionOriginalMaterial) return;
       const currentMaterials = Array.isArray(child.material) ? child.material : [child.material];
       child.material = child.userData.constructionOriginalMaterial;
+      if (Object.hasOwn(child.userData, 'constructionOriginalCustomDepthMaterial')) {
+        child.customDepthMaterial?.dispose?.();
+        child.customDepthMaterial = child.userData.constructionOriginalCustomDepthMaterial;
+        delete child.userData.constructionOriginalCustomDepthMaterial;
+      }
       currentMaterials.filter(Boolean).forEach((material) => {
         if (material !== child.userData.constructionOriginalMaterial) material.dispose?.();
       });
@@ -1873,9 +2363,18 @@ export class MehrazScene {
       const original = child.material;
       const materials = Array.isArray(original) ? original : [original];
       child.userData.constructionOriginalMaterial = original;
+      const constructionClone = (material) => {
+        const clone = material.clone();
+        // Material.clone() intentionally omits shader callbacks in Three.js.
+        // Preserve architectural shaders (especially the stone skirt and dome
+        // mapping) while temporary construction clipping is active.
+        clone.onBeforeCompile = material.onBeforeCompile;
+        clone.customProgramCacheKey = material.customProgramCacheKey;
+        return clone;
+      };
       child.material = Array.isArray(original)
-        ? materials.map((material) => material.clone())
-        : materials[0].clone();
+        ? materials.map(constructionClone)
+        : constructionClone(materials[0]);
     }
     return Array.isArray(child.material) ? child.material : [child.material];
   }
@@ -1907,10 +2406,20 @@ export class MehrazScene {
         : [];
       // Portal clipping is part of the rib design, not part of the animation.
       // Keep those planes active while adding the temporary reveal plane.
-      material.clippingPlanes = [...permanentPlanes, plane];
+      const existingRevealPlane = material.userData?.constructionRevealPlane;
+      const canReuseRevealPlane = existingRevealPlane
+        && material.clippingPlanes?.length === permanentPlanes.length + 1
+        && material.clippingPlanes[material.clippingPlanes.length - 1] === existingRevealPlane;
+      if (canReuseRevealPlane) {
+        existingRevealPlane.copy(plane);
+      } else {
+        const revealPlane = plane.clone();
+        material.clippingPlanes = [...permanentPlanes, revealPlane];
+        material.userData.constructionRevealPlane = revealPlane;
+        material.needsUpdate = true;
+      }
       material.clipIntersection = false;
       material.clipShadows = permanentMaterial?.clipShadows === true;
-      material.needsUpdate = true;
     });
   }
 
@@ -1921,7 +2430,10 @@ export class MehrazScene {
     const sampleCount = 96;
     const points = Array.from({ length: sampleCount + 1 }, (_, index) => {
       const x = THREE.MathUtils.lerp(metrics.openingLeft, metrics.centerX, index / sampleCount);
-      return new THREE.Vector2(x, wallArchHeightAtX(this.building, this.walls, x) ?? metrics.sideTop);
+      return new THREE.Vector2(
+        x,
+        (wallArchHeightAtX(this.building, this.walls, x) ?? metrics.baseSideTop) + metrics.archShiftY,
+      );
     });
     const cumulative = [0];
     for (let index = 1; index < points.length; index += 1) {
@@ -1956,15 +2468,32 @@ export class MehrazScene {
 
   clearConstructionClip(child) {
     if (!child.isMesh) return;
+    // A mesh that has never received an animation clip already owns its final
+    // material and permanent clipping planes. Do not clone it merely because
+    // a later construction stage needs it visible.
+    if (!child.userData?.constructionOriginalMaterial) return;
     const materials = this.prepareConstructionMaterial(child);
     materials.forEach((material, index) => {
       const permanentMaterial = this.permanentConstructionMaterial(child, index);
-      material.clippingPlanes = Array.isArray(permanentMaterial?.clippingPlanes)
+      const targetPlanes = Array.isArray(permanentMaterial?.clippingPlanes)
         ? [...permanentMaterial.clippingPlanes]
         : null;
-      material.clipIntersection = permanentMaterial?.clipIntersection === true;
-      material.clipShadows = permanentMaterial?.clipShadows === true;
-      material.needsUpdate = true;
+      const targetIntersection = permanentMaterial?.clipIntersection === true;
+      const targetClipShadows = permanentMaterial?.clipShadows === true;
+      const currentPlanes = material.clippingPlanes;
+      const samePlanes = currentPlanes === targetPlanes
+        || ((!currentPlanes || currentPlanes.length === 0) && (!targetPlanes || targetPlanes.length === 0))
+        || (Array.isArray(currentPlanes) && Array.isArray(targetPlanes)
+          && currentPlanes.length === targetPlanes.length
+          && currentPlanes.every((plane, planeIndex) => plane === targetPlanes[planeIndex]));
+      const requiresMaterialUpdate = !samePlanes
+        || material.clipIntersection !== targetIntersection
+        || material.clipShadows !== targetClipShadows;
+      if (!samePlanes) material.clippingPlanes = targetPlanes;
+      material.clipIntersection = targetIntersection;
+      material.clipShadows = targetClipShadows;
+      delete material.userData.constructionRevealPlane;
+      if (requiresMaterialUpdate) material.needsUpdate = true;
     });
   }
 
@@ -1982,11 +2511,16 @@ export class MehrazScene {
       Math.max(0.05, b.height + walls.extraHeights.east),
       Math.max(0.05, b.height + walls.extraHeights.west),
     );
+    const archShiftY = b.type !== 'room' && walls.portalTransition === 'karbandi'
+      ? Math.max(0, Number(this.wallSystemRoot()?.userData?.portalKarbandiNorthWallShiftY) || 0)
+      : 0;
     return {
       centerX,
       openingLeft: centerX - archHalfSpan,
       openingRight: centerX + archHalfSpan,
-      sideTop,
+      baseSideTop: sideTop,
+      sideTop: sideTop + archShiftY,
+      archShiftY,
       northZ: -halfDepth - walls.sideOffsets.north,
     };
   }
@@ -2145,6 +2679,34 @@ export class MehrazScene {
 
   hasConstructionStepContent(stepId) {
     const karbandiEnabled = this.walls.karbandi?.enabled === true;
+    if (this.building.type === 'room') {
+      if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) {
+        let hasContent = false;
+        this.wallSystemRoot()?.traverse((child) => {
+          if (hasContent) return;
+          const part = child.userData?.roomDomePart;
+          if (stepId === 'room-karbandi-ribs') hasContent = child.userData?.isKarbandi === true;
+          else if (stepId === 'room-karbandi-roof') hasContent = child.userData?.isKarbandiCover === true;
+          else if (stepId === 'room-transition-cover') {
+            hasContent = part === 'karbandi-roof-to-drum-infill-top'
+              || (part === 'transition-cover' && child.userData?.isKarbandiCover !== true);
+          } else if (stepId === 'room-drum') hasContent = part === 'dome-drum';
+          else if (stepId === 'room-dome') hasContent = ['dome-shell', 'inner-dome-shell', 'between-dome-support-wall', 'springing-ring'].includes(part);
+          else if (stepId === 'room-decoration') hasContent = child.userData?.isImportedWallDecoration === true;
+        });
+        if (stepId === 'room-decoration' && !hasContent) {
+          hasContent = this.placementGroup?.children.some((root) => root.userData?.assetType !== 'muqarnas_assembly') === true;
+          this.zoneDecorationGroup?.traverse((child) => {
+            if (child.userData?.isZoneDecoration === true) hasContent = true;
+          });
+        }
+        return hasContent;
+      }
+      if (['south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill',
+        'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof',
+        'north-upper-wall', 'muqarnas-tiers'].includes(stepId)) return false;
+      if (stepId.startsWith('decorate-')) return false;
+    } else if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) return false;
     if (karbandiEnabled && stepId === 'north-arch-guide') return this.walls.pointedArch?.enabled === true;
     if (stepId.startsWith('karbandi-')) {
       if (!karbandiEnabled) return false;
@@ -2177,14 +2739,168 @@ export class MehrazScene {
     return hasContent;
   }
 
+  applyRoomConstructionStep(stepId, rank, stepProgress, wallSystem) {
+    const complete = stepId === 'complete';
+    const stageRank = (id) => CONSTRUCTION_STEP_INDEX[id];
+    const stageReached = (id) => complete || rank >= stageRank(id);
+    const stageFinished = (id) => complete || rank > stageRank(id);
+    const currentStage = (id) => stepId === id;
+    const roomRibs = [];
+    const roomRoofPanels = [];
+    const roomBrickDecorations = [];
+    wallSystem?.traverse((child) => {
+      if (child.isMesh && child.userData?.isKarbandi === true) roomRibs.push(child);
+      if (child.isMesh && child.userData?.isKarbandiCover === true) roomRoofPanels.push(child);
+      if (child.isMesh && child.userData?.isImportedWallDecoration === true) roomBrickDecorations.push(child);
+    });
+    const ribIndexes = [...new Set(roomRibs.map((rib) => rib.userData.karbandiRibIndex))]
+      .sort((a, b) => Number(a) - Number(b));
+    const visibleRibCount = currentStage('room-karbandi-ribs')
+      ? Math.ceil(stepProgress * ribIndexes.length)
+      : (stageFinished('room-karbandi-ribs') ? ribIndexes.length : 0);
+    const visibleRibIndexes = new Set(ribIndexes.slice(0, visibleRibCount));
+    const roofPanelIndexes = [...new Set(roomRoofPanels.map((panel) => panel.userData.karbandiRoofPanel))]
+      .sort((a, b) => Number(a) - Number(b));
+    const visibleRoofCount = currentStage('room-karbandi-roof')
+      ? Math.ceil(stepProgress * roofPanelIndexes.length)
+      : (stageFinished('room-karbandi-roof') ? roofPanelIndexes.length : 0);
+    const visibleRoofIndexes = new Set(roofPanelIndexes.slice(0, visibleRoofCount));
+    const visibleDecorationCount = currentStage('room-decoration')
+      ? Math.ceil(stepProgress * roomBrickDecorations.length)
+      : (stageFinished('room-decoration') ? roomBrickDecorations.length : 0);
+    const visibleDecorations = new Set(roomBrickDecorations.slice(0, visibleDecorationCount));
+    const showVerticalStage = (child, id) => {
+      child.visible = stageReached(id) && (!currentStage(id) || stepProgress > 0.001);
+      if (!child.isMesh || !child.visible) return;
+      if (currentStage(id)) this.setConstructionClip(child, stepProgress, 'y');
+      else this.clearConstructionClip(child);
+    };
+    const showCircularCourseStage = (child, id) => {
+      child.visible = stageReached(id) && (!currentStage(id) || stepProgress > 0.001);
+      if (!child.isMesh || !child.visible) return;
+      this.setRoomCircularCourseConstructionReveal(child, currentStage(id) ? stepProgress : 1);
+    };
+    const verticalWallSides = new Set(['east', 'west', 'south', 'north', 'north_sides', 'north_top']);
+
+    wallSystem?.traverse((child) => {
+      if (!child.isObject3D || child === wallSystem) return;
+      const part = child.userData?.roomDomePart;
+      const side = child.userData?.wallSide;
+      if (child.userData?.isKarbandiVisualGuide === true) {
+        child.visible = complete && (
+          child.userData?.isKarbandiArchIntersectionGuide === true
+            ? this.walls.karbandi?.archIntersectionGuideVisible === true
+            : this.walls.karbandi?.guideVisible === true
+        );
+        return;
+      }
+      if (child.userData?.isBrickFace === true) {
+        if (child.userData?.isImportedWallDecoration === true) {
+          // Imported decoration is intentionally applied after construction.
+          child.visible = complete || visibleDecorations.has(child);
+          if (child.visible && child.userData?.constructionOriginalMaterial) this.clearConstructionClip(child);
+        } else {
+          // Built-in running/stack/Flemish bonds are the wall's actual finish,
+          // not a second decoration layer. Build them with their owning wall so
+          // the saved perimeter phase remains continuous through every corner.
+          showVerticalStage(child, 'lower-walls');
+        }
+        return;
+      }
+      if (child.userData?.isKarbandiCover === true) {
+        child.visible = complete || visibleRoofIndexes.has(child.userData.karbandiRoofPanel);
+        if (child.isMesh && child.visible) this.clearConstructionClip(child);
+        return;
+      }
+      if (child.userData?.isKarbandi === true) {
+        child.visible = complete || visibleRibIndexes.has(child.userData.karbandiRibIndex);
+        if (child.isMesh && child.visible) this.clearConstructionClip(child);
+        return;
+      }
+      if (part === 'karbandi-roof-to-drum-infill-top'
+        || (part === 'transition-cover' && child.userData?.isKarbandiCover !== true)) {
+        showVerticalStage(child, 'room-transition-cover');
+        return;
+      }
+      if (part === 'dome-drum') {
+        showCircularCourseStage(child, 'room-drum');
+        return;
+      }
+      if (part === 'dome-extra-leg') {
+        showCircularCourseStage(child, 'room-dome');
+        return;
+      }
+      if (part === 'dome-shell' || part === 'inner-dome-shell' || part === 'between-dome-support-wall') {
+        showCircularCourseStage(child, 'room-dome');
+        return;
+      }
+      if (part === 'springing-ring') {
+        child.visible = stageReached('room-dome') && (!currentStage('room-dome') || stepProgress > 0.001);
+        return;
+      }
+      if (verticalWallSides.has(side) && !part) {
+        showVerticalStage(child, 'lower-walls');
+        child.userData.roomConstructionIncludesStoneBase = this.walls.stoneBase?.enabled === true;
+        child.userData.roomConstructionStoneBaseSequence = 'bottom-stone-first-then-wall-brick-courses';
+        return;
+      }
+      if (side === 'room_dome_transition' || side === 'room_dome' || side === 'room_dome_inner' || side === 'room_dome_extra_leg' || side === 'room_dome_drum' || side === 'room_dome_ring') {
+        child.visible = complete;
+      }
+    });
+    this.archInfillGroup.visible = complete || stageReached('lower-walls');
+    this.placementGroup.visible = true;
+    this.placementGroup.children.forEach((root) => {
+      if (root.userData?.assetType === 'muqarnas_assembly') {
+        root.visible = complete;
+        return;
+      }
+      root.visible = stageReached('room-decoration')
+        && (!currentStage('room-decoration') || stepProgress > 0.001);
+      root.traverse((child) => {
+        if (!child.isMesh || !root.visible) return;
+        if (currentStage('room-decoration')) this.setConstructionClip(child, stepProgress, 'y');
+        else this.clearConstructionClip(child);
+      });
+    });
+    this.placementMaskGroup.visible = complete;
+    this.zoneGroup.visible = complete;
+    this.zoneDecorationGroup.visible = stageReached('room-decoration');
+    const zoneDecorationMeshes = [];
+    this.zoneDecorationGroup.traverse((child) => {
+      if (child.isMesh) zoneDecorationMeshes.push(child);
+    });
+    const visibleZoneDecorationCount = currentStage('room-decoration')
+      ? Math.ceil(stepProgress * zoneDecorationMeshes.length)
+      : zoneDecorationMeshes.length;
+    zoneDecorationMeshes.forEach((child, index) => {
+      child.visible = this.zoneDecorationGroup.visible && index < visibleZoneDecorationCount;
+      if (child.visible && child.userData?.constructionOriginalMaterial) this.clearConstructionClip(child);
+    });
+    this.constructionGuideGroup.visible = false;
+    this.updateKarbandiReferenceHighlight();
+    this.updateWallSurfaceHighlight();
+  }
+
   applyConstructionStep(stepIndex = CONSTRUCTION_STEPS.length - 1, progress = 1) {
-    this.invalidate(true);
-    this.constructionStepIndex = Math.max(0, Math.min(CONSTRUCTION_STEPS.length - 1, Math.round(stepIndex)));
+    this.ensureConstructionInteractionAvailable();
+    const nextStepIndex = Math.max(0, Math.min(CONSTRUCTION_STEPS.length - 1, Math.round(stepIndex)));
+    const nextProgress = Math.max(0, Math.min(1, progress));
+    const stepChanged = nextStepIndex !== this.constructionStepIndex;
+    const stepJustCompleted = nextProgress >= 0.999999 && this.constructionStepProgress < 0.999999;
+    // Geometry visibility and clipping still render every frame, but the
+    // expensive shadow map only needs a refresh at construction boundaries.
+    this.invalidate(stepChanged || stepJustCompleted);
+    this.constructionStepIndex = nextStepIndex;
     const stepId = CONSTRUCTION_STEPS[this.constructionStepIndex]?.id || 'complete';
     const rank = this.constructionStepIndex;
     const wallSystem = this.wallSystemRoot();
-    const stepProgress = Math.max(0, Math.min(1, progress));
+    const stepProgress = nextProgress;
     this.constructionStepProgress = stepProgress;
+    if (this.building.type === 'room') {
+      this.applyRoomConstructionStep(stepId, rank, stepProgress, wallSystem);
+      return;
+    }
     const northMetrics = this.northOpeningMetrics();
     const southUnderArchRank = CONSTRUCTION_STEP_INDEX['south-wall'];
     const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
@@ -2220,6 +2936,13 @@ export class MehrazScene {
     const visibleRoofPanelIndexes = new Set(roofPanelIndexes.slice(0, visibleRoofPanelCount));
     wallSystem?.traverse((child) => {
       if (!child.isObject3D) return;
+      if (child.userData?.isKarbandiVisualGuide === true) {
+        const guideEnabled = child.userData?.isKarbandiArchIntersectionGuide === true
+          ? this.walls.karbandi?.archIntersectionGuideVisible === true
+          : this.walls.karbandi?.guideVisible === true;
+        child.visible = showEverything && guideEnabled;
+        return;
+      }
       const side = child.userData?.wallSide;
       if (child.userData?.isBrickFace) {
         this.applyConstructionDecoration(child, stepId, rank, stepProgress);
@@ -2309,10 +3032,53 @@ export class MehrazScene {
     this.updateWallSurfaceHighlight();
   }
 
+  ensureConstructionInteractionAvailable(forceRelease = false, reconnect = false) {
+    if (forceRelease) {
+      this.transformHandleActive = false;
+      this.nightLightDrag = null;
+      if (this.transformControls) {
+        this.transformControls.dragging = false;
+        this.transformControls.axis = null;
+      }
+    }
+    const transformDragging = !forceRelease
+      && (this.transformControls?.dragging === true || this.transformHandleActive === true);
+    const lightDragging = !forceRelease && Boolean(this.nightLightDrag);
+    if (this.transformControls) this.transformControls.enabled = true;
+    if (this.controls) {
+      this.controls.enabled = !transformDragging && !lightDragging;
+      if (forceRelease) {
+        // OrbitControls keeps its gesture state separately from `enabled`.
+        // Clear a missed pointer-up/cancel so the next drag starts normally
+        // without moving the camera back to its saved position.
+        this.controls.state = -1;
+        if (Array.isArray(this.controls._pointers)) this.controls._pointers.length = 0;
+        if (this.controls._pointerPositions) this.controls._pointerPositions = {};
+        // Re-register OrbitControls through its public lifecycle API. This
+        // clears document-level pointer listeners left behind when a frame or
+        // pointer-up is missed while construction is changing the scene.
+        if (reconnect && this.controls.disconnect && this.controls.connect && this.renderer?.domElement) {
+          this.controls.disconnect();
+          this.controls.connect(this.renderer.domElement);
+        }
+      }
+    }
+    if (this.renderer?.domElement?.style) this.renderer.domElement.style.pointerEvents = 'auto';
+    if (forceRelease) {
+      this.controls?.update?.();
+      this.invalidate?.(true);
+    }
+    return this.controls?.enabled !== false;
+  }
+
   playConstructionSequence(duration = 15, onStep = null, onDone = null) {
     if (this.constructionTimer) clearTimeout(this.constructionTimer);
     if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
+    if (this.constructionWatchdog) clearTimeout(this.constructionWatchdog);
+    const runId = Number.isFinite(this.constructionRunId) ? this.constructionRunId + 1 : 1;
+    this.constructionRunId = runId;
     this.restoreConstructionMaterials();
+    this.ensureConstructionInteractionAvailable(true, true);
     const stepIndexes = CONSTRUCTION_STEPS
       .map((step, index) => ({ step, index }))
       .filter(({ step }) => this.hasConstructionStepContent(step.id))
@@ -2320,47 +3086,107 @@ export class MehrazScene {
     const total = stepIndexes.length;
     const perStep = Math.max(350, (Math.max(3, finite(duration, 15)) * 1000) / total);
     let sequenceIndex = 0;
+    let finished = false;
+    const finish = () => {
+      if (finished || runId !== this.constructionRunId) return;
+      finished = true;
+      if (this.constructionWatchdog) clearTimeout(this.constructionWatchdog);
+      this.constructionWatchdog = null;
+      if (this.constructionTimer) clearTimeout(this.constructionTimer);
+      if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
+      this.constructionAnimationFrame = null;
+      this.constructionTimer = null;
+      this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
+      this.restoreConstructionMaterials();
+      this.ensureConstructionInteractionAvailable(true, true);
+      onDone?.();
+    };
+    const abortSafely = (error) => {
+      console.error('Construction animation stopped after a rendering error.', error);
+      finished = true;
+      if (this.constructionWatchdog) clearTimeout(this.constructionWatchdog);
+      if (this.constructionTimer) clearTimeout(this.constructionTimer);
+      if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
+      this.constructionWatchdog = null;
+      this.constructionTimer = null;
+      this.constructionAnimationFrame = null;
+      try { this.restoreConstructionMaterials(); } catch (restoreError) {
+        console.error('Could not restore construction materials.', restoreError);
+      }
+      this.ensureConstructionInteractionAvailable(true, true);
+      onDone?.();
+    };
     const animateStep = () => {
+      if (finished || runId !== this.constructionRunId) return;
       const index = stepIndexes[sequenceIndex];
       const stepStartedAt = performance.now();
       const stepId = CONSTRUCTION_STEPS[index]?.id || 'complete';
       onStep?.(index);
+      // The complete model is a terminal snapshot, not another animated build
+      // phase. Applying it once avoids repeatedly traversing every finished
+      // brick while the user is waiting to regain the stage controls.
+      if (stepId === 'complete') {
+        try {
+          finish();
+        } catch (error) {
+          abortSafely(error);
+        }
+        return;
+      }
       const tick = (now) => {
-        const elapsed = now - stepStartedAt;
-        const rawProgress = Math.max(0, Math.min(1, elapsed / perStep));
-        const easedProgress = rawProgress < 0.5
-          ? 2 * rawProgress * rawProgress
-          : 1 - ((-2 * rawProgress + 2) ** 2) / 2;
-        const buildProgress = ['south-wall', 'arch-fill', 'north-arch-guide', 'lower-walls', 'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'north-upper-wall', 'muqarnas-tiers', 'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides', 'decorate-north-top', 'decorate-arch', 'complete'].includes(stepId)
-          ? easedProgress
-          : 1;
-        this.applyConstructionStep(index, buildProgress);
-        if (rawProgress < 1) {
-          this.constructionAnimationFrame = requestAnimationFrame(tick);
-          return;
+        if (finished || runId !== this.constructionRunId) return;
+        try {
+          const elapsed = now - stepStartedAt;
+          const rawProgress = Math.max(0, Math.min(1, elapsed / perStep));
+          const easedProgress = rawProgress < 0.5
+            ? 2 * rawProgress * rawProgress
+            : 1 - ((-2 * rawProgress + 2) ** 2) / 2;
+          const buildProgress = ['south-wall', 'arch-fill', 'north-arch-guide', 'lower-walls', 'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'room-karbandi-ribs', 'room-karbandi-roof', 'room-transition-cover', 'room-drum', 'room-dome', 'room-decoration', 'north-upper-wall', 'muqarnas-tiers', 'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides', 'decorate-north-top', 'decorate-arch'].includes(stepId)
+            ? easedProgress
+            : 1;
+          this.applyConstructionStep(index, buildProgress);
+          if (rawProgress < 1) {
+            this.constructionAnimationFrame = requestAnimationFrame(tick);
+            return;
+          }
+          sequenceIndex += 1;
+          if (sequenceIndex >= total) {
+            finish();
+            return;
+          }
+          this.constructionTimer = setTimeout(animateStep, 80);
+        } catch (error) {
+          abortSafely(error);
         }
-        sequenceIndex += 1;
-        if (sequenceIndex >= total) {
-          this.constructionAnimationFrame = null;
-          this.constructionTimer = null;
-          this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
-          this.restoreConstructionMaterials();
-          onDone?.();
-          return;
-        }
-        this.constructionTimer = setTimeout(animateStep, 80);
       };
       this.constructionAnimationFrame = requestAnimationFrame(tick);
     };
+    // requestAnimationFrame can be dropped by the browser after a WebGL or
+    // focus interruption. Never leave React's Play/Stop state or the stage
+    // controls waiting forever for a callback that will not arrive.
+    const maximumRunTime = perStep * Math.max(1, total) + Math.max(1000, total * 120);
+    this.constructionWatchdog = setTimeout(() => {
+      if (finished || runId !== this.constructionRunId) return;
+      console.warn('Construction animation watchdog completed a stalled run.');
+      try {
+        finish();
+      } catch (error) {
+        abortSafely(error);
+      }
+    }, maximumRunTime);
     animateStep();
   }
 
   stopConstructionSequence() {
+    this.constructionRunId = Number.isFinite(this.constructionRunId) ? this.constructionRunId + 1 : 1;
     if (this.constructionTimer) clearTimeout(this.constructionTimer);
     this.constructionTimer = null;
     if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
     this.constructionAnimationFrame = null;
+    if (this.constructionWatchdog) clearTimeout(this.constructionWatchdog);
+    this.constructionWatchdog = null;
     this.restoreConstructionMaterials();
+    this.ensureConstructionInteractionAvailable(true, true);
   }
 
   showCompleteConstruction() {
@@ -2454,24 +3280,45 @@ export class MehrazScene {
     // The wall/building group is rebuilt at source level for flat mode
     // (bricks disabled), so do not run material/visibility swaps over it.
     // Those swaps were the cause of the blank-stage failure.
-    [this.archInfillGroup, this.placementGroup].forEach((root) => {
+    [this.archInfillGroup, this.placementGroup, this.projectInstanceGroup].forEach((root) => {
       root?.traverse((child) => {
         applyMesh(child);
       });
     });
   }
 
-  setSelectedWallSide(side) {
-    const normalized = side === 'arch' ? 'south_arch' : side === 'north' ? 'north_sides' : side;
-    this.selectedWallSide = ['north', 'north_sides', 'north_top', 'east', 'south', 'west', 'south_arch'].includes(normalized) ? normalized : null;
+  setSelectedWallSide(side, face = null) {
+    const normalized = side === 'arch'
+      ? 'south_arch'
+      : side === 'north' && this.building.type !== 'room'
+        ? 'north_sides'
+        : side;
+    this.selectedWallSide = ['north', 'north_sides', 'north_top', 'east', 'south', 'west', 'south_arch', 'room_plan_interior', 'room_plan_exterior', 'room_dome', 'room_dome_inner', 'room_dome_extra_leg', 'room_dome_drum', 'room_dome_transition', 'room_dome_ring'].includes(normalized) ? normalized : null;
+    this.selectedWallFace = null;
     this.selectedKarbandiRibIndex = null;
     this.updateKarbandiReferenceHighlight();
     this.updateWallSurfaceHighlight();
   }
 
-  setSelectedOpeningGuide(type) {
-    this.selectedOpeningGuide = ['door', 'window'].includes(type) ? type : null;
-    if (this.selectedOpeningGuide) this.selectedWallSide = 'south';
+  setSelectedOpeningGuide(value) {
+    const [first, second] = String(value || '').split(':');
+    if (first === 'plan' && second) {
+      this.selectedOpeningGuide = `plan:${second}`;
+      this.selectedWallSide = null;
+      this.selectedWallFace = null;
+      this.updateWallSurfaceHighlight();
+      return;
+    }
+    const hasWallSide = ['north', 'east', 'south', 'west'].includes(first);
+    const wallSide = hasWallSide ? first : 'south';
+    const openingType = hasWallSide ? second : first;
+    this.selectedOpeningGuide = ['door', 'window'].includes(openingType)
+      ? (hasWallSide ? `${wallSide}:${openingType}` : openingType)
+      : null;
+    if (this.selectedOpeningGuide) {
+      this.selectedWallSide = wallSide;
+      this.selectedWallFace = null;
+    }
     this.updateWallSurfaceHighlight();
   }
 
@@ -2704,10 +3551,23 @@ export class MehrazScene {
   completeModelBounds() {
     const bounds = new THREE.Box3();
     const wallGroup = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
-    if (wallGroup?.visible) bounds.expandByObject(wallGroup);
+    if (wallGroup?.visible) {
+      wallGroup.updateWorldMatrix(true, true);
+      wallGroup.traverse((child) => {
+        if (!child.geometry) return;
+        let ancestor = child;
+        while (ancestor) {
+          if (ancestor.userData?.isKarbandiVisualGuide === true) return;
+          ancestor = ancestor.parent;
+        }
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox?.();
+        if (child.geometry.boundingBox) bounds.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld));
+      });
+    }
     if (this.archInfillGroup.children.length) bounds.expandByObject(this.archInfillGroup);
     if (this.zoneDecorationGroup.children.length) bounds.expandByObject(this.zoneDecorationGroup);
     if (this.placementGroup.children.length) bounds.expandByObject(this.placementGroup);
+    if (this.projectInstanceGroup?.children.length) bounds.expandByObject(this.projectInstanceGroup);
     if (bounds.isEmpty()) {
       bounds.set(
         new THREE.Vector3(-this.building.width / 2, 0, -this.building.depth / 2),
@@ -2907,6 +3767,7 @@ export class MehrazScene {
     });
     this.updateSelectionOutline();
     this.updateZonePortalSideVisibility();
+    if (this.sectionViewEnabled) this.applyRoomSectionClipping();
   }
 
   updateZonePortalSideVisibility(camera = this.camera) {
@@ -2964,6 +3825,7 @@ export class MehrazScene {
     if (this.constructionStepIndex < CONSTRUCTION_STEPS.length - 1) this.applyConstructionStep(this.constructionStepIndex);
     this.updateWallSurfaceHighlight();
     this.updateKarbandiReferenceHighlight();
+    if (this.sectionViewEnabled) this.applyRoomSectionClipping();
   }
 
   rebuildArchInfills() {
@@ -3144,6 +4006,46 @@ export class MehrazScene {
     this.clearGroup(this.placementMaskGroup);
     this.applyStageAppearance();
     this.updateSelectionOutline();
+    if (this.sectionViewEnabled) this.applyRoomSectionClipping();
+  }
+
+  setProjectInstances(instances) {
+    this.invalidate(true);
+    this.projectInstances = Array.isArray(instances) ? instances : [];
+    this.clearGroup(this.projectInstanceGroup);
+    this.projectInstances.forEach((instance) => {
+      if (!instance?.id || !instance.payload) return;
+      const preview = projectInstancePreview(instance);
+      const transform = instance.transform || {};
+      preview.position.fromArray(transform.position || [0, 0, 0]);
+      preview.rotation.set(...(transform.rotation || [0, 0, 0]).map(THREE.MathUtils.degToRad));
+      preview.scale.fromArray(transform.scale || [1, 1, 1]);
+      this.projectInstanceGroup.add(preview);
+    });
+    if (!this.projectInstances.some((instance) => instance.id === this.selectedProjectInstanceId)) {
+      this.selectedProjectInstanceId = null;
+    }
+    this.applyStageAppearance();
+    this.updateSelectionOutline();
+    if (this.sectionViewEnabled) this.applyRoomSectionClipping();
+  }
+
+  selectProjectInstance(id) {
+    const requested = id
+      ? this.projectInstanceGroup.children.find((child) => child.userData.projectInstanceId === id)
+      : null;
+    this.selectedProjectInstanceId = requested ? id : null;
+    if (this.selectedProjectInstanceId) {
+      this.selectedId = null;
+      this.selectedZoneId = null;
+      this.selectedWallSide = null;
+      this.selectedKarbandiRibIndex = null;
+      this.updateKarbandiReferenceHighlight();
+      this.updateWallSurfaceHighlight();
+      this.clearNightLightSelection();
+    }
+    this.updateSelectionOutline();
+    this.callbacks.onProjectInstanceSelection?.(this.selectedProjectInstanceId);
   }
 
   select(id) {
@@ -3152,6 +4054,7 @@ export class MehrazScene {
       : null;
     this.selectedId = requested && objectIsSelectable(requested, this.placementGroup) ? id : null;
     if (this.selectedId) {
+      this.selectedProjectInstanceId = null;
       this.selectedZoneId = null;
       this.selectedWallSide = null;
       this.selectedKarbandiRibIndex = null;
@@ -3166,6 +4069,7 @@ export class MehrazScene {
   selectZone(id) {
     this.selectedZoneId = id || null;
     if (id) {
+      this.selectedProjectInstanceId = null;
       this.selectedId = null;
       this.selectedWallSide = null;
       this.selectedKarbandiRibIndex = null;
@@ -3177,13 +4081,19 @@ export class MehrazScene {
     this.callbacks.onZoneSelection?.(this.selectedZoneId);
   }
 
-  selectWallSide(side, emit = true) {
-    const normalized = side === 'arch' ? 'south_arch' : side === 'north' ? 'north_sides' : side;
-    if (!['north', 'north_sides', 'north_top', 'east', 'south', 'west', 'south_arch'].includes(normalized)) return;
+  selectWallSide(side, emit = true, detail = null) {
+    const normalized = side === 'arch'
+      ? 'south_arch'
+      : side === 'north' && this.building.type !== 'room'
+        ? 'north_sides'
+        : side;
+    if (!['north', 'north_sides', 'north_top', 'east', 'south', 'west', 'south_arch', 'room_plan_interior', 'room_plan_exterior', 'room_dome', 'room_dome_inner', 'room_dome_extra_leg', 'room_dome_drum', 'room_dome_transition', 'room_dome_ring'].includes(normalized)) return;
     this.selectedWallSide = normalized;
+    this.selectedWallFace = null;
     this.selectedOpeningGuide = null;
     this.selectedKarbandiRibIndex = null;
     this.selectedId = null;
+    this.selectedProjectInstanceId = null;
     this.selectedZoneId = null;
     this.clearNightLightSelection();
     this.updateSelectionOutline();
@@ -3193,14 +4103,17 @@ export class MehrazScene {
       this.callbacks.onWallSurfaceSelection?.({
         side: normalized,
         surfaceId: surfaceIdForWallSide(normalized, this.building),
+        ...(detail || {}),
       });
     }
   }
 
   clearSelection() {
     this.selectedId = null;
+    this.selectedProjectInstanceId = null;
     this.selectedZoneId = null;
     this.selectedWallSide = null;
+    this.selectedWallFace = null;
     this.selectedOpeningGuide = null;
     this.selectedKarbandiRibIndex = null;
     this.clearNightLightSelection();
@@ -3208,6 +4121,7 @@ export class MehrazScene {
     this.updateKarbandiReferenceHighlight();
     this.updateWallSurfaceHighlight();
     this.callbacks.onSelection?.(null);
+    this.callbacks.onProjectInstanceSelection?.(null);
     this.callbacks.onZoneSelection?.(null);
     this.callbacks.onWallSurfaceSelection?.(null);
   }
@@ -3228,6 +4142,7 @@ export class MehrazScene {
     this.selectedId = null;
     this.selectedZoneId = null;
     this.selectedWallSide = null;
+    this.selectedWallFace = null;
     this.clearNightLightSelection();
     this.updateSelectionOutline();
     this.updateWallSurfaceHighlight();
@@ -3244,11 +4159,30 @@ export class MehrazScene {
     this.updateWallSurfaceHighlight();
   }
 
+  wallSideForHit(hit) {
+    if (this.building.type === 'room'
+      && (this.building.roomPlanShape || 'square') !== 'square'
+      && hit?.object?.userData?.isRoomWallBody === true) {
+      if (hit.face?.materialIndex === 0) return 'room_plan_interior';
+      if (hit.face?.materialIndex === 1) return 'room_plan_exterior';
+    }
+    return hit?.object?.userData?.wallSide || null;
+  }
+
+  setSquinchArchEditing(active) {
+    this.squinchArchEditing = active === true;
+    this.updateWallSurfaceHighlight();
+  }
+
   updateKarbandiReferenceHighlight() {
     this.invalidate();
     const wallSystem = this.buildingGroup?.children.find((child) => child.userData?.wallSystem);
-    const enabled = this.walls?.karbandi?.enabled === true;
-    const highlighted = enabled && this.karbandiReferenceEditing === true;
+    const enabled = this.walls?.karbandi?.enabled === true
+      || (this.building?.type === 'room' && this.building?.domeTransition === 'karbandi');
+    const highlighted = enabled && (
+      this.karbandiReferenceEditing === true
+      || this.walls?.karbandi?.guideVisible === true
+    );
     const ribColor = this.walls?.karbandi?.ribColor || this.walls?.color || '#c98d4c';
     const configuredHighlight = this.walls?.karbandi?.referenceRibColor || '#ffd400';
     const highlightColor = configuredHighlight.toLowerCase() === ribColor.toLowerCase()
@@ -3257,10 +4191,10 @@ export class MehrazScene {
     const supportHighlightColor = '#ff6b35';
     wallSystem?.traverse((child) => {
       if (!child.isMesh || child.userData?.isKarbandi !== true || child.userData?.isKarbandiCover === true) return;
-      const displayColor = highlighted && child.userData.isKarbandiClosestWallSupport
-        ? supportHighlightColor
-        : highlighted && child.userData.isKarbandiReference
-          ? highlightColor
+      const displayColor = highlighted && child.userData.isKarbandiReference
+        ? highlightColor
+        : highlighted && child.userData.isKarbandiClosestWallSupport
+          ? supportHighlightColor
           : ribColor;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.filter(Boolean).forEach((material) => material.color?.set(displayColor));
@@ -3275,6 +4209,7 @@ export class MehrazScene {
     layerDirection = -1,
     name = 'Arch symmetric red and green construction circles',
     guideType = 'main',
+    greenOnly = false,
   }) {
     if (!construction) return;
     const pointGeometry = new THREE.SphereGeometry(0.09, 16, 12);
@@ -3282,7 +4217,13 @@ export class MehrazScene {
     guideGroup.name = name;
     guideGroup.userData.isNorthArchConstructionGuide = guideType === 'north';
     guideGroup.userData.isOpeningArchConstructionGuide = guideType === 'door' || guideType === 'window';
+    guideGroup.userData.isRoomDomeArchConstructionGuide = guideType === 'room_dome';
+    guideGroup.userData.isRoomInnerDomeArchConstructionGuide = guideType === 'room_dome_inner';
+    guideGroup.userData.isRoomSquinchArchConstructionGuide = guideType === 'room_squinch';
     guideGroup.userData.openingType = guideGroup.userData.isOpeningArchConstructionGuide ? guideType : null;
+    guideGroup.userData.archConstructionCenterX = centerX;
+    guideGroup.userData.archConstructionSpringY = construction.sidePoint.y;
+    guideGroup.userData.archConstructionApexY = construction.apexPoint.y;
     const drawingBufferSize = this.renderer?.getDrawingBufferSize
       ? this.renderer.getDrawingBufferSize(new THREE.Vector2())
       : new THREE.Vector2(1, 1);
@@ -3352,32 +4293,35 @@ export class MehrazScene {
       });
     };
     addMirroredCirclePair('green', 0x16a34a, construction.greenCenter, construction.greenRadius);
-    addMirroredCirclePair('red', 0xe02b2b, construction.redCenter, construction.redRadius);
+    if (!greenOnly) addMirroredCirclePair('red', 0xe02b2b, construction.redCenter, construction.redRadius);
 
     const highlightedZ = guideZ + layerDirection * 0.004;
-    const redArch = sampleArc(construction.redCenter, construction.redRadius, construction.sidePoint, construction.tangentPoint, highlightedZ);
-    const greenArch = sampleArc(construction.greenCenter, construction.greenRadius, construction.tangentPoint, construction.apexPoint, highlightedZ);
-    addWideGuide('Right red arch construction segment', 0xe02b2b, redArch, 3, 1, 22);
-    addWideGuide('Left red arch construction segment', 0xe02b2b, mirrorPoints(redArch), 3, 1, 22);
+    const greenArcStart = greenOnly ? construction.sidePoint : construction.tangentPoint;
+    const greenArch = sampleArc(construction.greenCenter, construction.greenRadius, greenArcStart, construction.apexPoint, highlightedZ);
+    if (!greenOnly) {
+      const redArch = sampleArc(construction.redCenter, construction.redRadius, construction.sidePoint, construction.tangentPoint, highlightedZ);
+      addWideGuide('Right red arch construction segment', 0xe02b2b, redArch, 3, 1, 22);
+      addWideGuide('Left red arch construction segment', 0xe02b2b, mirrorPoints(redArch), 3, 1, 22);
+    }
     addWideGuide('Right green arch construction segment', 0x16a34a, greenArch, 3, 1, 22);
     addWideGuide('Left green arch construction segment', 0x16a34a, mirrorPoints(greenArch), 3, 1, 22);
 
     const radiusZ = guideZ + layerDirection * 0.006;
-    const rightRedTangentRadius = [
+    const rightRedTangentRadius = greenOnly ? null : [
       new THREE.Vector3(construction.redCenter.x, construction.redCenter.y, radiusZ),
       new THREE.Vector3(construction.tangentPoint.x, construction.tangentPoint.y, radiusZ),
     ];
     const rightGreenTangentRadius = [
       new THREE.Vector3(construction.greenCenter.x, construction.greenCenter.y, radiusZ),
-      new THREE.Vector3(construction.tangentPoint.x, construction.tangentPoint.y, radiusZ),
+      new THREE.Vector3(greenArcStart.x, greenArcStart.y, radiusZ),
     ];
     const rightGreenApexRadius = [
       new THREE.Vector3(construction.greenCenter.x, construction.greenCenter.y, radiusZ),
       new THREE.Vector3(construction.apexPoint.x, construction.apexPoint.y, radiusZ),
     ];
     [
-      ['red-center tangent', rightRedTangentRadius],
-      ['green-center tangent', rightGreenTangentRadius],
+      ...(greenOnly ? [] : [['red-center tangent', rightRedTangentRadius]]),
+      [greenOnly ? 'green-center dome-start' : 'green-center tangent', rightGreenTangentRadius],
       ['green-center arch-top', rightGreenApexRadius],
     ].forEach(([name, points]) => {
       addWideGuide(`Right ${name} radius`, 0xffd400, points, 2, 0.5, 23);
@@ -3385,6 +4329,26 @@ export class MehrazScene {
     });
     root.add(guideGroup);
     return guideGroup;
+  }
+
+  orientArchConstructionGuideToRoomSection(guide, centerX, sourceGuideZ, centerZ) {
+    if (!guide
+      || this.sectionViewEnabled !== true
+      || (this.sectionViewAxis || 'x') !== 'x'
+      || this.building?.type !== 'room'
+      || this.building?.domeTransition !== 'squinch') return guide;
+    // The normal editor draws guides in the north-facing XY plane. The Room
+    // section camera looks west along -X, so rotate that complete diagram into
+    // the north-south YZ cut plane. The original guide depth becomes a tiny
+    // offset toward the camera, keeping every circle, radius, and curve visible.
+    const sectionTransform = new THREE.Matrix4()
+      .makeTranslation(centerX, 0, centerZ)
+      .multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2))
+      .multiply(new THREE.Matrix4().makeTranslation(-centerX, 0, -sourceGuideZ));
+    guide.applyMatrix4(sectionTransform);
+    guide.userData.archConstructionGuidePlane = 'room-north-south-section-facing-east-camera';
+    guide.userData.archConstructionSectionCenter = [centerX, centerZ];
+    return guide;
   }
 
   addKarbandiRibArchConstructionGuides(root) {
@@ -3450,13 +4414,23 @@ export class MehrazScene {
       Math.max(0.05, b.height + walls.extraHeights.east),
       Math.max(0.05, b.height + walls.extraHeights.west),
     );
+    const archShiftY = b.type !== 'room' && walls.portalTransition === 'karbandi'
+      ? Math.max(0, Number(this.wallSystemRoot()?.userData?.portalKarbandiNorthWallShiftY) || 0)
+      : 0;
     const halfSpan = Math.max(0.5, Math.min((eastX - westX) / 2, Number(b.openingWidth) / 2 || (eastX - westX) * 0.32));
     const greenOffset = walls.pointedArch.greenOffset ?? halfSpan;
     const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - halfSpan * 0.6);
-    const construction = pointedArchConstruction(centerX, halfSpan, sideTop, greenOffset, greenHeight, {
+    const construction = pointedArchConstruction(
+      centerX,
+      halfSpan,
+      sideTop + archShiftY,
+      greenOffset,
+      greenHeight + archShiftY,
+      {
       redOffset: walls.pointedArch.redOffset,
       redRadius: walls.pointedArch.redRadius,
-    });
+      },
+    );
     this.addArchConstructionDiagram(root, {
       construction,
       centerX,
@@ -3467,53 +4441,459 @@ export class MehrazScene {
     });
   }
 
-  addSouthOpeningConstructionGuides(root) {
-    const openingType = this.selectedOpeningGuide;
+  addRoomDomeArchConstructionGuides(root) {
+    const innerDome = this.selectedWallSide === 'room_dome_inner';
+    const portalDome = this.building.type !== 'room' && this.walls.portalCover === 'dome';
+    if ((!innerDome && this.selectedWallSide !== 'room_dome')
+      || (this.building.type !== 'room' && !portalDome)
+      || this.building.domeEnabled === false
+      || (innerDome && this.building.innerDomeEnabled === false)
+      || (!innerDome && !portalDome && (this.building.domeCoverType || 'dome') !== 'dome')) return;
+    const b = normalizeBuilding(this.building);
+    const walls = normalizeWallSystem(this.walls, b);
+    const thickness = Math.max(0.1, Number(b.wallThickness) || 0.4);
+    const westX = -b.width / 2 - walls.sideOffsets.west;
+    const eastX = b.width / 2 + walls.sideOffsets.east;
+    const northZ = -b.depth / 2 - walls.sideOffsets.north;
+    const southZ = b.depth / 2 + walls.sideOffsets.south;
+    let centerX = (westX + eastX) / 2;
+    let centerZ = (northZ + southZ) / 2;
+    const builtWallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
+    let builtDome = builtWallSystem?.getObjectByName(innerDome
+      ? 'Room inner dome cover'
+      : 'Room circular dome cover');
+    if (!builtDome && portalDome) {
+      builtWallSystem?.traverse((object) => {
+        if (!builtDome && object.userData?.roomDomePart === 'dome-shell') builtDome = object;
+      });
+    }
+    const generatedCenter = builtDome?.userData?.roomDomeCenter;
+    if (Array.isArray(generatedCenter) && generatedCenter.length >= 2) {
+      centerX = Number(generatedCenter[0]) || 0;
+      centerZ = Number(generatedCenter[1]) || 0;
+    }
+    const generatedDomeRadius = Number(builtDome?.userData?.roomDomeRadius);
+    const domeRadius = Number.isFinite(generatedDomeRadius)
+      ? generatedDomeRadius
+      : Math.max(
+        0.25,
+        Math.min(eastX - westX, southZ - northZ) / 2 - Math.max(0.08, thickness * 0.45),
+      );
+    const wallTop = Math.max(...['north', 'east', 'south', 'west'].map((side) => (
+      Math.max(0.05, b.height + walls.extraHeights[side])
+    )));
+    const generatedSpringY = Number(builtDome?.userData?.roomDomeSpringY);
+    const springY = Number.isFinite(generatedSpringY)
+      ? generatedSpringY
+      : wallTop + b.domeTransitionHeight + b.domeDrumHeight;
+    const domeArch = innerDome ? (b.innerDomeArch || {}) : (b.domeArch || {});
+    const generatedConstruction = builtDome?.userData?.roomDomeArchConstruction;
+    const generatedPoint = (key) => Array.isArray(generatedConstruction?.[key])
+      && generatedConstruction[key].length >= 2
+      ? new THREE.Vector2(
+        Number(generatedConstruction[key][0]) || 0,
+        Number(generatedConstruction[key][1]) || 0,
+      )
+      : null;
+    const generatedRedCenter = generatedPoint('redCenter');
+    const generatedGreenCenter = generatedPoint('greenCenter');
+    const generatedSidePoint = generatedPoint('sidePoint');
+    const generatedTangentPoint = generatedPoint('tangentPoint');
+    const generatedApexPoint = generatedPoint('apexPoint');
+    const hasGeneratedConstruction = generatedRedCenter
+      && generatedGreenCenter
+      && generatedSidePoint
+      && generatedTangentPoint
+      && generatedApexPoint
+      && Number.isFinite(Number(generatedConstruction?.redRadius))
+      && Number.isFinite(Number(generatedConstruction?.greenRadius));
+    const portalGreenConstruction = builtDome?.userData?.portalDomeGreenCircleConstruction;
+    const portalGreenPoint = (key) => Array.isArray(portalGreenConstruction?.[key])
+      && portalGreenConstruction[key].length >= 2
+      ? new THREE.Vector2(
+        Number(portalGreenConstruction[key][0]) || 0,
+        Number(portalGreenConstruction[key][1]) || 0,
+      )
+      : null;
+    const portalGreenCenter = portalGreenPoint('center');
+    const portalGreenSidePoint = portalGreenPoint('sidePoint');
+    const portalGreenApexPoint = portalGreenPoint('apexPoint');
+    const hasPortalGreenConstruction = portalDome
+      && portalGreenCenter
+      && portalGreenSidePoint
+      && portalGreenApexPoint
+      && Number.isFinite(Number(portalGreenConstruction?.radius));
+    const construction = hasPortalGreenConstruction
+      ? {
+        greenCenter: portalGreenCenter,
+        greenRadius: Number(portalGreenConstruction.radius),
+        sidePoint: portalGreenSidePoint,
+        tangentPoint: portalGreenSidePoint,
+        apexPoint: portalGreenApexPoint,
+      }
+      : hasGeneratedConstruction
+      ? {
+        redCenter: generatedRedCenter,
+        redRadius: Number(generatedConstruction.redRadius),
+        greenCenter: generatedGreenCenter,
+        greenRadius: Number(generatedConstruction.greenRadius),
+        sidePoint: generatedSidePoint,
+        tangentPoint: generatedTangentPoint,
+        apexPoint: generatedApexPoint,
+      }
+      : pointedArchConstruction(
+        centerX,
+        domeRadius,
+        springY,
+        domeArch.greenOffset,
+        springY + domeArch.greenHeightOffset,
+        { redOffset: domeArch.redOffset, redRadius: domeArch.redRadius },
+      );
+    const guideZ = portalDome ? centerZ - 0.035 : centerZ;
+    const guide = this.addArchConstructionDiagram(root, {
+      construction,
+      centerX,
+      guideZ,
+      layerDirection: -1,
+      name: innerDome
+        ? 'Room inner dome symmetric red and green construction circles'
+        : portalDome
+          ? 'Portal dome symmetric red and green construction circles'
+          : 'Room dome symmetric red and green construction circles',
+      guideType: innerDome ? 'room_dome_inner' : 'room_dome',
+      greenOnly: hasPortalGreenConstruction,
+    });
+    if (guide && portalDome) {
+      guide.userData.isPortalDomeArchConstructionGuide = true;
+      guide.userData.archConstructionGuidePlane = 'portal-north-facade-facing-exterior';
+      guide.userData.archConstructionSource = hasPortalGreenConstruction
+        ? 'north-wall-green-circle-and-generated-portal-dome-interior-profile'
+        : hasGeneratedConstruction
+          ? 'generated-portal-dome-mesh-profile'
+        : 'normalized-input-fallback';
+    }
+    this.orientArchConstructionGuideToRoomSection(guide, centerX, guideZ, centerZ);
+  }
+
+  addRoomSquinchArchConstructionGuides(root) {
+    const roomSquinchActive = this.building.type === 'room'
+      && this.building.domeTransition === 'squinch';
+    const portalSquinchActive = this.building.type !== 'room'
+      && this.walls.portalTransition === 'squinch';
+    if (!this.squinchArchEditing || (!roomSquinchActive && !portalSquinchActive)) return;
+    const b = normalizeBuilding(this.building);
+    const walls = normalizeWallSystem(this.walls, b);
+    const settings = b.domeTransitionSettings.squinch;
+    const halfWidth = Math.max(1, Number(b.width) / 2);
+    const halfDepth = Math.max(1, Number(b.depth) / 2);
+    const westInteriorX = -halfWidth - walls.sideOffsets.west;
+    const eastInteriorX = halfWidth + walls.sideOffsets.east;
+    const northInteriorZ = -halfDepth - walls.sideOffsets.north;
+    const southInteriorZ = halfDepth + walls.sideOffsets.south;
+    const thicknessFor = (side) => b.type === 'room'
+      ? walls.roomWallThicknesses[side]
+      : b.wallThickness;
+    const westX = westInteriorX - thicknessFor('west') / 2;
+    const eastX = eastInteriorX + thicknessFor('east') / 2;
+    const northZ = northInteriorZ - thicknessFor('north') / 2;
+    const southZ = southInteriorZ + thicknessFor('south') / 2;
+    const centerX = (westX + eastX) / 2;
+    const centerZ = (northZ + southZ) / 2;
+    const roomHalfWidth = (eastX - westX) / 2;
+    const roomHalfDepth = portalSquinchActive
+      ? Math.max(1, Number(b.depth) || 2)
+      : (southZ - northZ) / 2;
+    const sourceRoomCenterZ = portalSquinchActive ? northInteriorZ : centerZ;
+    const cornerCut = Math.max(0.1, Math.min(roomHalfWidth, roomHalfDepth) * (2 - Math.sqrt(2)));
+    let halfSpan = Math.max(0.1, roomHalfWidth - cornerCut);
+    const wallTop = Math.max(...['north', 'east', 'south', 'west'].map((side) => (
+      Math.max(0.05, b.height + walls.extraHeights[side])
+    )));
+    let guideCenterX = centerX;
+    let springY = wallTop + settings.springHeightOffset;
+    let generatedPortalReferenceRib = null;
+    if (portalSquinchActive) {
+      const wallSystem = this.buildingGroup?.children?.find((child) => child.userData?.wallSystem);
+      wallSystem?.updateMatrixWorld(true);
+      wallSystem?.traverse((object) => {
+        if (!generatedPortalReferenceRib
+          && object.isMesh
+          && object.userData?.roomDomePart === 'squinch-transition-rib'
+          && object.userData?.roomSquinchArchIndex === 4) {
+          generatedPortalReferenceRib = object;
+        }
+      });
+      if (generatedPortalReferenceRib) {
+        const ribPosition = generatedPortalReferenceRib.getWorldPosition(new THREE.Vector3());
+        guideCenterX = ribPosition.x;
+        halfSpan = Math.max(
+          0.1,
+          Number(generatedPortalReferenceRib.userData.roomSquinchArchHalfSpan) || halfSpan,
+        );
+        springY = Number.isFinite(Number(generatedPortalReferenceRib.userData.roomSquinchSpringY))
+          ? Number(generatedPortalReferenceRib.userData.roomSquinchSpringY)
+          : springY;
+      } else {
+        const generatedSpringY = Number(wallSystem?.userData?.portalSquinchVerticalWallTopY);
+        if (Number.isFinite(generatedSpringY)) springY = generatedSpringY;
+      }
+    }
+    const construction = pointedArchConstruction(
+      guideCenterX,
+      halfSpan,
+      springY,
+      settings.greenOffset,
+      springY + settings.greenHeightOffset,
+      { redOffset: settings.redOffset },
+    );
+    const referenceWall = portalSquinchActive ? 'south' : 'north';
+    let guideZ = portalSquinchActive
+      ? southZ + settings.ribDepth / 2 + 0.035
+      : northZ - settings.ribDepth / 2 - 0.035;
+    if (generatedPortalReferenceRib) {
+      const ribPosition = generatedPortalReferenceRib.getWorldPosition(new THREE.Vector3());
+      const outwardNormal = new THREE.Vector3().fromArray(
+        generatedPortalReferenceRib.userData.roomSquinchRibOutwardNormal || [0, 0, 1],
+      ).normalize();
+      const ribDepth = Math.max(
+        0.01,
+        Number(generatedPortalReferenceRib.userData.roomSquinchRibDepth) || settings.ribDepth,
+      );
+      guideZ = ribPosition.z + outwardNormal.z * (ribDepth / 2 + 0.035);
+    }
+    const guide = this.addArchConstructionDiagram(root, {
+      construction,
+      centerX: guideCenterX,
+      guideZ,
+      layerDirection: portalSquinchActive ? 1 : -1,
+      name: `${portalSquinchActive ? 'Portal' : 'Room'} Squinch ${referenceWall}-wall reference arch construction circles and radii`,
+      guideType: 'room_squinch',
+    });
+    if (!guide) return;
+    let portalGuideVerticalScale = 1;
+    if (generatedPortalReferenceRib) {
+      const targetApexY = Number(generatedPortalReferenceRib.userData.roomDomeCrownY);
+      const sourceRise = construction.apexPoint.y - springY;
+      if (Number.isFinite(targetApexY) && sourceRise > 0.000001) {
+        portalGuideVerticalScale = (targetApexY - springY) / sourceRise;
+        guide.scale.y = portalGuideVerticalScale;
+        guide.position.y = springY * (1 - portalGuideVerticalScale);
+        // Construction circles become the same vertically developed ellipses
+        // used to place the Portal rib. Keep only the point markers circular.
+        guide.children.forEach((child) => {
+          if (child.userData?.archConstructionRole?.endsWith('-center')) {
+            child.scale.y = 1 / portalGuideVerticalScale;
+          }
+        });
+        guide.userData.archConstructionApexY = targetApexY;
+      }
+    }
+    guide.userData.roomSquinchReferenceRib = true;
+    guide.userData.portalSquinchHalfSquareRoom = portalSquinchActive;
+    guide.userData.roomSquinchReferenceWall = referenceWall;
+    guide.userData.roomSquinchReferenceArchPlanCenter = [guideCenterX, sourceRoomCenterZ];
+    guide.userData.portalSquinchFullRoomDepth = portalSquinchActive ? Math.max(2, Number(b.depth) * 2) : null;
+    guide.userData.roomSquinchAutomaticTransitionTopY = generatedPortalReferenceRib
+      ? Number(generatedPortalReferenceRib.userData.roomDomeCrownY)
+      : construction.apexPoint.y;
+    guide.userData.portalSquinchGuideSource = generatedPortalReferenceRib
+      ? 'generated-south-wall-reference-rib'
+      : portalSquinchActive
+        ? 'normalized-portal-squinch-fallback'
+        : 'normalized-room-squinch';
+    guide.userData.portalSquinchReferenceRibIndex = generatedPortalReferenceRib?.userData?.roomSquinchArchIndex ?? null;
+    guide.userData.portalSquinchReferenceRibHalfSpan = generatedPortalReferenceRib
+      ? halfSpan
+      : null;
+    guide.userData.portalSquinchReferenceRibGuideZ = generatedPortalReferenceRib
+      ? guideZ
+      : null;
+    guide.userData.portalSquinchGuideVerticalScale = generatedPortalReferenceRib
+      ? portalGuideVerticalScale
+      : null;
+    this.orientArchConstructionGuideToRoomSection(guide, centerX, guideZ, sourceRoomCenterZ);
+  }
+
+  addRoomWallOpeningConstructionGuides(root) {
+    const [first, second] = String(this.selectedOpeningGuide || '').split(':');
+    const hasWallSide = ['north', 'east', 'south', 'west'].includes(first);
+    const wallSide = hasWallSide ? first : 'south';
+    const openingType = hasWallSide ? second : first;
     if (!['door', 'window'].includes(openingType)) return;
     const b = normalizeBuilding(this.building);
     const walls = normalizeWallSystem(this.walls, b);
-    const opening = walls.southOpenings?.[openingType];
+    const opening = this.building.type === 'room'
+      ? walls.roomWallOpenings?.[wallSide]?.[openingType]
+      : walls.southOpenings?.[openingType];
     if (!opening?.enabled || opening.head !== 'arch') return;
-    const thickness = Math.max(0.1, Number(b.wallThickness) || 0.4);
     const halfWidth = Math.max(1, Number(b.width) / 2);
     const halfDepth = Math.max(1, Number(b.depth) / 2);
     const westX = -halfWidth - walls.sideOffsets.west;
     const eastX = halfWidth + walls.sideOffsets.east;
+    const northZ = -halfDepth - walls.sideOffsets.north;
+    const southZ = halfDepth + walls.sideOffsets.south;
     const centerX = (westX + eastX) / 2;
-    const width = eastX - westX;
-    const sideTop = Math.max(
-      Math.max(0.05, b.height + walls.extraHeights.east),
-      Math.max(0.05, b.height + walls.extraHeights.west),
-    );
-    const southHeight = Math.max(0.05, b.height + walls.extraHeights.south);
-    const wallHeight = walls.ahang.enabled && walls.pointedArch.enabled ? Math.max(southHeight, sideTop) : southHeight;
-    const bottom = openingType === 'window' ? Math.min(wallHeight - 0.3, opening.sillHeight) : 0;
-    const profile = southOpeningProfile(opening, centerX, width, wallHeight, bottom);
-    if (!profile.archPoints?.length) return;
+    const centerZ = (northZ + southZ) / 2;
+    const span = wallSide === 'north' || wallSide === 'south'
+      ? eastX - westX
+      : southZ - northZ;
+    const wallHeight = Math.max(0.05, b.height + walls.extraHeights[wallSide]);
+    const builtWallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
+    const octagonHost = b.type === 'room'
+      ? builtWallSystem?.children.find((child) => (
+        child.userData?.roomDomePart === 'exterior-aligned-octagon-wall'
+          && child.userData?.roomKarbandiOctagonTouchedWalls?.length === 1
+          && child.userData.roomKarbandiOctagonTouchedWalls[0] === wallSide
+          && child.userData.roomKarbandiInheritedOpenings?.some((entry) => entry.openingType === openingType)
+      ))
+      : null;
+    const inheritedOpening = octagonHost?.userData.roomKarbandiInheritedOpenings
+      ?.find((entry) => entry.openingType === openingType) || null;
+    const movedToOctagon = Boolean(octagonHost && inheritedOpening);
+    const octagonTopY = Number(octagonHost?.userData.roomKarbandiOctagonTopStart?.[1]);
+    const hostHeight = movedToOctagon && Number.isFinite(octagonTopY) ? octagonTopY : wallHeight;
+    const bottom = openingType === 'window'
+      ? (movedToOctagon ? Math.max(0, Number(opening.sillHeight) || 0) : Math.min(wallHeight - 0.3, opening.sillHeight))
+      : 0;
+    const profile = movedToOctagon
+      ? null
+      : southOpeningProfile(opening, 0, span, hostHeight, bottom);
+    if (!movedToOctagon && !profile?.archPoints?.length) return;
+    const guideCenter = movedToOctagon
+      ? (inheritedOpening.left + inheritedOpening.right) / 2
+      : profile.center;
+    const guideWidth = movedToOctagon
+      ? inheritedOpening.right - inheritedOpening.left
+      : profile.width;
     const construction = pointedArchConstruction(
-      profile.center,
-      profile.width / 2,
-      profile.springTop,
+      guideCenter,
+      guideWidth / 2,
+      movedToOctagon ? inheritedOpening.springY : profile.springTop,
       opening.arch.greenOffset,
-      profile.greenHeight,
+      movedToOctagon ? inheritedOpening.greenHeight : profile.greenHeight,
       { redOffset: opening.arch.redOffset, redRadius: opening.arch.redRadius },
     );
-    this.addArchConstructionDiagram(root, {
+    if (!construction) return;
+    const localGuideRoot = new THREE.Group();
+    const guide = this.addArchConstructionDiagram(localGuideRoot, {
       construction,
-      centerX: profile.center,
-      guideZ: halfDepth + walls.sideOffsets.south + thickness + 0.035,
-      layerDirection: 1,
-      name: `${openingType === 'door' ? 'Door' : 'Window'} arch symmetric red and green construction circles`,
+      centerX: guideCenter,
+      guideZ: -0.035,
+      layerDirection: -1,
+      name: this.building.type === 'room'
+        ? `${wallSide} wall ${openingType === 'door' ? 'door' : 'window'} arch symmetric red and green construction circles`
+        : `${openingType === 'door' ? 'Door' : 'Window'} arch symmetric red and green construction circles`,
       guideType: openingType,
     });
+    if (!guide) return;
+    guide.userData.wallSide = wallSide;
+    guide.userData.openingHostSurface = movedToOctagon ? 'octagon-wall' : 'vertical-wall';
+    if (movedToOctagon) {
+      const start = new THREE.Vector3(...octagonHost.userData.roomKarbandiOctagonStart);
+      const end = new THREE.Vector3(...octagonHost.userData.roomKarbandiOctagonEnd);
+      const direction = end.clone().sub(start).setY(0).normalize();
+      // The inherited opening profile already stores absolute world Y values.
+      // Only place this local guide root on the octagon face in plan; copying
+      // start.y would add the wall base height a second time.
+      localGuideRoot.position.set(start.x, 0, start.z);
+      localGuideRoot.rotation.y = Math.atan2(-direction.z, direction.x);
+      const openingCenterWorld = start.clone().addScaledVector(direction, guideCenter);
+      guide.userData.openingHostCenterWorld = openingCenterWorld.toArray();
+      guide.userData.openingHostBottomY = inheritedOpening.bottomY;
+      guide.userData.openingHostTopY = inheritedOpening.topY;
+      guide.userData.openingHostSpringY = inheritedOpening.springY;
+      guide.userData.openingHostApexY = inheritedOpening.topY;
+    } else if (wallSide === 'south') localGuideRoot.position.set(centerX, 0, southZ);
+    else if (wallSide === 'north') {
+      localGuideRoot.position.set(centerX, 0, northZ);
+      localGuideRoot.rotation.y = Math.PI;
+    } else if (wallSide === 'east') {
+      localGuideRoot.position.set(eastX, 0, centerZ);
+      localGuideRoot.rotation.y = Math.PI / 2;
+    } else if (wallSide === 'west') {
+      localGuideRoot.position.set(westX, 0, centerZ);
+      localGuideRoot.rotation.y = -Math.PI / 2;
+    }
+    root.add(localGuideRoot);
+  }
+
+  addRoomPlanOpeningConstructionGuide(root) {
+    const [prefix, openingId] = String(this.selectedOpeningGuide || '').split(':');
+    if (prefix !== 'plan' || !openingId) return;
+    const b = normalizeBuilding(this.building);
+    if (b.type !== 'room' || (b.roomPlanShape || 'square') === 'square') return;
+    const walls = normalizeWallSystem(this.walls, b);
+    const opening = walls.roomPlanOpenings?.find((entry) => entry.id === openingId);
+    if (!opening || opening.head !== 'arch') return;
+    const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
+    const planGroup = wallSystem?.children.find((child) => child.userData?.roomPlanShape === b.roomPlanShape);
+    const planVertices = planGroup?.userData.roomPlanVertices || wallSystem?.userData.roomPlanVertices;
+    const vertices = planVertices?.map(([x, z]) => new THREE.Vector3(x, 0, z)) || [];
+    const sideCount = vertices.length;
+    if (sideCount < 3) return;
+    const segmentLengths = vertices.map((point, index) => point.distanceTo(vertices[(index + 1) % sideCount]));
+    const segmentStarts = segmentLengths.reduce((starts, length) => [...starts, starts.at(-1) + length], [0]);
+    const perimeter = segmentStarts.at(-1);
+    const northSegmentIndex = vertices.reduce((northIndex, point, candidateIndex) => {
+      const midpoint = point.clone().add(vertices[(candidateIndex + 1) % sideCount]).multiplyScalar(0.5);
+      const northPoint = vertices[northIndex].clone().add(vertices[(northIndex + 1) % sideCount]).multiplyScalar(0.5);
+      return midpoint.z < northPoint.z ? candidateIndex : northIndex;
+    }, 0);
+    const northPhase = segmentStarts[northSegmentIndex] + segmentLengths[northSegmentIndex] / 2;
+    const centerPhase = ((northPhase + opening.rotation / 360 * perimeter) % perimeter + perimeter) % perimeter;
+    const foundSegmentIndex = segmentLengths.findIndex((length, index) => (
+      centerPhase < segmentStarts[index] + length - 0.000001
+    ));
+    const segmentIndex = foundSegmentIndex < 0 ? sideCount - 1 : foundSegmentIndex;
+    const start = vertices[segmentIndex];
+    const end = vertices[(segmentIndex + 1) % sideCount];
+    const direction = end.clone().sub(start).normalize();
+    const localDistance = centerPhase - segmentStarts[segmentIndex];
+    const hostCenter = start.clone().addScaledVector(direction, localDistance);
+    const bottom = opening.type === 'window' ? opening.sillHeight : 0;
+    const springY = bottom + opening.height;
+    const construction = pointedArchConstruction(
+      0,
+      opening.width / 2,
+      springY,
+      opening.arch.greenOffset,
+      opening.arch.greenHeight,
+      { redOffset: opening.arch.redOffset },
+    );
+    if (!construction) return;
+    const localGuideRoot = new THREE.Group();
+    localGuideRoot.position.copy(hostCenter);
+    localGuideRoot.rotation.y = Math.atan2(-direction.z, direction.x);
+    const guide = this.addArchConstructionDiagram(localGuideRoot, {
+      construction,
+      centerX: 0,
+      guideZ: -0.035,
+      layerDirection: -1,
+      name: `Room plan ${opening.type} ${opening.id} arch symmetric red and green construction circles and radii`,
+      guideType: opening.type,
+    });
+    if (!guide) return;
+    guide.userData.wallSide = 'room_plan';
+    guide.userData.roomPlanOpeningId = opening.id;
+    guide.userData.openingHostSurface = `${b.roomPlanShape}-wall`;
+    guide.userData.openingHostCenterWorld = hostCenter.toArray();
+    guide.userData.openingHostSegmentIndex = segmentIndex;
+    guide.userData.openingHostRotation = opening.rotation;
+    root.add(localGuideRoot);
   }
 
   updateWallSurfaceHighlight() {
     this.invalidate();
     this.clearWallSurfaceHighlight();
     const openSide = this.selectedWallSide === 'south_arch' ? 'south' : this.selectedWallSide?.startsWith('north_') ? 'north' : this.selectedWallSide;
-    const showKarbandiRibArchGuide = this.karbandiRibArchEditing && this.walls.karbandi?.enabled === true;
-    if ((!this.selectedWallSide && !showKarbandiRibArchGuide) || !this.walls.enabled) return;
+    const roomKarbandiActive = this.building.type === 'room' && this.building.domeTransition === 'karbandi';
+    const showKarbandiRibArchGuide = this.karbandiRibArchEditing && (this.walls.karbandi?.enabled === true || roomKarbandiActive);
+    const showSquinchArchGuide = this.squinchArchEditing && (
+      (this.building.type === 'room' && this.building.domeTransition === 'squinch')
+      || (this.building.type !== 'room' && this.walls.portalTransition === 'squinch')
+    );
+    const showRoomPlanOpeningGuide = String(this.selectedOpeningGuide || '').startsWith('plan:');
+    if ((!this.selectedWallSide && !showKarbandiRibArchGuide && !showSquinchArchGuide && !showRoomPlanOpeningGuide) || !this.walls.enabled) return;
     if (this.selectedWallSide && this.walls.openSides.includes(openSide)) return;
     const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
     if (!wallSystem) return;
@@ -3533,11 +4913,34 @@ export class MehrazScene {
     if (selectedSide) wallSystem.traverse((child) => {
       if (!child.isMesh || !child.geometry) return;
       const wallSide = child.userData?.wallSide === 'arch' ? 'south_arch' : child.userData?.wallSide;
-      if (wallSide !== selectedSide) return;
+      const roomPlanSurface = ['room_plan_interior', 'room_plan_exterior'].includes(selectedSide);
+      if (roomPlanSurface ? child.userData?.isRoomWallBody !== true : wallSide !== selectedSide) return;
       if (child.userData?.isWallEdgeLine) return;
       // Clicking the Karbandi roof must not select every generic arch mesh.
       // Limit this highlight to the cover and its actual rib network.
       if (selectingKarbandiCover && !child.userData?.isKarbandiCover && !child.userData?.isKarbandi) return;
+      let highlightGeometry = child.geometry.clone();
+      if (roomPlanSurface) {
+        const materialIndex = selectedSide === 'room_plan_interior' ? 0 : 1;
+        const source = child.geometry.index ? child.geometry.toNonIndexed() : child.geometry.clone();
+        const matching = source.groups.filter((group) => group.materialIndex === materialIndex);
+        if (!matching.length) return;
+        const filtered = new THREE.BufferGeometry();
+        Object.entries(source.attributes).forEach(([name, attribute]) => {
+          const values = [];
+          matching.forEach((group) => {
+            for (let index = group.start; index < group.start + group.count; index += 1) {
+              for (let component = 0; component < attribute.itemSize; component += 1) {
+                values.push(attribute.array[index * attribute.itemSize + component]);
+              }
+            }
+          });
+          filtered.setAttribute(name, new THREE.Float32BufferAttribute(values, attribute.itemSize));
+        });
+        source.dispose();
+        highlightGeometry.dispose();
+        highlightGeometry = filtered;
+      }
       const sourceMaterial = Array.isArray(child.material) ? child.material[0] : child.material;
       const hasClipping = Boolean(sourceMaterial?.clippingPlanes?.length);
       const meshHighlightMaterial = hasClipping ? highlightMaterial.clone() : highlightMaterial;
@@ -3546,7 +4949,7 @@ export class MehrazScene {
         meshHighlightMaterial.clipIntersection = sourceMaterial.clipIntersection === true;
         meshHighlightMaterial.needsUpdate = true;
       }
-      const highlight = new THREE.Mesh(child.geometry.clone(), meshHighlightMaterial);
+      const highlight = new THREE.Mesh(highlightGeometry, meshHighlightMaterial);
       child.matrixWorld.decompose(highlight.position, highlight.quaternion, highlight.scale);
       highlight.renderOrder = 18;
       highlight.userData.isWallSideHighlight = true;
@@ -3562,8 +4965,14 @@ export class MehrazScene {
       root.add(highlight);
     });
     if (root.children.length && selectedSide === 'north_top') this.addNorthArchConstructionGuides(root);
-    if (root.children.length && selectedSide === 'south') this.addSouthOpeningConstructionGuides(root);
+    if (root.children.length && ['room_dome', 'room_dome_inner'].includes(selectedSide)) this.addRoomDomeArchConstructionGuides(root);
+    if (
+      root.children.length
+      && (selectedSide === 'south' || (this.building.type === 'room' && ['north', 'east', 'west'].includes(selectedSide)))
+    ) this.addRoomWallOpeningConstructionGuides(root);
+    if (showRoomPlanOpeningGuide) this.addRoomPlanOpeningConstructionGuide(root);
     if (showKarbandiRibArchGuide) this.addKarbandiRibArchConstructionGuides(root);
+    if (showSquinchArchGuide) this.addRoomSquinchArchConstructionGuides(root);
     if (!root.children.length) {
       highlightMaterial.dispose();
       edgeMaterial.dispose();
@@ -3583,13 +4992,16 @@ export class MehrazScene {
     }
     this.transformControls.detach();
     const selected = this.placementGroup.children.find((child) => child.userData.placementId === this.selectedId);
+    const selectedProject = this.projectInstanceGroup.children.find((child) => (
+      child.userData.projectInstanceId === this.selectedProjectInstanceId
+    ));
     if (selected && !objectIsSelectable(selected, this.placementGroup)) {
       this.selectedId = null;
       this.callbacks.onSelection?.(null);
       return;
     }
     const selectedZone = this.zoneGroup.children.find((child) => child.userData.zoneId === this.selectedZoneId);
-    const target = selected || selectedZone;
+    const target = selectedProject || selected || selectedZone;
     if (!target) return;
     if (selected?.userData.assetType === 'muqarnas_assembly') {
       const exactBounds = previewWorldBounds(selected, (object) => object.userData.exactMuqarnasGeometry === true);
@@ -3600,12 +5012,12 @@ export class MehrazScene {
         this.selectionOutline.userData.exactBoundsTarget = selected;
       }
     } else {
-      this.selectionOutline = new THREE.BoxHelper(target, selected ? '#ffe252' : '#2f7d86');
+      this.selectionOutline = new THREE.BoxHelper(target, selectedProject || selected ? '#ffe252' : '#2f7d86');
     }
     this.selectionOutline.material.depthTest = false;
     this.selectionOutline.renderOrder = 20;
     this.scene.add(this.selectionOutline);
-    if (selected) this.transformControls.attach(selected);
+    if (selectedProject || selected) this.transformControls.attach(selectedProject || selected);
   }
 
   frameModel() {
@@ -3641,6 +5053,773 @@ export class MehrazScene {
     this.camera.lookAt(target);
     this.camera.updateProjectionMatrix();
     this.controls.update();
+  }
+
+  restoreRoomSectionMaterials() {
+    this.sectionMaterialClipping.forEach((snapshot, material) => {
+      material.clippingPlanes = snapshot.planes ? [...snapshot.planes] : null;
+      material.clipIntersection = snapshot.clipIntersection;
+      material.clipShadows = snapshot.clipShadows;
+      material.needsUpdate = true;
+    });
+    this.sectionMaterialClipping.clear();
+    if (this.sectionCapGroup) this.clearGroup(this.sectionCapGroup);
+  }
+
+  roomSectionHatchMaterial() {
+    let texture = null;
+    if (typeof document !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      const context = canvas.getContext?.('2d');
+      if (context?.beginPath) {
+        context.fillStyle = '#62666a';
+        context.fillRect(0, 0, 64, 64);
+        context.strokeStyle = '#111111';
+        context.lineWidth = 2.5;
+        [-64, 0, 64].forEach((offset) => {
+          context.beginPath();
+          context.moveTo(offset, 64);
+          context.lineTo(offset + 64, 0);
+          context.stroke();
+        });
+        texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.needsUpdate = true;
+      }
+    }
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      color: texture ? '#ffffff' : '#62666a',
+      // The east half is removed for this section, so caps face east and are
+      // intentionally invisible from behind the retained west half.
+      side: THREE.FrontSide,
+      // Respect intact masonry in front of a cap. The small cut-plane offset
+      // and polygon offset below keep the actual cut interface continuous
+      // without allowing it to render through walls.
+      depthTest: true,
+      depthWrite: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    material.userData.roomSectionCutFace = true;
+    material.userData.roomSectionFillColor = '#62666a';
+    material.userData.roomSectionHatch = 'black-45-degree';
+    material.userData.roomSectionVisibilityPolicy = 'east-facing-cut-interface-depth-occluded-by-intact-masonry';
+    material.userData.generatedTexture = texture;
+    return material;
+  }
+
+  roomSectionLoopsForMesh(mesh, center, axis = 'x') {
+    return this.roomSectionLoopsForMeshes([mesh], center, null, axis);
+  }
+
+  roomSectionLoopsForMeshes(meshes, center, closeOpenAtY = null, axis = 'x') {
+    const epsilon = 0.0001;
+    const pointKey = (point) => `${Math.round(point.x / epsilon)}:${Math.round(point.y / epsilon)}`;
+    const segments = new Map();
+    meshes.filter(Boolean).forEach((mesh) => {
+      const position = mesh.geometry?.getAttribute?.('position');
+      if (!position || position.count < 3) return;
+      mesh.updateWorldMatrix(true, false);
+      const index = mesh.geometry.index;
+      const triangleCount = index ? index.count / 3 : position.count / 3;
+      const worldVertex = (vertexIndex) => new THREE.Vector3()
+        .fromBufferAttribute(position, vertexIndex)
+        .applyMatrix4(mesh.matrixWorld);
+      for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+        const vertices = [0, 1, 2].map((offset) => worldVertex(
+          index ? index.getX(triangle * 3 + offset) : triangle * 3 + offset,
+        ));
+        const distances = vertices.map((point) => (axis === 'y' ? point.z : point.x) - center);
+        if (distances.every((distance) => Math.abs(distance) <= epsilon)) continue;
+        const intersections = [];
+        [[0, 1], [1, 2], [2, 0]].forEach(([first, second]) => {
+          const a = vertices[first];
+          const b = vertices[second];
+          const da = distances[first];
+          const db = distances[second];
+          let point = null;
+          if (Math.abs(da) <= epsilon) point = a;
+          else if (Math.abs(db) <= epsilon) point = b;
+          else if (da * db < 0) point = a.clone().lerp(b, da / (da - db));
+          if (!point) return;
+          const projected = new THREE.Vector2(axis === 'y' ? point.x : point.z, point.y);
+          if (!intersections.some((entry) => entry.distanceToSquared(projected) <= epsilon ** 2)) {
+            intersections.push(projected);
+          }
+        });
+        if (intersections.length < 2) continue;
+        let pair = [intersections[0], intersections[1]];
+        intersections.forEach((first) => intersections.forEach((second) => {
+          if (first.distanceToSquared(second) > pair[0].distanceToSquared(pair[1])) pair = [first, second];
+        }));
+        const firstKey = pointKey(pair[0]);
+        const secondKey = pointKey(pair[1]);
+        if (firstKey === secondKey) continue;
+        const segmentKey = [firstKey, secondKey].sort().join('|');
+        if (!segments.has(segmentKey)) segments.set(segmentKey, { points: pair, keys: [firstKey, secondKey] });
+      }
+    });
+    const entries = [...segments.values()];
+    const adjacency = new Map();
+    entries.forEach((entry, segmentIndex) => entry.keys.forEach((key) => {
+      if (!adjacency.has(key)) adjacency.set(key, []);
+      adjacency.get(key).push(segmentIndex);
+    }));
+    const used = new Set();
+    const loops = [];
+    const entryOrder = entries.map((entry, index) => ({ entry, index }));
+    if (Number.isFinite(closeOpenAtY)) entryOrder.sort((first, second) => {
+      const firstEndpoint = first.entry.keys.some((key) => adjacency.get(key)?.length === 1) ? 0 : 1;
+      const secondEndpoint = second.entry.keys.some((key) => adjacency.get(key)?.length === 1) ? 0 : 1;
+      return firstEndpoint - secondEndpoint;
+    });
+    entryOrder.forEach(({ entry, index: startIndex }) => {
+      if (used.has(startIndex)) return;
+      used.add(startIndex);
+      const reverseStart = Number.isFinite(closeOpenAtY)
+        && adjacency.get(entry.keys[0])?.length !== 1
+        && adjacency.get(entry.keys[1])?.length === 1;
+      const startPointIndex = reverseStart ? 1 : 0;
+      const endPointIndex = reverseStart ? 0 : 1;
+      const path = [entry.points[startPointIndex].clone(), entry.points[endPointIndex].clone()];
+      const startKey = entry.keys[startPointIndex];
+      let currentKey = entry.keys[endPointIndex];
+      let guard = 0;
+      while (currentKey !== startKey && guard < entries.length + 2) {
+        const nextIndex = (adjacency.get(currentKey) || []).find((candidate) => !used.has(candidate));
+        if (nextIndex == null) break;
+        used.add(nextIndex);
+        const next = entries[nextIndex];
+        const fromFirst = next.keys[0] === currentKey;
+        path.push(next.points[fromFirst ? 1 : 0].clone());
+        currentKey = next.keys[fromFirst ? 1 : 0];
+        guard += 1;
+      }
+      const closed = currentKey === startKey;
+      if (closed) path.pop();
+      else {
+        const closesAcrossTop = Number.isFinite(closeOpenAtY)
+          && path.length >= 3
+          && Math.abs(path[0].y - closeOpenAtY) <= 0.001
+          && Math.abs(path[path.length - 1].y - closeOpenAtY) <= 0.001;
+        if (!closesAcrossTop) return;
+      }
+      if (path.length < 3) return;
+      const area = Math.abs(path.reduce((sum, point, pointIndex) => {
+        const next = path[(pointIndex + 1) % path.length];
+        return sum + point.x * next.y - next.x * point.y;
+      }, 0) / 2);
+      if (area > 0.00001) loops.push(path);
+    });
+    return loops;
+  }
+
+  roomTransitionSectionLoops(mesh, center, axis = 'x') {
+    if (mesh.userData?.roomDomePart !== 'exterior-aligned-octagon-wall') return [];
+    const pointArrays = [
+      mesh.userData.roomKarbandiOctagonStart,
+      mesh.userData.roomKarbandiOctagonEnd,
+      mesh.userData.roomKarbandiOctagonInnerStart,
+      mesh.userData.roomKarbandiOctagonInnerEnd,
+    ];
+    if (!pointArrays.every((point) => Array.isArray(point) && point.length === 3)) return [];
+    const [outerStart, outerEnd, innerStart, innerEnd] = pointArrays.map((point) => new THREE.Vector3(...point));
+    if (![outerStart, outerEnd, innerStart, innerEnd].every((point) => Number.isFinite(point.x))) return [];
+    const intersectAtSection = (start, end) => {
+      const startCoordinate = axis === 'y' ? start.z : start.x;
+      const endCoordinate = axis === 'y' ? end.z : end.x;
+      const delta = endCoordinate - startCoordinate;
+      if (Math.abs(delta) <= 0.000001) return null;
+      const amount = (center - startCoordinate) / delta;
+      if (amount < -0.000001 || amount > 1.000001) return null;
+      return { point: start.clone().lerp(end, amount), amount };
+    };
+    const outerHit = intersectAtSection(outerStart, outerEnd);
+    const innerHit = intersectAtSection(innerStart, innerEnd);
+    if (!outerHit || !innerHit) return [];
+    const bottomY = Number(mesh.userData.roomKarbandiMasonryBaseY);
+    const topY = Number(mesh.userData.roomKarbandiMasonryTopY);
+    if (!Number.isFinite(bottomY) || !Number.isFinite(topY) || topY <= bottomY + 0.0001) return [];
+    const edgeLength = outerStart.distanceTo(outerEnd);
+    const cutU = outerHit.amount * edgeLength;
+    const openings = (mesh.userData.roomKarbandiInheritedOpenings || []).filter((opening) => (
+      cutU >= Number(opening.left) - 0.0001
+        && cutU <= Number(opening.right) + 0.0001
+    ));
+    const intervals = [[bottomY, topY]];
+    openings.forEach((opening) => {
+      const openingBottom = THREE.MathUtils.clamp(Number(opening.bottomY), bottomY, topY);
+      const openingTop = THREE.MathUtils.clamp(Number(opening.topY), bottomY, topY);
+      if (!(openingTop > openingBottom + 0.0001)) return;
+      const nextIntervals = [];
+      intervals.forEach(([startY, endY]) => {
+        if (openingTop <= startY || openingBottom >= endY) nextIntervals.push([startY, endY]);
+        else {
+          if (openingBottom > startY + 0.0001) nextIntervals.push([startY, openingBottom]);
+          if (openingTop < endY - 0.0001) nextIntervals.push([openingTop, endY]);
+        }
+      });
+      intervals.splice(0, intervals.length, ...nextIntervals);
+    });
+    return intervals.map(([startY, endY]) => [
+      new THREE.Vector2(axis === 'y' ? outerHit.point.x : outerHit.point.z, startY),
+      new THREE.Vector2(axis === 'y' ? outerHit.point.x : outerHit.point.z, endY),
+      new THREE.Vector2(axis === 'y' ? innerHit.point.x : innerHit.point.z, endY),
+      new THREE.Vector2(axis === 'y' ? innerHit.point.x : innerHit.point.z, startY),
+    ]).filter((loop) => Math.abs(loop[0].x - loop[3].x) > 0.0001);
+  }
+
+  roomSectionLoopsOutsideCircularVoid(loops, centerZ, radius) {
+    if (!Number.isFinite(radius) || radius <= 0) return loops;
+    const clipHalfPlane = (loop, boundary, keepLess) => {
+      const clipped = [];
+      const inside = (point) => (keepLess ? point.x <= boundary + 0.000001 : point.x >= boundary - 0.000001);
+      for (let index = 0; index < loop.length; index += 1) {
+        const current = loop[index];
+        const next = loop[(index + 1) % loop.length];
+        const currentInside = inside(current);
+        const nextInside = inside(next);
+        if (currentInside) clipped.push(current.clone());
+        if (currentInside !== nextInside && Math.abs(next.x - current.x) > 0.000001) {
+          const amount = THREE.MathUtils.clamp((boundary - current.x) / (next.x - current.x), 0, 1);
+          clipped.push(current.clone().lerp(next, amount));
+        }
+      }
+      return clipped.length >= 3 ? clipped : [];
+    };
+    return loops.flatMap((loop) => [
+      clipHalfPlane(loop, centerZ - radius, true),
+      clipHalfPlane(loop, centerZ + radius, false),
+    ]).filter((loop) => loop.length >= 3);
+  }
+
+  roomContinuousKarbandiRoofSectionLoops(loops, centerZ, roofThickness) {
+    const binSize = 0.004;
+    const safeThickness = Math.max(0.001, roofThickness);
+    return loops.map((loop) => {
+      const bins = new Map();
+      loop.forEach((point) => {
+        const key = Math.round(point.x / binSize);
+        const entry = bins.get(key) || { z: point.x, topY: point.y, count: 0 };
+        entry.z = (entry.z * entry.count + point.x) / (entry.count + 1);
+        entry.topY = Math.max(entry.topY, point.y);
+        entry.count += 1;
+        bins.set(key, entry);
+      });
+      const samples = [...bins.values()].sort((left, right) => left.z - right.z);
+      if (samples.length < 2) return loop;
+      const rawTop = samples.map((sample) => sample.topY);
+      const smoothedTop = rawTop.map((value, index) => {
+        const start = Math.max(0, index - 2);
+        const end = Math.min(rawTop.length - 1, index + 2);
+        let total = 0;
+        for (let neighbor = start; neighbor <= end; neighbor += 1) total += rawTop[neighbor];
+        return total / (end - start + 1);
+      });
+      const isNorthSide = samples.reduce((sum, sample) => sum + sample.z, 0) / samples.length < centerZ;
+      for (let index = 1; index < smoothedTop.length; index += 1) {
+        smoothedTop[index] = isNorthSide
+          ? Math.max(smoothedTop[index - 1], smoothedTop[index])
+          : Math.min(smoothedTop[index - 1], smoothedTop[index]);
+      }
+      const top = samples.map((sample, index) => new THREE.Vector2(sample.z, smoothedTop[index]));
+      const bottom = [...top].reverse().map((point) => new THREE.Vector2(point.x, point.y - safeThickness));
+      return [...top, ...bottom];
+    }).filter((loop) => loop.length >= 4);
+  }
+
+  roomInsetSectionLoops(loops, inset = 0.0015) {
+    return loops.map((loop) => {
+      const center = loop.reduce((sum, point) => sum.add(point), new THREE.Vector2())
+        .multiplyScalar(1 / loop.length);
+      return loop.map((point) => {
+        const towardCenter = center.clone().sub(point);
+        if (towardCenter.lengthSq() <= inset * inset) return point.clone();
+        return point.clone().add(towardCenter.setLength(inset));
+      });
+    });
+  }
+
+  setRoomCircularCourseConstructionReveal(child, progress = 1) {
+    const materials = this.prepareConstructionMaterial(child);
+    if (!materials.length) return;
+    const boundedProgress = THREE.MathUtils.clamp(progress, 0, 1);
+    child.visible = boundedProgress > 0.001;
+    child.updateWorldMatrix(true, false);
+    const bounds = new THREE.Box3().setFromObject(child);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const courseHeight = Math.max(
+      0.01,
+      Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01),
+    );
+    const brickLength = Math.max(0.02, Number(this.walls.bricks?.brickWidth || 0.2));
+    const uniforms = {
+      roomCourseProgress: { value: boundedProgress },
+      roomCourseBottom: { value: bounds.min.y },
+      roomCourseTop: { value: bounds.max.y },
+      roomCourseHeight: { value: courseHeight },
+      roomCourseBrickLength: { value: brickLength },
+      roomCourseCenter: { value: new THREE.Vector2(center.x, center.z) },
+    };
+    const configureMaterial = (material) => {
+      if (material.userData?.roomConstructionCourseRevealUniforms) {
+        const existing = material.userData.roomConstructionCourseRevealUniforms;
+        Object.entries(uniforms).forEach(([name, uniform]) => {
+          if (existing[name]?.value?.copy && uniform.value?.isVector2) existing[name].value.copy(uniform.value);
+          else if (existing[name]) existing[name].value = uniform.value;
+        });
+        return;
+      }
+      material.userData.roomConstructionCourseRevealUniforms = uniforms;
+      material.userData.roomConstructionRevealMode = 'continuous-circular-brick-by-brick-bottom-to-top';
+      material.userData.roomConstructionCourseHeight = courseHeight;
+      material.userData.roomConstructionBrickLength = brickLength;
+      const previousCompile = material.onBeforeCompile;
+      const previousCacheKey = material.customProgramCacheKey.bind(material);
+      material.onBeforeCompile = (shader, renderer) => {
+        previousCompile.call(material, shader, renderer);
+        Object.assign(shader.uniforms, material.userData.roomConstructionCourseRevealUniforms);
+        shader.vertexShader = `varying vec3 vRoomConstructionWorldPosition;\n${shader.vertexShader}`
+          .replace(
+            '#include <project_vertex>',
+            '#include <project_vertex>\n vRoomConstructionWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+          );
+        shader.fragmentShader = `
+uniform float roomCourseProgress;
+uniform float roomCourseBottom;
+uniform float roomCourseTop;
+uniform float roomCourseHeight;
+uniform float roomCourseBrickLength;
+uniform vec2 roomCourseCenter;
+varying vec3 vRoomConstructionWorldPosition;
+${shader.fragmentShader}`.replace(
+          '#include <clipping_planes_fragment>',
+          `#include <clipping_planes_fragment>
+          if (roomCourseProgress < 0.999999) {
+            float courseSpan = max(0.0001, roomCourseTop - roomCourseBottom);
+            float courseCount = max(1.0, ceil(courseSpan / roomCourseHeight));
+            float coursePosition = clamp(roomCourseProgress, 0.0, 1.0) * courseCount;
+            float activeCourse = min(courseCount - 1.0, floor(coursePosition));
+            float activeCourseProgress = coursePosition - activeCourse;
+            float pointCourse = min(
+              courseCount - 1.0,
+              floor(max(0.0, vRoomConstructionWorldPosition.y - roomCourseBottom) / roomCourseHeight)
+            );
+            if (pointCourse > activeCourse + 0.25) discard;
+            if (abs(pointCourse - activeCourse) < 0.25) {
+              vec2 radial = vRoomConstructionWorldPosition.xz - roomCourseCenter;
+              float radius = max(roomCourseBrickLength, length(radial));
+              float brickCount = max(1.0, floor(6.28318530718 * radius / roomCourseBrickLength + 0.5));
+              float revealedBricks = ceil(activeCourseProgress * brickCount - 0.00001);
+              float angleProgress = mod(atan(radial.y, radial.x) + 6.28318530718, 6.28318530718) / 6.28318530718;
+              if (angleProgress > revealedBricks / brickCount) discard;
+            }
+          }`,
+        );
+        material.userData.roomConstructionCourseRevealShader = shader;
+      };
+      material.customProgramCacheKey = () => `${previousCacheKey()}|room-circular-course-reveal-v1`;
+      material.needsUpdate = true;
+    };
+    materials.forEach((material, index) => {
+      const permanentMaterial = this.permanentConstructionMaterial(child, index);
+      material.clippingPlanes = Array.isArray(permanentMaterial?.clippingPlanes)
+        ? [...permanentMaterial.clippingPlanes]
+        : null;
+      configureMaterial(material);
+    });
+    if (!Object.hasOwn(child.userData, 'constructionOriginalCustomDepthMaterial')) {
+      child.userData.constructionOriginalCustomDepthMaterial = child.customDepthMaterial || null;
+      child.customDepthMaterial = new THREE.MeshDepthMaterial({
+        depthPacking: THREE.RGBADepthPacking,
+        side: Array.isArray(child.material) ? child.material[0]?.side : child.material.side,
+      });
+      configureMaterial(child.customDepthMaterial);
+    } else if (child.customDepthMaterial) configureMaterial(child.customDepthMaterial);
+    child.userData.roomConstructionCourseSequence = {
+      direction: 'bottom-to-top',
+      courseOrder: 'complete-current-ring-before-next-course',
+      brickOrder: 'continuous-rotation-one-brick-at-a-time',
+      courseHeight,
+      brickLength,
+      progress: boundedProgress,
+    };
+  }
+
+  roomSectionEnvelopeLoopsForMeshes(
+    meshes,
+    center,
+    fallbackThickness = 0.05,
+    captureThreshold = 0.0001,
+    boundaryPadding = 0,
+    axis = 'x',
+  ) {
+    const epsilon = Math.max(0.0001, captureThreshold);
+    const binSize = 0.006;
+    const bins = new Map();
+    const appendPoint = (point) => {
+      const horizontal = axis === 'y' ? point.x : point.z;
+      const key = Math.round(horizontal / binSize);
+      const entry = bins.get(key) || { z: horizontal, minY: point.y, maxY: point.y, count: 0 };
+      entry.z = (entry.z * entry.count + horizontal) / (entry.count + 1);
+      entry.minY = Math.min(entry.minY, point.y);
+      entry.maxY = Math.max(entry.maxY, point.y);
+      entry.count += 1;
+      bins.set(key, entry);
+    };
+    meshes.filter(Boolean).forEach((mesh) => {
+      const position = mesh.geometry?.getAttribute?.('position');
+      if (!position || position.count < 3) return;
+      mesh.updateWorldMatrix(true, false);
+      const index = mesh.geometry.index;
+      const triangleCount = index ? index.count / 3 : position.count / 3;
+      const worldVertex = (vertexIndex) => new THREE.Vector3()
+        .fromBufferAttribute(position, vertexIndex)
+        .applyMatrix4(mesh.matrixWorld);
+      for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+        const vertices = [0, 1, 2].map((offset) => worldVertex(
+          index ? index.getX(triangle * 3 + offset) : triangle * 3 + offset,
+        ));
+        const distances = vertices.map((point) => (axis === 'y' ? point.z : point.x) - center);
+        [[0, 1], [1, 2], [2, 0]].forEach(([first, second]) => {
+          const a = vertices[first];
+          const b = vertices[second];
+          const da = distances[first];
+          const db = distances[second];
+          if (Math.abs(da) <= epsilon) appendPoint(a);
+          if (da * db < 0) appendPoint(a.clone().lerp(b, da / (da - db)));
+        });
+      }
+    });
+    const samples = [...bins.values()].sort((left, right) => left.z - right.z);
+    if (samples.length < 2) return [];
+    samples.forEach((sample) => {
+      if (sample.maxY - sample.minY < fallbackThickness * 0.2) {
+        sample.minY = sample.maxY - fallbackThickness;
+      }
+      sample.minY -= boundaryPadding;
+      sample.maxY += boundaryPadding;
+    });
+    if (boundaryPadding > 0 && samples.length >= 2) {
+      samples.unshift({
+        ...samples[0],
+        z: samples[0].z - boundaryPadding,
+      });
+      samples.push({
+        ...samples[samples.length - 1],
+        z: samples[samples.length - 1].z + boundaryPadding,
+      });
+    }
+    return [[
+      ...samples.map((sample) => new THREE.Vector2(sample.z, sample.maxY)),
+      ...[...samples].reverse().map((sample) => new THREE.Vector2(sample.z, sample.minY)),
+    ]];
+  }
+
+  buildRoomSectionCaps(center, axis = 'x') {
+    if (!this.sectionCapGroup) {
+      this.sectionCapGroup = new THREE.Group();
+      this.sectionCapGroup.name = 'Room section cut faces';
+      this.scene?.add(this.sectionCapGroup);
+    }
+    this.clearGroup(this.sectionCapGroup);
+    const cutMaterial = this.roomSectionHatchMaterial();
+    cutMaterial.userData.roomSectionAxis = axis;
+    cutMaterial.userData.roomSectionVisibilityPolicy = axis === 'y'
+      ? 'south-facing-cut-interface-depth-occluded-by-intact-masonry'
+      : 'east-facing-cut-interface-depth-occluded-by-intact-masonry';
+    const hatchSpacing = 0.08;
+    const excluded = (child) => child.userData?.isBrickFace === true
+      || child.userData?.isWallEdgeLine === true
+      || child.userData?.isKarbandiVisualGuide === true
+      || (this.building?.domeTransitionCoverEnabled === true
+        && child.userData?.isKarbandi === true)
+      || child.userData?.roomDomeOpeningVoid === true
+      || child.userData?.roomDomePart === 'karbandi-roof-to-drum-infill'
+      || child.userData?.roomDomePart === 'karbandi-rib-top-backing';
+    const addSectionCaps = (child, sectionLoops, capSource, sourcePartOverride = null) => {
+      sectionLoops.forEach((loop, loopIndex) => {
+        const shape = new THREE.Shape();
+        shape.moveTo(loop[0].x, loop[0].y);
+        loop.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
+        shape.closePath();
+        const geometry = new THREE.ShapeGeometry(shape);
+        const positions = geometry.getAttribute('position');
+        const uvs = geometry.getAttribute('uv');
+        for (let vertex = 0; vertex < positions.count; vertex += 1) {
+          const horizontal = positions.getX(vertex);
+          const y = positions.getY(vertex);
+          if (axis === 'y') positions.setXYZ(vertex, horizontal, y, center + 0.0005);
+          else positions.setXYZ(vertex, center + 0.0005, y, horizontal);
+          uvs.setXY(vertex, horizontal / hatchSpacing, y / hatchSpacing);
+        }
+        positions.needsUpdate = true;
+        uvs.needsUpdate = true;
+        // The X section's YZ coordinate mapping reverses the default winding.
+        // The perpendicular Y section maps directly into XY and retains it.
+        const indices = geometry.getIndex();
+        if (indices && axis === 'x') {
+          for (let triangle = 0; triangle < indices.count; triangle += 3) {
+            const second = indices.getX(triangle + 1);
+            indices.setX(triangle + 1, indices.getX(triangle + 2));
+            indices.setX(triangle + 2, second);
+          }
+          indices.needsUpdate = true;
+        }
+        geometry.computeVertexNormals();
+        const cap = new THREE.Mesh(geometry, cutMaterial);
+        cap.name = `${child.name || 'Masonry'} section cut face ${loopIndex + 1}`;
+        cap.renderOrder = 40;
+        cap.userData.roomSectionCutFace = true;
+        cap.userData.roomSectionSourceName = child.name || null;
+        cap.userData.roomSectionSourcePart = sourcePartOverride || child.userData?.roomDomePart || null;
+        cap.userData.roomSectionSourceIsKarbandi = child.userData?.isKarbandi === true;
+        cap.userData.roomSectionSourceIsKarbandiCover = child.userData?.isKarbandiCover === true;
+        cap.userData.roomSectionCapSource = capSource;
+        cap.userData.roomSectionHatchSpacing = hatchSpacing;
+        cap.userData.roomSectionAxis = axis;
+        cap.userData.roomSectionVoidPreserved = ['dome-shell', 'inner-dome-shell', 'dome-drum'].includes(child.userData?.roomDomePart);
+        this.sectionCapGroup.add(cap);
+      });
+    };
+    [this.buildingGroup, this.archInfillGroup].forEach((root) => root?.traverse((child) => {
+      if (!child.isMesh || child === this.groundMesh || !child.visible || excluded(child)) return;
+      const automaticLoops = this.roomSectionLoopsForMesh(child, center, axis);
+      let sectionLoops = automaticLoops.length
+        ? automaticLoops
+        : this.roomTransitionSectionLoops(child, center, axis);
+      let capSource = automaticLoops.length ? 'mesh-intersection' : 'transition-wall-profile';
+      if (this.building?.domeTransitionCoverEnabled === true
+        && child.userData?.roomDomePart === 'exterior-aligned-octagon-wall') {
+        const completeWallSection = this.roomTransitionSectionLoops(child, center, axis);
+        if (completeWallSection.length) {
+          sectionLoops = completeWallSection;
+          capSource = 'complete-transition-wall-section-on-exact-true-boundary';
+        }
+      }
+      if (child.userData?.roomDomeOpeningVoid === true) {
+        sectionLoops = this.roomSectionLoopsOutsideCircularVoid(
+          sectionLoops,
+          this.buildingGroup?.userData?.roomKarbandiRotationCenter?.[axis === 'y' ? 0 : 1] ?? 0,
+          Number(child.userData.roomDomeOpeningVoidRadius),
+        );
+        capSource = 'mesh-intersection-clipped-outside-drum-opening';
+      }
+      if (child.userData?.roomDomePart === 'karbandi-roof-to-drum-infill-top') {
+        const footprintCenter = child.userData.roomKarbandiInfillTopDrumFootprintCenter;
+        const footprintRadius = Number(child.userData.roomKarbandiInfillTopDrumClipRadius);
+        if (Array.isArray(footprintCenter) && Number.isFinite(footprintRadius)) {
+          sectionLoops = this.roomSectionLoopsOutsideCircularVoid(
+            sectionLoops,
+            Number(footprintCenter[axis === 'y' ? 0 : 1]),
+            footprintRadius,
+          );
+          capSource = 'checker-roof-section-clipped-outside-actual-drum-footprint';
+        }
+      }
+      addSectionCaps(child, sectionLoops, capSource);
+    }));
+    const transitionCoverMeshes = [];
+    this.buildingGroup?.traverse((child) => {
+      if (child.isMesh && child.visible
+        && child.userData?.isKarbandiCover === true
+        && child.userData?.roomDomeOpeningVoid === true) {
+        transitionCoverMeshes.push(child);
+      }
+    });
+    if (transitionCoverMeshes.length) {
+      const sourceCover = transitionCoverMeshes[0];
+      const coverThickness = Math.max(
+        0.001,
+        ...transitionCoverMeshes.map((mesh) => Number(mesh.userData?.roofThickness) || 0),
+      );
+      const closureThreshold = Math.max(0.012, Math.min(0.04, coverThickness * 0.5));
+      const rawRoofLoops = this.roomSectionLoopsOutsideCircularVoid(
+        this.roomSectionEnvelopeLoopsForMeshes(
+          transitionCoverMeshes,
+          center,
+          coverThickness,
+          closureThreshold,
+          0,
+          axis,
+        ),
+        this.buildingGroup?.userData?.roomKarbandiRotationCenter?.[axis === 'y' ? 0 : 1] ?? 0,
+        Number(sourceCover.userData.roomDomeOpeningVoidRadius),
+      );
+      const roofOnlyLoops = this.roomContinuousKarbandiRoofSectionLoops(
+        rawRoofLoops,
+        this.buildingGroup?.userData?.roomKarbandiRotationCenter?.[axis === 'y' ? 0 : 1] ?? 0,
+        coverThickness,
+      );
+      addSectionCaps(
+        sourceCover,
+        roofOnlyLoops,
+        'continuous-karbandi-roof-envelope-without-boundary-padding',
+        'transition-cover-roof-section',
+      );
+      if (roofOnlyLoops.length) {
+        this.sectionCapGroup.children.slice(-roofOnlyLoops.length).forEach((cap) => {
+          cap.renderOrder = 42;
+          cap.userData.roomSectionClosureThreshold = closureThreshold;
+          cap.userData.roomSectionBoundaryPadding = 0;
+          cap.userData.roomSectionBoundaryPolicy = 'roof-only-continuous-envelope-no-exterior-bleed';
+          cap.userData.roomSectionRoofProfile = 'smoothed-monotonic-visible-top-with-constant-physical-thickness';
+        });
+      }
+    }
+    const infillSections = new Map();
+    this.buildingGroup?.traverse((child) => {
+      const part = child.userData?.roomDomePart;
+      if (!child.isMesh || !child.visible
+        || !['karbandi-roof-to-drum-infill', 'karbandi-rib-top-backing'].includes(part)) return;
+      const faceIndex = child.userData?.roomKarbandiOctagonFaceIndex;
+      if (!infillSections.has(faceIndex)) infillSections.set(faceIndex, {});
+      infillSections.get(faceIndex)[part === 'karbandi-roof-to-drum-infill' ? 'infill' : 'backing'] = child;
+    });
+    infillSections.forEach(({ infill, backing }) => {
+      if (!infill || !backing) return;
+      const topY = Number(infill.userData?.roomKarbandiMasonryTopY);
+      const loops = this.roomSectionLoopsForMeshes([infill, backing], center, topY, axis);
+      addSectionCaps(infill, loops, 'combined-infill-and-rib-backing-intersection');
+    });
+    if (!this.sectionCapGroup.children.length) {
+      cutMaterial.userData?.generatedTexture?.dispose?.();
+      cutMaterial.dispose();
+    }
+  }
+
+  applyRoomSectionClipping() {
+    this.restoreRoomSectionMaterials();
+    if (!this.sectionViewEnabled) return;
+    const walls = normalizeWallSystem(this.walls, this.building);
+    const westX = -this.building.width / 2 - walls.sideOffsets.west;
+    const eastX = this.building.width / 2 + walls.sideOffsets.east;
+    const northZ = -this.building.depth / 2 - walls.sideOffsets.north;
+    const southZ = this.building.depth / 2 + walls.sideOffsets.south;
+    const centerX = (westX + eastX) / 2;
+    const centerZ = (northZ + southZ) / 2;
+    const axis = this.sectionViewAxis === 'y' ? 'y' : 'x';
+    const center = axis === 'y' ? centerZ : centerX;
+    const planeNormal = axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0);
+    this.sectionClipPlane = new THREE.Plane(planeNormal, center);
+    if (this.building.type === 'room' || this.building.buildingType === 'portal') {
+      this.buildRoomSectionCaps(center, axis);
+    }
+    const applyPlane = (root, plane, skipNestedProjects = false) => {
+      const visit = (child) => {
+        if (skipNestedProjects && child !== root && child.userData?.isProjectInstance === true) return;
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.filter(Boolean).forEach((material) => {
+            if (!this.sectionMaterialClipping.has(material)) {
+              this.sectionMaterialClipping.set(material, {
+                planes: Array.isArray(material.clippingPlanes) ? [...material.clippingPlanes] : null,
+                clipIntersection: material.clipIntersection === true,
+                clipShadows: material.clipShadows === true,
+              });
+            }
+            const permanent = this.sectionMaterialClipping.get(material).planes || [];
+            material.clippingPlanes = [...permanent, plane];
+            material.clipIntersection = false;
+            material.clipShadows = true;
+            material.needsUpdate = true;
+          });
+        }
+        child.children?.forEach(visit);
+      };
+      if (root) visit(root);
+    };
+    [
+      this.buildingGroup,
+      this.archInfillGroup,
+      this.zoneDecorationGroup,
+      this.placementGroup,
+      this.placementMaskGroup,
+    ].forEach((root) => applyPlane(root, this.sectionClipPlane));
+    this.projectInstanceGroup?.updateWorldMatrix(true, true);
+    this.projectInstanceGroup?.children.forEach((project) => {
+      const localPlane = new THREE.Plane(
+        axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0),
+        Number(project.userData?.[axis === 'y' ? 'sectionCenterZ' : 'sectionCenterX']) || 0,
+      );
+      const worldPlane = localPlane.applyMatrix4(project.matrixWorld);
+      applyPlane(project, worldPlane, true);
+      project.traverse((child) => {
+        if (child === project || child.userData?.isProjectInstance !== true) return;
+        child.updateWorldMatrix(true, true);
+        const nestedPlane = new THREE.Plane(
+          axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0),
+          Number(child.userData?.[axis === 'y' ? 'sectionCenterZ' : 'sectionCenterX']) || 0,
+        ).applyMatrix4(child.matrixWorld);
+        applyPlane(child, nestedPlane, true);
+      });
+    });
+    this.invalidate(true);
+  }
+
+  frameRoomSectionView(axis = this.sectionViewAxis) {
+    const bounds = this.completeModelBounds();
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z, 2) * 1.4;
+    this.controls.target.set(center.x, Math.max(0.4, center.y), center.z);
+    this.camera.up.set(0, 1, 0);
+    if (axis === 'y') this.camera.position.set(center.x, this.controls.target.y, center.z + radius);
+    else this.camera.position.set(center.x + radius, this.controls.target.y, center.z);
+    this.camera.lookAt(this.controls.target);
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  }
+
+  setRoomSectionView(enabled = false, axis = this.sectionViewAxis) {
+    const hasSliceableModel = this.building.type === 'room'
+      || this.building.buildingType === 'portal'
+      || this.projectInstanceGroup?.children.length > 0;
+    const next = enabled === true && hasSliceableModel;
+    const nextAxis = axis === 'y' ? 'y' : 'x';
+    const axisChanged = nextAxis !== this.sectionViewAxis;
+    this.sectionViewAxis = nextAxis;
+    if (next === this.sectionViewEnabled) {
+      if (next) {
+        this.applyRoomSectionClipping();
+        if (axisChanged) this.frameRoomSectionView(nextAxis);
+      }
+      return next;
+    }
+    if (next) {
+      this.sectionViewCameraState = {
+        position: this.camera.position.clone(),
+        quaternion: this.camera.quaternion.clone(),
+        up: this.camera.up.clone(),
+        target: this.controls.target.clone(),
+      };
+      this.sectionViewEnabled = true;
+      this.applyRoomSectionClipping();
+      this.frameRoomSectionView(nextAxis);
+      this.updateWallSurfaceHighlight();
+    } else {
+      this.sectionViewEnabled = false;
+      this.restoreRoomSectionMaterials();
+      if (this.sectionViewCameraState) {
+        this.camera.position.copy(this.sectionViewCameraState.position);
+        this.camera.quaternion.copy(this.sectionViewCameraState.quaternion);
+        this.camera.up.copy(this.sectionViewCameraState.up);
+        this.controls.target.copy(this.sectionViewCameraState.target);
+        this.camera.updateProjectionMatrix();
+        this.controls.update();
+      }
+      this.sectionViewCameraState = null;
+      this.sectionClipPlane = null;
+      this.updateWallSurfaceHighlight();
+      this.invalidate(true);
+    }
+    return next;
   }
 
   applyExportAppearance(settings = {}) {
@@ -3702,6 +5881,11 @@ export class MehrazScene {
       if (exportOpeningSpills.children.length) this.scene.add(exportOpeningSpills);
     }
     this.buildingGroup.traverse((child) => {
+      if (child.userData?.isKarbandiVisualGuide === true) {
+        visibility.push([child, child.visible]);
+        child.visible = false;
+        return;
+      }
       if (!child.userData?.isWallEdge && !child.userData?.isNorthBoundary) return;
       lineVisibility.push([child, child.visible]);
       if (settings.seamless) {
@@ -3800,6 +5984,7 @@ export class MehrazScene {
     styleGroup(this.buildingGroup, 'wall');
     styleGroup(this.archInfillGroup, settings.seamless ? 'wall' : 'module');
     styleGroup(this.placementGroup, 'module');
+    styleGroup(this.projectInstanceGroup, 'module');
 
     if (this.groundMesh?.material) {
       this.groundMesh.material.color.set(night ? NIGHT_GROUND_COLOR : (settings.groundColor || this.building.groundColor));
@@ -3813,7 +5998,7 @@ export class MehrazScene {
     const addEdges = (root, edgeColor, enabled) => {
       if (!enabled) return;
       root.traverse((child) => {
-        if (!child.isMesh || child === this.groundMesh || child.userData.isBrickFace || child.userData.isSoldierCourse) return;
+        if (!child.isMesh || child === this.groundMesh || child.userData.isBrickFace || child.userData.isSoldierCourse || child.userData.isKarbandiVisualGuide) return;
         const line = new THREE.LineSegments(
           new THREE.EdgesGeometry(child.geometry, 24),
           new THREE.LineBasicMaterial({ color: edgeColor, depthTest: true, transparent: true, opacity: 0.96 }),
@@ -3828,9 +6013,11 @@ export class MehrazScene {
       addEdges(this.buildingGroup, '#111111', true);
       addEdges(this.archInfillGroup, '#111111', true);
       addEdges(this.placementGroup, '#111111', true);
+      addEdges(this.projectInstanceGroup, '#111111', true);
     } else if (settings.seamless) {
       addEdges(this.buildingGroup, settings.wallEdgeColor || this.walls.edges.color, settings.seamlessWallEdges === true);
       addEdges(this.placementGroup, settings.moduleEdgeColor || '#ffffff', settings.seamlessEdges === true);
+      addEdges(this.projectInstanceGroup, settings.moduleEdgeColor || '#ffffff', settings.seamlessEdges === true);
     }
     this.scene.add(exportEdges);
 
@@ -4034,6 +6221,7 @@ export class MehrazScene {
         cloneForModelExport(this.archInfillGroup),
         zoneDecorations,
         cloneForModelExport(this.placementGroup),
+        cloneForModelExport(this.projectInstanceGroup || new THREE.Group()),
       );
       removeInvisibleExportBranches(root);
       root.updateMatrixWorld(true);
@@ -4164,11 +6352,11 @@ export class MehrazScene {
       -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    if (this.selectedId && (this.transformHandleActive || this.transformControls.dragging)) {
+    if ((this.selectedId || this.selectedProjectInstanceId) && (this.transformHandleActive || this.transformControls.dragging)) {
       event.preventDefault();
       return;
     }
-    if (this.selectedId) {
+    if (this.selectedId || this.selectedProjectInstanceId) {
       const gizmoHit = this.raycaster.intersectObject(this.transformHelper, true).find((hit) => {
         let object = hit.object;
         while (object) {
@@ -4201,6 +6389,14 @@ export class MehrazScene {
         return;
       }
     }
+    const projectInstanceId = projectInstanceIdFromHits(
+      this.raycaster.intersectObjects(this.projectInstanceGroup.children, true),
+      this.projectInstanceGroup,
+    );
+    if (projectInstanceId) {
+      this.selectProjectInstance(projectInstanceId);
+      return;
+    }
     const hits = this.raycaster.intersectObjects(this.placementGroup.children, true);
     const placementId = visiblePlacementIdFromHits(hits, this.placementGroup);
     if (placementId) {
@@ -4219,6 +6415,14 @@ export class MehrazScene {
       : null;
     if (wallHit) {
       if (wallHit.object.userData?.isKarbandi) {
+        if (this.building.type === 'room' && wallHit.object.userData?.wallSide === 'room_dome_transition') {
+          this.selectWallSide('room_dome_transition', true, {
+            part: wallHit.object.userData.roomDomePart || 'karbandi-transition-rib',
+            transitionType: 'karbandi',
+          });
+          event.preventDefault();
+          return;
+        }
         const ribIndex = wallHit.object.userData.karbandiRibIndex || 0;
         this.selectKarbandiRib(ribIndex);
         if (!this.walls?.karbandi?.cutMode) {
@@ -4239,10 +6443,31 @@ export class MehrazScene {
         event.preventDefault();
         return;
       }
-      this.selectWallSide(wallHit.object.userData.wallSide);
+      this.selectWallSide(this.wallSideForHit(wallHit), true, {
+        part: wallHit.object.userData.roomDomePart || null,
+        transitionType: wallHit.object.userData.roomDomeTransitionType || null,
+      });
       return;
     }
     this.clearSelection();
+  }
+
+  onDoubleClick(event) {
+    if (event.button !== 0 || this.transformControls.dragging) return;
+    const bounds = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.set(
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const id = projectInstanceIdFromHits(
+      this.raycaster.intersectObjects(this.projectInstanceGroup.children, true),
+      this.projectInstanceGroup,
+    );
+    if (!id) return;
+    event.preventDefault();
+    this.selectProjectInstance(id);
+    this.callbacks.onProjectInstanceOpen?.(id);
   }
 
   onContextMenu(event) {
@@ -4283,8 +6508,11 @@ export class MehrazScene {
       : null;
     if (wallHit) {
       event.preventDefault();
-      const side = wallHit.object.userData.wallSide;
-      this.selectWallSide(side);
+      const side = this.wallSideForHit(wallHit);
+      this.selectWallSide(side, true, {
+        part: wallHit.object.userData.roomDomePart || null,
+        transitionType: wallHit.object.userData.roomDomeTransitionType || null,
+      });
       this.callbacks.onAssetContextMenu?.({ kind: 'wall', id: side, x: event.clientX, y: event.clientY });
       return;
     }
@@ -4307,9 +6535,9 @@ export class MehrazScene {
   }
 
   onPointerUp() {
-    if (!this.nightLightDrag) return;
     this.nightLightDrag = null;
-    this.controls.enabled = true;
+    this.transformHandleActive = false;
+    this.ensureConstructionInteractionAvailable(true);
   }
 
   resize() {
@@ -4366,12 +6594,16 @@ export class MehrazScene {
 
   dispose() {
     this.stopConstructionSequence();
+    this.restoreRoomSectionMaterials();
     cancelAnimationFrame(this.animationFrame);
     this.resizeObserver.disconnect();
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.removeEventListener('dblclick', this.onDoubleClick);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onInteractionCancel);
+    window.removeEventListener('blur', this.onInteractionCancel);
     this.controls.dispose();
     this.transformControls.detach();
     this.transformControls.dispose();
@@ -4382,6 +6614,7 @@ export class MehrazScene {
     this.clearGroup(this.zoneDecorationGroup);
     this.clearGroup(this.zoneGroup);
     this.clearGroup(this.placementGroup);
+    this.clearGroup(this.projectInstanceGroup);
     this.clearWallSurfaceHighlight();
     this.nightLightObjects.forEach(({ helper, marker, targetMarker }) => {
       helper?.dispose?.();

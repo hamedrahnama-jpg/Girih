@@ -57,16 +57,16 @@ test('two ribs and a curved wall guide produce a non-folding structured wall reg
   assert.equal(patch.boundarySegments.filter((segment) => segment.metadata.kind === 'support').length, 8);
 });
 
-test('very small four-edge openings use one simple thickened cap region', () => {
+test('very small four-rib openings use the same inward-course construction as normal cells', () => {
   const patch = buildStructuredWebPatch([
     curve('rib-seat', [{ x: 0, y: 0, z: 0 }, { x: 0.18, y: 0.05, z: 0 }]),
     curve('rib-seat', [{ x: 0.18, y: 0.05, z: 0 }, { x: 0.18, y: 0.08, z: 0.16 }]),
     curve('rib-seat', [{ x: 0.18, y: 0.08, z: 0.16 }, { x: 0, y: 0.03, z: 0.16 }]),
     curve('rib-seat', [{ x: 0, y: 0.03, z: 0.16 }, { x: 0, y: 0, z: 0 }]),
   ], { resolution: 8, courseWidth: 0.1 });
-  assert.equal(patch.type, 'small-four-edge-cap');
-  assert.equal(patch.smallCellFallback, true);
-  assert.equal(patch.courseCount, 0);
+  assert.equal(patch.type, 'four-edge-inward-courses');
+  assert.equal(patch.smallCellFallback, false);
+  assert.equal(patch.courseCount, 2);
   assert.equal(patch.brickMapping, 'offset-rib-courses');
   assert.equal(patch.invertedTriangleCount, 0);
   assert.equal(patch.normalMode, 'best-fit-four-rib-region-90-degree');

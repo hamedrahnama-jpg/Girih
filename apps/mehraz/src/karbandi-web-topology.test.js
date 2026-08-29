@@ -133,6 +133,7 @@ test('roof thickness and bearing remain independent from embed tolerance', () =>
     roofThickness: 0.18,
     wallBearingDepth: 0.2,
     wallEmbedTolerance: 0.006,
+    wallRoofBoundaryOffset: -0.12,
     infillBrickColor: '#aa6633',
     infillBrickColor2: '#774422',
     infillBrickHeight: 0.075,
@@ -142,6 +143,7 @@ test('roof thickness and bearing remain independent from embed tolerance', () =>
   assert.equal(options.roofThickness, 0.05);
   assert.equal(options.wallBearingDepth, 0.2);
   assert.equal(options.wallEmbedTolerance, 0.006);
+  assert.equal(options.wallRoofBoundaryOffset, -0.12);
   assert.equal(options.infillBrickColor, '#aa6633');
   assert.equal(options.infillBrickColor2, '#774422');
   assert.equal(options.infillBrickHeight, 0.075);
@@ -155,6 +157,7 @@ test('hidden Karbandi seating adjustments default to zero', () => {
   assert.equal(options.wallBearingDepth, 0);
   assert.equal(options.wallEmbedTolerance, 0);
   assert.equal(options.ribEmbedTolerance, 0);
+  assert.equal(options.wallRoofBoundaryOffset, -0.07);
   assert.equal(options.seatingOffset, 0);
   assert.equal(options.southWestGuideBlend, 0.5);
   assert.equal(options.southEastGuideBlend, 0.5);

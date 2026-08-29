@@ -9,28 +9,25 @@ const mix = (a, b, t) => ({
 
 const ribSource = (sourceId) => String(sourceId ?? '').match(/^(\d+):([01])$/);
 
-function mergeAdjacentSeatCurvesByRib(curves) {
-  if (!curves.length || !curves.every((curve) => curve.kind === 'rib-seat')) return curves;
+function mergeSeatCurvesByPhysicalRib(curves) {
   const merged = [];
-  curves.forEach((curve) => {
+  const byRib = new Map();
+  curves.filter((curve) => curve.kind === 'rib-seat').forEach((curve) => {
     const ribId = ribSource(curve.sourceId)?.[1] ?? null;
     if (!ribId) {
       merged.push({ ...curve, ribId: null });
       return;
     }
-    const previous = merged[merged.length - 1];
-    if (previous?.ribId === ribId) {
-      previous.points = [...previous.points, ...curve.points.slice(1)];
-      previous.fragmentSourceIds.push(curve.sourceId);
+    const existing = byRib.get(ribId);
+    if (existing) {
+      existing.points = [...existing.points, ...curve.points.slice(1)];
+      existing.fragmentSourceIds.push(curve.sourceId);
     } else {
-      merged.push({ ...curve, points: [...curve.points], ribId, fragmentSourceIds: [curve.sourceId] });
+      const entry = { ...curve, points: [...curve.points], ribId, fragmentSourceIds: [curve.sourceId] };
+      byRib.set(ribId, entry);
+      merged.push(entry);
     }
   });
-  if (merged.length > 1 && merged[0].ribId && merged[0].ribId === merged[merged.length - 1].ribId) {
-    const last = merged.pop();
-    merged[0].points = [...last.points.slice(0, -1), ...merged[0].points];
-    merged[0].fragmentSourceIds = [...last.fragmentSourceIds, ...merged[0].fragmentSourceIds];
-  }
   return merged;
 }
 
@@ -100,6 +97,8 @@ function intersections(first, second) {
       const onSecond = mix(c, d, u);
       hits.push({
         point: mix(onFirst, onSecond, 0.5),
+        firstPoint: onFirst,
+        secondPoint: onSecond,
         firstPosition: firstIndex + Math.max(0, Math.min(1, t)),
         secondPosition: secondIndex + Math.max(0, Math.min(1, u)),
       });
@@ -129,7 +128,41 @@ function nearestPosition(points, target) {
     ) / denominator));
     const point = mix(start, end, progress);
     const distance = (point.x - target.x) ** 2 + (point.z - target.z) ** 2;
-    if (!nearest || distance < nearest.distance) nearest = { position: index + progress, distance };
+    if (!nearest || distance < nearest.distance) nearest = {
+      position: index + progress,
+      point,
+      distance,
+    };
+  }
+  return nearest;
+}
+
+function centerlineWallIntersection(points, boundary, target, maximumDistance = Infinity) {
+  if (!points?.length || !boundary?.axis || !Number.isFinite(boundary.value)) return null;
+  let nearest = null;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const delta = end[boundary.axis] - start[boundary.axis];
+    if (Math.abs(delta) < EPSILON) continue;
+    const progress = (boundary.value - start[boundary.axis]) / delta;
+    const usesVisibleOrTerminalSegment = (
+      (progress >= -EPSILON && progress <= 1 + EPSILON)
+      || (index === 0 && progress >= -1 && progress < 0)
+      || (index === points.length - 2 && progress > 1 && progress <= 2)
+    );
+    if (!usesVisibleOrTerminalSegment) continue;
+    const point = mix(start, end, progress);
+    point[boundary.axis] = boundary.value;
+    const distance = (point.x - target.x) ** 2 + (point.z - target.z) ** 2;
+    if (distance > maximumDistance ** 2) continue;
+    if (!nearest || distance < nearest.distance) {
+      nearest = {
+        point,
+        position: index + Math.max(0, Math.min(1, progress)),
+        distance,
+      };
+    }
   }
   return nearest;
 }
@@ -154,14 +187,25 @@ function slicePolyline(points, startPosition, endPosition, startPoint, endPoint)
  * centerlines. This is the architectural region represented by the red
  * four-sided polyline, including the portions hidden beneath the rib widths.
  */
-export function fourRibCenterlineRegion(curves = [], centerlines = new Map(), options = {}) {
+export function ribCenterlineIntersectionRegion(curves = [], centerlines = new Map(), options = {}) {
   // A graph face can split one physical rib boundary into multiple adjacent
   // seat fragments when it crosses from one side of that rib band to the
   // other. It is still a four-rib cell and must not be left as a roof hole.
-  const regionCurves = mergeAdjacentSeatCurvesByRib(curves);
-  if (regionCurves.length !== 4 || !regionCurves.every((curve) => curve.kind === 'rib-seat')) return null;
+  // Wall-adjacent long cells can contain support fragments between pieces of
+  // the same rib boundary. Group every seating fragment by physical rib ID
+  // and ignore non-rib fragments before deciding whether this is a four-rib
+  // region. Otherwise those cells incorrectly receive wall-continuation infill.
+  const regionCurves = mergeSeatCurvesByPhysicalRib(curves);
+  const requiredRibCount = Number.isInteger(options.requiredRibCount)
+    ? options.requiredRibCount
+    : null;
+  if (
+    regionCurves.length < 3
+    || (requiredRibCount != null && regionCurves.length !== requiredRibCount)
+    || !regionCurves.every((curve) => curve.kind === 'rib-seat')
+  ) return null;
   const ribIds = regionCurves.map((curve) => curve.ribId ?? ribSource(curve.sourceId)?.[1] ?? null);
-  if (ribIds.some((ribId) => !ribId) || new Set(ribIds).size !== 4) return null;
+  if (ribIds.some((ribId) => !ribId) || new Set(ribIds).size !== regionCurves.length) return null;
   const lines = ribIds.map((ribId) => centerlines.get(ribId));
   if (lines.some((line) => !line || line.length < 2)) return null;
 
@@ -178,20 +222,39 @@ export function fourRibCenterlineRegion(curves = [], centerlines = new Map(), op
     const atWallTop = Number.isFinite(wallTopY)
       && curve.points[0].y <= wallTopY + Math.max(0.001, Number(options.wallTopTolerance) || 0.01);
     const meetsWallBoundary = wallBoundary && wallBoundary.distance <= wallBoundaryTolerance;
-    if (options.anchorWallBoundary !== false && (atWallTop || meetsWallBoundary)) {
-      const incoming = nearestPosition(lines[previousIndex], curve.points[0]);
-      const outgoing = nearestPosition(lines[index], curve.points[0]);
+    if (options.anchorWallBoundary === true && (atWallTop || meetsWallBoundary)) {
+      const incomingWall = meetsWallBoundary
+        ? centerlineWallIntersection(
+          lines[previousIndex], wallBoundary, curve.points[0], Math.max(0.001, wallBoundaryTolerance * 2),
+        )
+        : null;
+      const outgoingWall = meetsWallBoundary
+        ? centerlineWallIntersection(
+          lines[index], wallBoundary, curve.points[0], Math.max(0.001, wallBoundaryTolerance * 2),
+        )
+        : null;
+      const incoming = incomingWall || nearestPosition(lines[previousIndex], curve.points[0]);
+      const outgoing = outgoingWall || nearestPosition(lines[index], curve.points[0]);
       if (!incoming || !outgoing) return null;
-      const anchoredPoint = clone(curve.points[0]);
+      const usesRibLegCenterpoint = Boolean(incomingWall || outgoingWall);
+      const anchoredPoint = incomingWall && outgoingWall
+        ? mix(incomingWall.point, outgoingWall.point, 0.5)
+        : clone((incomingWall || outgoingWall)?.point || curve.points[0]);
       if (meetsWallBoundary) {
         anchoredPoint[wallBoundary.axis] = wallBoundary.value;
-        anchoredPoint.y = wallBoundary.height;
+        anchoredPoint.y = typeof wallBoundary.heightAtPoint === 'function'
+          ? wallBoundary.heightAtPoint(anchoredPoint)
+          : wallBoundary.height;
       }
       return {
         point: anchoredPoint,
         incomingPosition: incoming.position,
         outgoingPosition: outgoing.position,
         wallTopAnchored: true,
+        wallTopAnchorSide: meetsWallBoundary ? wallBoundary.side ?? null : null,
+        wallTopAnchorMode: usesRibLegCenterpoint
+          ? 'rib-leg-centerline-wall-intersection'
+          : 'seat-corner-wall-fallback',
       };
     }
     return {
@@ -210,6 +273,8 @@ export function fourRibCenterlineRegion(curves = [], centerlines = new Map(), op
       originalSeatSourceId: curve.sourceId,
       originalSeatSourceIds: curve.fragmentSourceIds || [curve.sourceId],
       wallTopAnchoredStart: corners[index].wallTopAnchored === true,
+      wallTopAnchorSide: corners[index].wallTopAnchorSide ?? null,
+      wallTopAnchorMode: corners[index].wallTopAnchorMode ?? null,
       points: slicePolyline(
         lines[index],
         corners[index].outgoingPosition,
@@ -218,6 +283,13 @@ export function fourRibCenterlineRegion(curves = [], centerlines = new Map(), op
         corners[next].point,
       ),
     };
+  });
+}
+
+export function fourRibCenterlineRegion(curves = [], centerlines = new Map(), options = {}) {
+  return ribCenterlineIntersectionRegion(curves, centerlines, {
+    ...options,
+    requiredRibCount: 4,
   });
 }
 
@@ -239,10 +311,21 @@ export function ribCenteredPerimeterRegion(curves = [], centerlines = new Map())
     const target = curve.points[0];
     const hit = nearestIntersection(lines[previousIndex], lines[index], target);
     if (hit) {
+      const previousIsSupport = curves[previousIndex].kind === 'support';
+      const currentIsSupport = curve.kind === 'support';
+      const supportCurveIndex = previousIsSupport ? previousIndex : currentIsSupport ? index : -1;
+      const wallBasePoint = supportCurveIndex >= 0
+        ? clone(previousIsSupport ? hit.firstPoint : hit.secondPoint)
+        : null;
       return {
-        point: hit.point,
+        // At a wall/rib corner, XZ comes from the rib centerline crossing and
+        // elevation comes from the wall's interior top edge. Averaging both
+        // 3D lines can lift the roof base away from the wall and expose a seam.
+        point: wallBasePoint || hit.point,
         incomingPosition: hit.firstPosition,
         outgoingPosition: hit.secondPosition,
+        wallBaseAnchored: Boolean(wallBasePoint),
+        wallBaseSupportSide: wallBasePoint ? curves[supportCurveIndex].supportSide ?? null : null,
       };
     }
     // Curved guides can meet a clipped rib at a sampled endpoint without a
@@ -266,6 +349,8 @@ export function ribCenteredPerimeterRegion(curves = [], centerlines = new Map())
       sourceId: centeredRib ? `${ribIds[index]}:centerline` : curve.sourceId,
       originalSeatSourceId: centeredRib ? curve.sourceId : undefined,
       ribCenterlineBoundary: centeredRib,
+      wallBaseAnchoredStart: corners[index].wallBaseAnchored === true,
+      wallBaseSupportSide: corners[index].wallBaseSupportSide ?? null,
       points: slicePolyline(
         lines[index],
         corners[index].outgoingPosition,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { muqarnasPreviewMetrics, portalMuqarnasTransform } from './arch-muqarnas-placement.js';
+import { muqarnasPreviewMetrics, portalMuqarnasTransform, roomDomeMuqarnasTransform } from './arch-muqarnas-placement.js';
 
 test('Muqarnas preview is normalized to a stable portal-fitting width', () => {
   const metrics = muqarnasPreviewMetrics({
@@ -48,4 +48,22 @@ test('portal fit never exceeds the building clear width', () => {
 
   assert.equal(transform.scale[0] * 2.4, 4);
   assert.equal(transform.position[2], 0);
+});
+
+test('Room dome Muqarnas is centered over the room and fitted to its smaller span', () => {
+  const transform = roomDomeMuqarnasTransform({
+    type: 'room',
+    width: 6,
+    length: 4,
+    height: 5,
+  }, {
+    extraHeights: { north: 0, east: 0.5, south: 0, west: 0 },
+  });
+
+  assert.deepEqual(transform.rotation, [0, 0, 0]);
+  assert.equal(transform.position[0], 0);
+  assert.equal(transform.position[2], 2);
+  assert.equal(transform.scale[0] * 2.4, 4);
+  assert.deepEqual(transform.scale, [transform.scale[0], transform.scale[0], transform.scale[0]]);
+  assert.ok(transform.position[1] > 5.5);
 });

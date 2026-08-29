@@ -60,6 +60,7 @@ export function normalizeKarbandiWebOptions(value = {}) {
     wallBearingDepth: number(value.wallBearingDepth, 0, 0, 5),
     wallEmbedTolerance: number(value.wallEmbedTolerance, 0, 0, 0.1),
     ribEmbedTolerance: number(value.ribEmbedTolerance, 0, 0, 0.1),
+    wallRoofBoundaryOffset: number(value.wallRoofBoundaryOffset, -0.07, -1, 1),
     seatingOffset: number(value.seatingOffset, 0, -1, 1),
     southWestGuideBlend: number(value.southWestGuideBlend, 0.5, 0, 1),
     southEastGuideBlend: number(value.southEastGuideBlend, 0.5, 0, 1),

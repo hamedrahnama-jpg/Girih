@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildRibCenterlines,
   fourRibCenterlineRegion,
+  ribCenterlineIntersectionRegion,
   ribCenteredPerimeterRegion,
 } from './karbandi-four-rib-region.js';
 import { buildStructuredWebPatch } from './karbandi-structured-patch.js';
@@ -43,6 +44,26 @@ test('four-rib region follows the four centerline intersections instead of the i
   assert.deepEqual(region.map((curve) => curve.sourceId), [
     '0:centerline', '1:centerline', '2:centerline', '3:centerline',
   ]);
+});
+
+test('the shared 4-rib roof rule also centers triangular topology fragments on rib intersections', () => {
+  const raw = [
+    segment(0, 0, 0, { x: -2, y: 1, z: -0.1 }, { x: 2, y: 1, z: -0.1 }),
+    segment(0, 1, 0, { x: -2, y: 1, z: 0.1 }, { x: 2, y: 1, z: 0.1 }),
+    segment(1, 0, 0, { x: 2.1, y: 1, z: -1 }, { x: -0.1, y: 1, z: 2 }),
+    segment(1, 1, 0, { x: 1.9, y: 1, z: -1 }, { x: -0.3, y: 1, z: 2 }),
+    segment(2, 0, 0, { x: 0.1, y: 1, z: 2 }, { x: -2.1, y: 1, z: -1 }),
+    segment(2, 1, 0, { x: 0.3, y: 1, z: 2 }, { x: -1.9, y: 1, z: -1 }),
+  ];
+  const curves = [
+    { kind: 'rib-seat', sourceId: '0:0', points: [{ x: -1.8, y: 1, z: 0 }, { x: 1.8, y: 1, z: 0 }] },
+    { kind: 'rib-seat', sourceId: '1:0', points: [{ x: 1.8, y: 1, z: 0 }, { x: 0, y: 1, z: 1.8 }] },
+    { kind: 'rib-seat', sourceId: '2:1', points: [{ x: 0, y: 1, z: 1.8 }, { x: -1.8, y: 1, z: 0 }] },
+  ];
+
+  const region = ribCenterlineIntersectionRegion(curves, buildRibCenterlines(raw));
+  assert.equal(region.length, 3);
+  assert.ok(region.every((curve) => curve.sourceId.endsWith(':centerline')));
 });
 
 test('non-four-rib and repeated-rib faces retain their topology boundaries', () => {
@@ -88,6 +109,30 @@ test('a four-rib cell with a split seating-side boundary still uses four centerl
   });
 });
 
+test('a wall-adjacent long cell groups four physical ribs across inserted support fragments', () => {
+  const centerlines = new Map([
+    ['0', [{ x: -2, y: 1, z: 0 }, { x: 2, y: 1, z: 0 }]],
+    ['1', [{ x: 2, y: 1, z: -2 }, { x: 2, y: 1, z: 2 }]],
+    ['2', [{ x: 2, y: 1, z: 2 }, { x: -2, y: 1, z: 2 }]],
+    ['3', [{ x: -2, y: 1, z: 2 }, { x: -2, y: 1, z: 0 }]],
+  ]);
+  const curves = [
+    { kind: 'rib-seat', sourceId: '0:0', points: [{ x: -2, y: 1, z: 0 }, { x: 0, y: 1, z: 0 }] },
+    { kind: 'support', supportSide: 'west', points: [{ x: 0, y: 1, z: 0 }, { x: 0.1, y: 1, z: 0 }] },
+    { kind: 'rib-seat', sourceId: '0:1', points: [{ x: 0.1, y: 1, z: 0 }, { x: 2, y: 1, z: 0 }] },
+    { kind: 'rib-seat', sourceId: '1:0', points: [{ x: 2, y: 1, z: 0 }, { x: 2, y: 1, z: 2 }] },
+    { kind: 'rib-seat', sourceId: '2:0', points: [{ x: 2, y: 1, z: 2 }, { x: -2, y: 1, z: 2 }] },
+    { kind: 'rib-seat', sourceId: '3:0', points: [{ x: -2, y: 1, z: 2 }, { x: -2, y: 1, z: 0 }] },
+  ];
+  const region = fourRibCenterlineRegion(curves, centerlines);
+  assert.ok(region);
+  assert.equal(region.length, 4);
+  assert.deepEqual(region.map((curve) => curve.sourceId), [
+    '0:centerline', '1:centerline', '2:centerline', '3:centerline',
+  ]);
+  assert.deepEqual(region[0].originalSeatSourceIds, ['0:0', '0:1']);
+});
+
 test('clipped rib axes extend their terminal segments to the red-polyline corner', () => {
   const centerlines = new Map([
     ['0', [{ x: -2, y: 0, z: 0 }, { x: -0.1, y: 0, z: 0 }]],
@@ -124,6 +169,7 @@ test('a remote lower rib-axis intersection stays anchored to the vertical wall t
     wallTopY: 2,
     wallBoundaryTolerance: 0.05,
     wallBoundaries: [{ axis: 'z', value: -0.2, height: 2 }],
+    anchorWallBoundary: true,
   });
   assert.ok(region);
   assert.deepEqual(region[0].points[0], { x: -0.2, y: 2, z: -0.2 });
@@ -157,4 +203,8 @@ test('perimeter roof keeps its wall support but moves rib sides to their centerl
   assert.equal(region[1].sourceId, '1:centerline');
   assert.equal(region[2].kind, 'support');
   assert.equal(region[2].supportSide, 'north');
+  assert.equal(region.filter((curve) => curve.wallBaseAnchoredStart).length, 2);
+  assert.ok(region.filter((curve) => curve.wallBaseAnchoredStart).every((curve) => (
+    curve.wallBaseSupportSide === 'north' && curve.points[0].y === 1
+  )));
 });

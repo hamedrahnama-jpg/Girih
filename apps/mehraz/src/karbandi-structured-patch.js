@@ -178,8 +178,11 @@ function coonsPatch(curves, resolution, courseWidth) {
   const spanU = distance(midpoint(left), midpoint(right));
   const transverseSpan = Math.min(spanU, spanV);
   const scaledCourseWidth = Math.max(0.01, Number(courseWidth) || transverseSpan / 6);
-  const courseCount = Math.max(0, Math.min(10, Math.floor(transverseSpan / (scaledCourseWidth * 2))));
-  const smallCellFallback = courseCount < 2;
+  const measuredCourseCount = Math.max(0, Math.min(10, Math.floor(transverseSpan / (scaledCourseWidth * 2))));
+  // Every genuine four-rib region uses the orange inward-course construction,
+  // even when compact. Size changes course spacing, not the roof method.
+  const courseCount = fourRibRegion ? Math.max(2, measuredCourseCount) : measuredCourseCount;
+  const smallCellFallback = !fourRibRegion && courseCount < 2;
   const ringCount = smallCellFallback ? 1 : courseCount;
   const segmentsPerSide = smallCellFallback ? 4 : Math.max(4, Math.min(12, resolution));
   const vertices = [];
@@ -254,6 +257,12 @@ function coonsPatch(curves, resolution, courseWidth) {
     patch.normals = vertices.map(() => regionNormal.clone());
     patch.regionNormal = regionNormal;
     patch.normalMode = 'best-fit-four-rib-region-90-degree';
+    // XZ projected winding is unreliable at a steep rib foot. A valid mirrored
+    // four-rib cell can have the two triangles beside that vertical boundary
+    // reverse only in the flat projection. Treat that single boundary pair as
+    // continuous, while larger reversals still use the safe polygon fallback.
+    patch.projectedInvertedTriangleCount = patch.invertedTriangleCount;
+    if (patch.projectedInvertedTriangleCount <= 2) patch.invertedTriangleCount = 0;
     patch.fourRibRegion = true;
     patch.regionCorners = curves.map((curve) => clone(curve.points[0]));
     patch.regionBoundary = rings[0].map((vertexIndex) => clone(vertices[vertexIndex]));
@@ -525,6 +534,59 @@ function boundaryTriangulatedPatch(curves) {
   });
 }
 
+function fourRibBoundaryFallbackPatch(fallback, preferred, curves, courseWidth) {
+  const boundaryVertexCount = fallback.vertices.length;
+  const vertices = fallback.vertices.map(clone);
+  const triangles = [];
+  const masonryUvs = vertices.map((_, index) => ({ u: index * 0.001, v: 0 }));
+  const scaledCourseWidth = Math.max(0.01, Number(courseWidth) || 0.1);
+  let maximumInset = 0;
+  fallback.triangles.forEach(([a, b, c]) => {
+    const center = {
+      x: (vertices[a].x + vertices[b].x + vertices[c].x) / 3,
+      y: (vertices[a].y + vertices[b].y + vertices[c].y) / 3,
+      z: (vertices[a].z + vertices[b].z + vertices[c].z) / 3,
+    };
+    const inset = Math.min(...fallback.boundarySegments.map((segment) => (
+      pointSegmentDistance(center, fallback.vertices[segment.a], fallback.vertices[segment.b])
+    )));
+    maximumInset = Math.max(maximumInset, inset);
+    const centerIndex = vertices.length;
+    vertices.push(center);
+    masonryUvs.push({ u: centerIndex * 0.001, v: inset });
+    triangles.push([a, b, centerIndex], [b, c, centerIndex], [c, a, centerIndex]);
+  });
+  const courseCount = Math.max(2, preferred.courseCount || Math.floor(maximumInset / scaledCourseWidth));
+  const targetMaximumInset = courseCount * scaledCourseWidth;
+  const insetScale = maximumInset > 0.0000001 ? targetMaximumInset / maximumInset : 1;
+  masonryUvs.forEach((uv) => { uv.v *= insetScale; });
+  const patch = finalize(
+    'four-rib-boundary-fallback-inward-courses',
+    vertices,
+    triangles,
+    fallback.boundarySegments,
+    {
+      courseCount,
+      courseWidth: scaledCourseWidth,
+      smallCellFallback: false,
+      wallStarted: false,
+      masonryUvs,
+      brickMapping: 'offset-rib-courses',
+      boundaryFallback: true,
+      preservedBoundaryVertexCount: boundaryVertexCount,
+      fourRibRegion: true,
+      regionCorners: curves.map((curve) => clone(curve.points[0])),
+      regionBoundary: fallback.vertices.map(clone),
+    },
+  );
+  const boundaryIndices = Array.from({ length: boundaryVertexCount }, (_, index) => index);
+  const regionNormal = bestFitRegionNormal(vertices, boundaryIndices);
+  patch.normals = vertices.map(() => regionNormal.clone());
+  patch.regionNormal = regionNormal;
+  patch.normalMode = 'best-fit-four-rib-region-90-degree';
+  return patch;
+}
+
 export function buildStructuredWebPatch(curves, options = {}) {
   const resolution = Math.max(4, Math.min(20, Math.round(Number(options.resolution) || 8)));
   let preferred = null;
@@ -536,9 +598,12 @@ export function buildStructuredWebPatch(curves, options = {}) {
   if (preferred && preferred.invertedTriangleCount === 0) return preferred;
   const fallback = boundaryTriangulatedPatch(curves);
   if (fallback) {
-    fallback.replacedPatchType = preferred?.type ?? null;
-    fallback.replacedInvertedTriangleCount = preferred?.invertedTriangleCount ?? 0;
-    return fallback;
+    const resolvedFallback = preferred?.fourRibRegion
+      ? fourRibBoundaryFallbackPatch(fallback, preferred, curves, options.courseWidth)
+      : fallback;
+    resolvedFallback.replacedPatchType = preferred?.type ?? null;
+    resolvedFallback.replacedInvertedTriangleCount = preferred?.invertedTriangleCount ?? 0;
+    return resolvedFallback;
   }
   return preferred;
 }

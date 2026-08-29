@@ -46,6 +46,7 @@ import {
 } from './library-client.generated.js';
 import {
   buildingSurfaces,
+  buildingForSelectedType,
   constrainPlacementTransform,
   defaultZoneBounds,
   defaultPlacementTransform,
@@ -54,6 +55,7 @@ import {
   MehrazScene,
   moveZoneVerticallyByBrick,
   CONSTRUCTION_STEPS,
+  constructionStepsForBuilding,
   normalizeBuilding,
   resizeZoneHeightByBrick,
   surfaceIdForWallSide,
@@ -63,15 +65,29 @@ import {
 } from './mehraz-scene.js';
 import {
   BUILT_IN_BONDS,
+  createRoomPlanOpening,
   DEFAULT_WALL_SYSTEM,
+  karbandiGroupYForWallTopLegCenters,
   karbandiGroupZForWallLegCenters,
+  normalizeKarbandiRibCount,
   karbandiReferenceZForRibCount,
   karbandiReferenceZSolutions,
   karbandiSpanForWallLegCenters,
   normalizeWallSystem,
+  portalDefaultWallSystem,
+  roomPlanOpeningsWithDefaultDoor,
+  solveKarbandiWallSeating,
   wallContextLibraryAsset,
 } from './wall-system.js';
-import { muqarnasPreviewMetrics, portalMuqarnasTransform } from './arch-muqarnas-placement.js';
+import { isKarbandiRibArchEditorTarget } from './karbandi-editor-target.js';
+import { muqarnasPreviewMetrics, portalMuqarnasTransform, roomDomeMuqarnasTransform } from './arch-muqarnas-placement.js';
+import {
+  createMehrazProjectPayload,
+  MEHRAZ_PROJECT_SCHEMA_VERSION,
+  normalizeMehrazProjectPayload,
+  normalizeProjectInstance,
+  projectIdentityAfterStageAddition,
+} from './project-persistence.js';
 import './styles.css';
 
 const ASSET_LABELS = {
@@ -132,8 +148,23 @@ const WALL_BOND_LABELS = {
   east: 'East',
   south: 'South',
   west: 'West',
+  room_plan_interior: 'All interior room walls',
+  room_plan_exterior: 'All exterior room walls',
   arch: 'Arch',
+  room_dome: 'Room dome',
+  room_dome_inner: 'Room inner dome',
+  room_dome_interior: 'Room dome interior',
+  room_inner_dome_exterior: 'Inner dome exterior',
+  room_inner_dome_interior: 'Inner dome interior',
+  room_dome_drum: 'Room dome drum',
+  room_dome_drum_interior: 'Room dome drum interior',
+  room_dome_extra_leg: 'Dome extra leg',
+  room_dome_extra_leg_interior: 'Dome extra leg interior',
+  room_dome_transition: 'Room dome transition',
+  room_dome_transition_exterior: 'Transition cover exterior',
+  room_dome_ring: 'Dome springing ring',
 };
+const ROOM_WALL_SIDES = ['north', 'east', 'south', 'west'];
 
 function downloadJson(filename, data) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
@@ -372,7 +403,7 @@ function SolutionNumberField({ label, value, min, max, onChange, onPrevious, onN
   );
 }
 
-function CollapsiblePanel({ open, onToggle, icon, title, subtitle, guide = null, children, className = '', panelRef = null, collapsible = true }) {
+function CollapsiblePanel({ open, onToggle, icon, title, subtitle, guide = null, children, className = '', panelRef = null, collapsible = true, hideHeading = false }) {
   const heading = (
     <>
       {icon}
@@ -382,14 +413,14 @@ function CollapsiblePanel({ open, onToggle, icon, title, subtitle, guide = null,
 
   return (
     <section ref={panelRef} className={`inspector-section collapsible-panel ${className}`}>
-      {collapsible ? (
+      {!hideHeading && (collapsible ? (
         <button type="button" className="section-heading collapsible-heading" onClick={onToggle}>
           {heading}
           <span className="collapse-mark">{open ? '−' : '+'}</span>
         </button>
       ) : (
         <div className="section-heading">{heading}</div>
-      )}
+      ))}
       {(!collapsible || open) && <div className="collapsible-body">{children}</div>}
     </section>
   );
@@ -414,6 +445,7 @@ function authRedirectUrl() {
 function App() {
   const viewportRef = useRef(null);
   const sceneRef = useRef(null);
+  const sceneHasInitialArchitectureRef = useRef(false);
   const importRef = useRef(null);
   const exportPanRef = useRef(null);
   const buildingRef = useRef(null);
@@ -427,9 +459,19 @@ function App() {
   const wallEastRef = useRef(null);
   const wallWestRef = useRef(null);
   const wallArchRef = useRef(null);
+  const roomDomeRef = useRef(null);
+  const roomDomeArchRef = useRef(null);
+  const roomInnerDomeRef = useRef(null);
+  const roomDomeDrumRef = useRef(null);
+  const roomDomeExtraLegRef = useRef(null);
+  const roomDomeRingRef = useRef(null);
+  const roomTransitionRef = useRef(null);
   const placementsRef = useRef([]);
+  const projectInstancesRef = useRef([]);
+  const compositionReturnRef = useRef(null);
   const zonesRef = useRef([]);
   const selectedPlacementIdRef = useRef(null);
+  const selectedProjectInstanceIdRef = useRef(null);
   const selectedZoneIdRef = useRef(null);
   const assembliesRef = useRef([]);
   const nightLightingRef = useRef({ preview: false, guides: false, selectedId: null, lights: [] });
@@ -450,11 +492,17 @@ function App() {
   const [collapsedLibraryGroups, setCollapsedLibraryGroups] = useState({});
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [building, setBuilding] = useState(() => normalizeBuilding());
-  const [walls, setWalls] = useState(() => normalizeWallSystem(DEFAULT_WALL_SYSTEM, normalizeBuilding()));
+  const [walls, setWalls] = useState(() => {
+    const initialBuilding = normalizeBuilding();
+    return portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, initialBuilding);
+  });
   const [nightLighting, setNightLighting] = useState({ preview: false, guides: false, selectedId: null, lights: [] });
   const [zones, setZones] = useState([]);
   const [assemblies, setAssemblies] = useState([]);
   const [placements, setPlacements] = useState([]);
+  const [projectInstances, setProjectInstances] = useState([]);
+  const [selectedProjectInstanceId, setSelectedProjectInstanceId] = useState(null);
+  const [editingProjectInstance, setEditingProjectInstance] = useState(null);
   const [muqarnasDimensionsById, setMuqarnasDimensionsById] = useState({});
   const [selectedPlacementId, setSelectedPlacementId] = useState(null);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
@@ -464,12 +512,14 @@ function App() {
   const [selectedWallSide, setSelectedWallSide] = useState('north_sides');
   const [selectedOpeningGuide, setSelectedOpeningGuide] = useState(null);
   const [historyVersion, setHistoryVersion] = useState(0);
-  const [projectName, setProjectName] = useState('My Mehraz iwan');
+  const [projectName, setProjectName] = useState('My Mehraz portal');
   const [activeProjectAssetId, setActiveProjectAssetId] = useState(null);
   const [activeProjectVersionId, setActiveProjectVersionId] = useState(null);
   const [selectedProjectVersionId, setSelectedProjectVersionId] = useState('');
   const [rightTab, setRightTab] = useState('building');
   const [stageView, setStageView] = useState('front');
+  const [roomSectionView, setRoomSectionView] = useState(false);
+  const [roomSectionAxis, setRoomSectionAxis] = useState('x');
   const [collapsedSections, setCollapsedSections] = useState({
     buildingDimensions: true,
     buildingSurfaces: true,
@@ -502,6 +552,10 @@ function App() {
   const [constructionStep, setConstructionStep] = useState(CONSTRUCTION_STEPS.length - 1);
   const [constructionDuration, setConstructionDuration] = useState(15);
   const [constructionPlaying, setConstructionPlaying] = useState(false);
+  const hasRoomWallDecoration = placements.some((placement) => placement.assetType !== 'muqarnas_assembly')
+    || zones.some((zone) => Boolean(zone.assetId));
+  const displayedConstructionSteps = constructionStepsForBuilding(building.type)
+    .filter((step) => step.id !== 'room-decoration' || hasRoomWallDecoration);
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPreview, setExportPreview] = useState('');
@@ -535,6 +589,7 @@ function App() {
   const surfaces = useMemo(() => buildingSurfaces(building), [building]);
   const selectedPlacement = placements.find((placement) => placement.id === selectedPlacementId) || null;
   const archMuqarnasPlacement = placements.find((placement) => placement.role === 'arch-muqarnas') || null;
+  const roomDomeMuqarnasPlacement = placements.find((placement) => placement.role === 'room-dome-muqarnas') || null;
   const archMuqarnasMetrics = useMemo(
     () => (archMuqarnasPlacement ? muqarnasPreviewMetrics(archMuqarnasPlacement.assetPayload || {}) : null),
     [archMuqarnasPlacement?.assetVersionId],
@@ -551,11 +606,32 @@ function App() {
   const selectedWallZones = selectedWallSurfaceId
     ? zones.filter((zone) => (
       zone.wallSide
-        ? zone.wallSide === selectedWallSide || (zone.wallSide === 'arch' && selectedWallSide === 'south_arch')
+        ? zone.wallSide === selectedWallSide
+          || (zone.wallSide === 'arch' && selectedWallSide === 'south_arch')
+          || (building.type === 'room' && ['north', 'north_sides'].includes(zone.wallSide) && ['north', 'north_sides'].includes(selectedWallSide))
         : zone.surfaceId === selectedWallSurfaceId || (selectedWallSurfaceId === 'south_interior' && zone.surfaceId === 'south_facade')
     ))
     : [];
   const selectedWallLabel = WALL_BOND_LABELS[selectedWallSide === 'south_arch' ? 'arch' : selectedWallSide] || selectedWallSide || 'Wall';
+  const selectedOpeningGuideParts = String(selectedOpeningGuide || '').split(':');
+  const selectedOpeningGuideType = selectedOpeningGuideParts.at(-1) || null;
+  const selectedOpeningGuideSide = selectedOpeningGuideParts.length > 1 ? selectedOpeningGuideParts[0] : 'south';
+  const selectedRoomPlanOpeningGuideId = selectedOpeningGuideParts[0] === 'plan'
+    ? selectedOpeningGuideParts.slice(1).join(':')
+    : null;
+  const roomTransitionAvailable = building.type === 'room' && (
+    (building.roomPlanShape || 'square') === 'square'
+    || building.buildingType === 'vestibule'
+  );
+  const roomDomeSpringHeight = Math.max(
+    ...['north', 'east', 'south', 'west'].map((side) => building.height + (walls.extraHeights?.[side] || 0)),
+  ) + (roomTransitionAvailable ? (building.domeTransitionHeight ?? 1.2) : 0) + (building.domeDrumHeight ?? 0);
+  const roomOuterDomeSpringHeight = roomDomeSpringHeight + (building.domeArch?.legExtension ?? 0);
+  const roomDomeGreenHeight = roomOuterDomeSpringHeight + (building.domeArch?.greenHeightOffset ?? 0);
+  const roomInnerDomeGreenHeight = roomDomeSpringHeight + (building.innerDomeArch?.greenHeightOffset ?? 0);
+  const karbandiReferenceDepth = building.type === 'room'
+    ? Math.max(0.2, Math.min(building.width, building.depth) / 2)
+    : building.depth;
   const selectedAssembly = assemblies.find((assembly) => assembly.id === selectedAssemblyId) || null;
   const selectedAsset = library.find((asset) => asset.id === selectedAssetId) || null;
   const selectedLibraryVersion = libraryVersions.find((version) => version.id === selectedLibraryVersionId) || selectedAsset?.currentVersion || null;
@@ -575,14 +651,29 @@ function App() {
     return null;
   }, [assetContextMenu, placements, zones, walls]);
   const selectedNightLight = nightLighting.lights.find((light) => light.id === nightLighting.selectedId) || null;
-  const activeCoverType = walls.karbandi?.enabled === true ? 'karbandi' : 'ahang';
+  const portalTransitionType = walls.portalTransition
+    || (walls.karbandi?.enabled === true ? 'karbandi' : 'squinch');
+  const portalTransitionOptions = (building.portalPlanShape || 'square') === 'square'
+    ? [
+      ['karbandi', 'Karbandi'],
+      ['squinch', 'Squinch'],
+      ['muqarnas', 'Muqarnas'],
+    ]
+    : [['karbandi', 'Karbandi']];
+  const portalCoverType = walls.portalCover
+    || (walls.ahang?.enabled === true ? 'ahang' : 'none');
+  const portalTransitionAvailable = building.type !== 'room';
+  const transitionAvailable = roomTransitionAvailable || portalTransitionAvailable;
+  const sliceAvailable = building.type === 'room'
+    || building.buildingType === 'portal'
+    || projectInstances.length > 0;
   const mehrazHasProjectWork = useMemo(() => {
-    if (placements.length || assemblies.length || zones.length || nightLighting.lights.length || activeProjectAssetId) return true;
+    if (placements.length || projectInstances.length || assemblies.length || zones.length || nightLighting.lights.length || activeProjectAssetId) return true;
     const defaultBuilding = normalizeBuilding();
-    const defaultWalls = normalizeWallSystem(DEFAULT_WALL_SYSTEM, defaultBuilding);
+    const defaultWalls = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, defaultBuilding);
     return JSON.stringify(building) !== JSON.stringify(defaultBuilding)
       || JSON.stringify(walls) !== JSON.stringify(defaultWalls);
-  }, [activeProjectAssetId, assemblies.length, building, nightLighting.lights.length, placements.length, walls, zones.length]);
+  }, [activeProjectAssetId, assemblies.length, building, nightLighting.lights.length, placements.length, projectInstances.length, walls, zones.length]);
   const groupedLibrary = useMemo(() => LIBRARY_APP_GROUPS.map((group) => ({
     ...group,
     assets: library.filter((asset) => group.assetTypes.includes(asset.asset_type)),
@@ -621,6 +712,12 @@ function App() {
   const renderedPlacements = useMemo(() => {
     return placements
       .filter((placement) => !placement.generatedFromZone)
+      .filter((placement) => placement.role !== 'arch-muqarnas' || building.type !== 'room')
+      .filter((placement) => placement.role !== 'room-dome-muqarnas' || (
+        building.type === 'room'
+        && building.domeEnabled !== false
+        && building.domeTransition === 'muqarnas'
+      ))
       .map((placement) => {
         if (placement.assetPayload) return placement;
         const asset = library.find((item) => (
@@ -629,7 +726,7 @@ function App() {
         ));
         return asset ? { ...placement, assetPayload: asset.currentVersion.payload } : placement;
       });
-  }, [placements, library]);
+  }, [placements, library, building.type, building.domeEnabled, building.domeTransition]);
   const surfaceById = useMemo(() => new Map(surfaces.map((surface) => [surface.id, surface])), [surfaces]);
   const assemblyByPlacement = useMemo(() => {
     const result = new Map();
@@ -673,8 +770,10 @@ function App() {
   buildingRef.current = building;
   wallsRef.current = walls;
   placementsRef.current = placements;
+  projectInstancesRef.current = projectInstances;
   zonesRef.current = zones;
   selectedPlacementIdRef.current = selectedPlacementId;
+  selectedProjectInstanceIdRef.current = selectedProjectInstanceId;
   selectedZoneIdRef.current = selectedZoneId;
   assembliesRef.current = assemblies;
   nightLightingRef.current = nightLighting;
@@ -740,17 +839,29 @@ function App() {
   function playConstructionSteps() {
     setRightTab('construction');
     openSection('constructionSteps');
+    const scene = sceneRef.current;
+    if (!scene) {
+      setConstructionPlaying(false);
+      setLibraryMessage('The 3D stage is not ready. Reload the project and try the animation again.');
+      return;
+    }
     setConstructionPlaying(true);
-    sceneRef.current?.playConstructionSequence(
-      constructionDuration,
-      (index) => setConstructionStep(index),
-      () => {
-        const completeStep = CONSTRUCTION_STEPS.length - 1;
-        sceneRef.current?.showCompleteConstruction();
-        setConstructionStep(completeStep);
-        setConstructionPlaying(false);
-      },
-    );
+    try {
+      scene.playConstructionSequence(
+        constructionDuration,
+        (index) => setConstructionStep(index),
+        () => {
+          const completeStep = CONSTRUCTION_STEPS.length - 1;
+          setConstructionStep(completeStep);
+          setConstructionPlaying(false);
+        },
+      );
+    } catch (error) {
+      console.error('Could not start construction animation.', error);
+      scene.stopConstructionSequence();
+      setConstructionPlaying(false);
+      setLibraryMessage(`Could not play the construction animation: ${error?.message || 'Unknown stage error'}`);
+    }
   }
 
   function stopConstructionSteps() {
@@ -766,8 +877,26 @@ function App() {
   }
 
   function changeStageView(view) {
+    if (roomSectionView) {
+      setRoomSectionView(false);
+      sceneRef.current?.setRoomSectionView(false);
+    }
     setStageView(view);
     sceneRef.current?.setStageView(view);
+  }
+
+  function selectRoomSectionView(axis) {
+    if (!sliceAvailable) return;
+    const nextAxis = axis === 'y' ? 'y' : 'x';
+    setRoomSectionAxis(nextAxis);
+    setRoomSectionView(true);
+    sceneRef.current?.setRoomSectionView(true, nextAxis);
+    setStageView('section');
+  }
+
+  function closeRoomSectionView() {
+    setRoomSectionView(false);
+    sceneRef.current?.setRoomSectionView(false, roomSectionAxis);
   }
 
   function showFrontStageView() {
@@ -780,6 +909,7 @@ function App() {
       building: buildingRef.current,
       walls: wallsRef.current,
       placements: placementsRef.current,
+      projectInstances: projectInstancesRef.current,
       zones: zonesRef.current,
       assemblies: assembliesRef.current,
       stageRenderMode,
@@ -798,6 +928,7 @@ function App() {
     setBuilding(normalizeBuilding(state.building));
     setWalls(normalizeWallSystem(state.walls || DEFAULT_WALL_SYSTEM, normalizeBuilding(state.building)));
     setPlacements(Array.isArray(state.placements) ? state.placements : []);
+    setProjectInstances(Array.isArray(state.projectInstances) ? state.projectInstances : []);
     setZones(Array.isArray(state.zones) ? state.zones : []);
     setAssemblies(Array.isArray(state.assemblies) ? state.assemblies : []);
     const restoredStageRenderMode = state.stageRenderMode === 'flat' ? 'flat' : 'textured';
@@ -868,7 +999,7 @@ function App() {
     history.present = next;
     history.future = [];
     setHistoryVersion((value) => value + 1);
-  }, [building, walls, placements, zones, assemblies, nightLighting, stageRenderMode]);
+  }, [building, walls, placements, projectInstances, zones, assemblies, nightLighting, stageRenderMode]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -881,7 +1012,15 @@ function App() {
       const key = event.key.toLowerCase();
       if (key === 'delete' || key === 'backspace') {
         const placementId = selectedPlacementIdRef.current;
+        const projectInstanceId = selectedProjectInstanceIdRef.current;
         const zoneId = selectedZoneIdRef.current;
+        if (projectInstanceId) {
+          event.preventDefault();
+          setProjectInstances((items) => items.filter((instance) => instance.id !== projectInstanceId));
+          setSelectedProjectInstanceId(null);
+          sceneRef.current?.clearSelection();
+          return;
+        }
         if (placementId) {
           event.preventDefault();
           setPlacements((items) => items.filter((placement) => placement.id !== placementId));
@@ -931,8 +1070,12 @@ function App() {
   useEffect(() => {
     if (!user || !viewportRef.current) return undefined;
     const scene = new MehrazScene(viewportRef.current, {
+      initialBuilding: buildingRef.current,
+      initialWalls: wallsRef.current,
+      initialStageRenderMode: stageRenderMode,
       onSelection: (id) => {
         setSelectedPlacementId(id);
+        setSelectedProjectInstanceId(null);
         if (!id) {
           setSelectedZoneId(null);
           setSelectedWallSide(null);
@@ -940,18 +1083,30 @@ function App() {
           return;
         }
         const placement = placementsRef.current.find((item) => item.id === id);
-        if (placement?.role === 'arch-muqarnas' || placement?.assetType === 'muqarnas_assembly') {
-          setRightTab('cover');
+        if (placement?.role === 'room-dome-muqarnas') {
+          setRightTab('transition');
+          setSelectedWallSide('room_dome_transition');
+          scrollInspectorTo(roomTransitionRef);
+        } else if (placement?.role === 'arch-muqarnas' || placement?.assetType === 'muqarnas_assembly') {
+          setRightTab(placement?.role === 'arch-muqarnas' ? 'transition' : 'cover');
+          if (placement?.role === 'arch-muqarnas') {
+            setWalls((value) => normalizeWallSystem({
+              ...value,
+              portalTransition: 'muqarnas',
+              karbandi: { ...value.karbandi, enabled: false },
+            }, buildingRef.current));
+          }
           openSection('wallArch');
           scrollInspectorTo(wallArchRef);
         }
         if (id) {
-          setSelectedWallSide(null);
+          setSelectedWallSide(placement?.role === 'room-dome-muqarnas' ? 'room_dome_transition' : null);
           setSelectedOpeningGuide(null);
         }
       },
       onZoneSelection: (id) => {
         setSelectedZoneId(id);
+        setSelectedProjectInstanceId(null);
         if (!id) {
           setSelectedPlacementId(null);
           setSelectedWallSide(null);
@@ -962,17 +1117,38 @@ function App() {
           const zone = zonesRef.current.find((item) => item.id === id);
           if (zone?.surfaceId) setTargetSurfaceId(zone.surfaceId);
           setSelectedPlacementId(null);
-          setSelectedWallSide(zone?.wallSide || (zone?.surfaceId ? wallSideForSurfaceId(zone.surfaceId) : null));
+          setSelectedWallSide(zone?.wallSide || (zone?.surfaceId ? wallSideForSurfaceId(zone.surfaceId, building) : null));
           setSelectedOpeningGuide(null);
           setRightTab('context');
         }
       },
       onWallSurfaceSelection: (selection) => {
+        setSelectedProjectInstanceId(null);
         if (!selection) {
           setSelectedPlacementId(null);
           setSelectedZoneId(null);
           setSelectedWallSide(null);
           setSelectedOpeningGuide(null);
+          return;
+        }
+        if (['room_dome', 'room_dome_inner', 'room_dome_extra_leg', 'room_dome_drum', 'room_dome_transition', 'room_dome_ring'].includes(selection.side)) {
+          setSelectedWallSide(selection.side);
+          setSelectedOpeningGuide(null);
+          setSelectedPlacementId(null);
+          setSelectedZoneId(null);
+          setRightTab(selection.side === 'room_dome_transition' ? 'transition' : 'cover');
+          if (selection.transitionType) {
+            setBuilding((value) => normalizeBuilding({ ...value, domeTransition: selection.transitionType }));
+          }
+          scrollInspectorTo(selection.side === 'room_dome_transition'
+            ? roomTransitionRef
+            : selection.side === 'room_dome_inner'
+              ? roomInnerDomeRef
+            : selection.side === 'room_dome_drum'
+              ? roomDomeDrumRef
+            : selection.side === 'room_dome_extra_leg'
+              ? roomDomeExtraLegRef
+              : selection.side === 'room_dome_ring' ? roomDomeRingRef : roomDomeArchRef);
           return;
         }
         setSelectedWallSide(selection.side);
@@ -991,12 +1167,28 @@ function App() {
             transform: placement.options?.constrain === false
               ? transform
               : constrainPlacementTransform(transform, placement.surfaceId, buildingRef.current, placement.options, wallsRef.current),
-            options: placement.role === 'arch-muqarnas'
+            options: ['arch-muqarnas', 'room-dome-muqarnas'].includes(placement.role)
               ? { ...placement.options, enforceTargetWidth: false }
               : placement.options,
           };
         }));
       },
+      onProjectInstanceSelection: (id) => {
+        setSelectedProjectInstanceId(id);
+        if (id) {
+          setSelectedPlacementId(null);
+          setSelectedZoneId(null);
+          setSelectedWallSide(null);
+          setSelectedOpeningGuide(null);
+          setRightTab('project');
+        }
+      },
+      onProjectInstanceTransform: (id, transform) => {
+        setProjectInstances((items) => items.map((instance) => (
+          instance.id === id ? { ...instance, transform } : instance
+        )));
+      },
+      onProjectInstanceOpen: (id) => openProjectInstanceForEditing(id),
       onPreviewDimensions: (id, dimensions) => {
         setMuqarnasDimensionsById((current) => {
           const previous = current[id];
@@ -1005,29 +1197,10 @@ function App() {
         });
       },
       onAssetContextMenu: setAssetContextMenu,
-      onKarbandiCut: ({ ribIndex, side }) => {
-        setWalls((value) => {
-          const cuts = Array.isArray(value.karbandi?.manualCuts) ? value.karbandi.manualCuts : [];
-          const existing = cuts.find((cut) => cut.ribIndex === ribIndex && cut.side === side);
-          const nextCuts = existing
-            ? cuts.map((cut) => (
-              cut === existing ? { ...cut, steps: Math.max(1, Number(cut.steps) || 1) + 1 } : cut
-            ))
-            : [...cuts, { ribIndex, side, steps: 1 }];
-          return normalizeWallSystem({
-            ...value,
-            karbandi: {
-              ...value.karbandi,
-              manualCuts: nextCuts,
-            },
-          }, buildingRef.current);
-        });
-        setRightTab('cover');
-        openSection('coverKarbandi');
-      },
       onNightLights: setNightLighting,
     });
     sceneRef.current = scene;
+    sceneHasInitialArchitectureRef.current = true;
     scene.setStageView('front');
     return () => {
       scene.dispose();
@@ -1036,39 +1209,62 @@ function App() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (sceneHasInitialArchitectureRef.current) {
+      sceneHasInitialArchitectureRef.current = false;
+      return;
+    }
     try {
       sceneRef.current?.setArchitecture(building, walls, stageRenderMode);
     } catch (error) {
       console.error('Could not rebuild the Mehraz scene.', error);
       setLibraryMessage(`Could not render this project: ${error?.message || 'Unknown scene error'}`);
     }
-  }, [building, walls, stageRenderMode]);
+  }, [building, walls, stageRenderMode, user?.id]);
+
+  useEffect(() => {
+    if (sliceAvailable || !roomSectionView) return;
+    setRoomSectionView(false);
+    sceneRef.current?.setRoomSectionView(false);
+  }, [roomSectionView, sliceAvailable]);
 
   useEffect(() => {
     setWalls((value) => {
-      const maximumZ = Math.max(0.001, building.depth - 0.001);
+      const maximumZ = Math.max(0.001, karbandiReferenceDepth - 0.001);
       const referenceZ = Math.min(maximumZ, Math.max(0.001, Number(value.karbandi?.referenceZ) || 0.001));
       const karbandi = { ...value.karbandi, referenceZ };
-      if (karbandi.enabled) {
+      const portalKarbandiActive = building.type !== 'room'
+        && value.portalTransition === 'karbandi'
+        && karbandi.enabled === true;
+      if (portalKarbandiActive) karbandi.autoClip = true;
+      if (portalKarbandiActive) {
+        Object.assign(karbandi, solveKarbandiWallSeating(karbandi, building, value));
+      } else if (karbandi.enabled || (building.type === 'room' && building.domeTransition === 'karbandi')) {
         karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
-        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
+        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, karbandiReferenceDepth);
         karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
-        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
+        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, karbandiReferenceDepth);
+        karbandi.groupY = karbandiGroupYForWallTopLegCenters(karbandi, building, value);
         karbandi.groupZ = karbandiGroupZForWallLegCenters(karbandi, building, value);
       }
       if (karbandi.referenceZ === value.karbandi?.referenceZ
         && karbandi.span === value.karbandi?.span
-        && karbandi.groupZ === value.karbandi?.groupZ) return value;
+        && karbandi.groupY === value.karbandi?.groupY
+        && karbandi.groupZ === value.karbandi?.groupZ
+        && karbandi.autoClip === value.karbandi?.autoClip) return value;
       return normalizeWallSystem({
         ...value,
         karbandi,
       }, building);
     });
-  }, [building.width, building.depth, building.wallThickness]);
+  }, [building.type, building.buildingType, building.portalPlanShape, building.domeTransition, building.width, building.depth, building.height, building.wallThickness, walls.portalTransition, walls.karbandi?.enabled, walls.extraHeights?.north, walls.extraHeights?.east, walls.extraHeights?.south, walls.extraHeights?.west]);
 
   useEffect(() => {
     sceneRef.current?.setPlacements(renderedPlacements);
   }, [renderedPlacements]);
+
+  useEffect(() => {
+    sceneRef.current?.setProjectInstances(projectInstances);
+  }, [projectInstances]);
 
   useEffect(() => {
     sceneRef.current?.setZones(zones);
@@ -1085,6 +1281,12 @@ function App() {
   useEffect(() => {
     sceneRef.current?.select(selectedPlacementId);
   }, [selectedPlacementId]);
+
+  useEffect(() => {
+    if (selectedProjectInstanceId && !selectedPlacementId) {
+      sceneRef.current?.selectProjectInstance(selectedProjectInstanceId);
+    }
+  }, [selectedProjectInstanceId, selectedPlacementId]);
 
   useEffect(() => {
     if (selectedZoneId && !selectedPlacementId) sceneRef.current?.selectZone(selectedZoneId);
@@ -1279,6 +1481,49 @@ function App() {
     setPlacements((items) => [...items.filter((placementItem) => placementItem.role !== 'arch-muqarnas'), placement]);
     setSelectedPlacementId(null);
     setLibraryMessage(`${asset.name} loaded under the arch and auto-fit with aspect ratio preserved.`);
+  }
+
+  function setRoomDomeMuqarnasAsset(assetId) {
+    const asset = muqarnasAssets.find((item) => item.id === assetId);
+    setPlacements((items) => items.filter((placement) => placement.role !== 'room-dome-muqarnas'));
+    if (!asset?.currentVersion) {
+      setSelectedPlacementId(null);
+      sceneRef.current?.selectWallSide('room_dome_transition', false);
+      setLibraryMessage('Room dome Muqarnas removed.');
+      return;
+    }
+    const targetWidth = Math.min(building.width, building.length ?? building.depth);
+    const placement = {
+      id: newPlacementId(),
+      role: 'room-dome-muqarnas',
+      assetId: asset.id,
+      assetVersionId: asset.currentVersion.id,
+      assetVersionNumber: asset.currentVersion.version_number,
+      assetType: asset.asset_type,
+      name: asset.name,
+      surfaceId: 'floor',
+      transform: roomDomeMuqarnasTransform(building, walls, asset.currentVersion.payload),
+      options: { constrain: false, snap: 0, targetWidth, enforceTargetWidth: true, keepAspectRatio: true },
+      assetPayload: asset.currentVersion.payload,
+    };
+    setPlacements((items) => [...items.filter((placementItem) => placementItem.role !== 'room-dome-muqarnas'), placement]);
+    setSelectedPlacementId(null);
+    sceneRef.current?.selectWallSide('room_dome_transition', false);
+    setLibraryMessage(`${asset.name} loaded into the Room dome transition and fitted to the smaller room span.`);
+  }
+
+  function refitRoomDomeMuqarnas() {
+    if (!roomDomeMuqarnasPlacement) return;
+    const targetWidth = Math.min(building.width, building.length ?? building.depth);
+    setPlacements((items) => items.map((placement) => (
+      placement.id === roomDomeMuqarnasPlacement.id
+        ? {
+          ...placement,
+          transform: roomDomeMuqarnasTransform(building, walls, placement.assetPayload),
+          options: { ...placement.options, targetWidth, enforceTargetWidth: true, keepAspectRatio: true },
+        }
+        : placement
+    )));
   }
 
   function updateArchMuqarnasVector(key, index, value) {
@@ -1501,7 +1746,7 @@ function App() {
       id: newPlacementId(),
       name: `Decoration zone ${zones.length + 1}`,
       surfaceId,
-      wallSide: selectedWallSide || wallSideForSurfaceId(surfaceId),
+      wallSide: selectedWallSide || wallSideForSurfaceId(surfaceId, building),
       bounds: defaultZoneBounds(surfaceId, building, walls),
       soldierCourses: false,
       patternScale: 1,
@@ -1541,7 +1786,7 @@ function App() {
 
   function changeZoneSurface(surfaceId) {
     if (!selectedZone) return;
-    const wallSide = wallSideForSurfaceId(surfaceId);
+    const wallSide = wallSideForSurfaceId(surfaceId, building);
     updateSelectedZone({
       surfaceId,
       wallSide,
@@ -1715,21 +1960,17 @@ function App() {
   }
 
   function projectPayload(previewImage = '') {
-    return {
-      version: 5,
-      app: 'mehraz',
-      units: 'm',
-      coordinateSystem: 'right-handed-y-up',
+    return createMehrazProjectPayload({
       building,
       walls,
       stageRenderMode,
       nightLights: nightLighting.lights,
-      surfaces,
       zones,
       assemblies,
-      placements: placements.filter((placement) => !placement.generatedFromZone),
+      placements,
+      projectInstances,
       previewImage,
-    };
+    });
   }
 
   function captureProjectThumbnail(fallback = '') {
@@ -1780,12 +2021,13 @@ function App() {
         name: savedName,
         payload: projectPayload(thumbnail),
         metadata: {
-          editorSchemaVersion: 5,
+          editorSchemaVersion: MEHRAZ_PROJECT_SCHEMA_VERSION,
           placementCount: placements.length,
           zoneCount: zones.length,
           assemblyCount: assemblies.length,
           nightLightCount: nightLighting.lights.length,
           pinnedVersionCount: new Set(placements.map((placement) => placement.assetVersionId)).size,
+          projectInstanceCount: projectInstances.length,
         },
       });
       if (activeProjectAssetId && currentProject?.name !== savedName) {
@@ -1798,6 +2040,27 @@ function App() {
       setActiveProjectVersionId(result.versionId || null);
       setSelectedProjectVersionId(result.versionId || '');
       setProjectName(savedName);
+      if (editingProjectInstance && compositionReturnRef.current) {
+        const editedPayload = projectPayload(thumbnail);
+        compositionReturnRef.current.projectInstances = compositionReturnRef.current.projectInstances.map((instance) => (
+          instance.id === editingProjectInstance.id
+            ? {
+              ...instance,
+              versionId: result.versionId || instance.versionId,
+              versionNumber: result.versionNumber || instance.versionNumber,
+              name: savedName,
+              payload: editedPayload,
+            }
+            : instance
+        ));
+        setEditingProjectInstance((current) => current ? {
+          ...current,
+          saved: true,
+          versionId: result.versionId || current.versionId,
+          versionNumber: result.versionNumber || current.versionNumber,
+          payload: editedPayload,
+        } : current);
+      }
       await refreshLibrary();
       setLibraryMessage(result.updated
         ? `Mehraz project version ${result.versionNumber} saved.`
@@ -1830,25 +2093,19 @@ function App() {
   }
 
   function applyProject(payload, asset = null, version = null) {
-    if (payload?.app !== 'mehraz' || !payload.building || !Array.isArray(payload.placements)) {
-      throw new Error('This is not a valid Mehraz project.');
-    }
-    setBuilding(normalizeBuilding(payload.building));
-    const nextStageRenderMode = payload.stageRenderMode === 'flat' ? 'flat' : 'textured';
+    const savedProject = normalizeMehrazProjectPayload(payload);
+    setBuilding(savedProject.building);
+    const nextStageRenderMode = savedProject.stageRenderMode;
     setStageRenderMode(nextStageRenderMode);
     setExportOptions((value) => ({ ...value, stageRenderMode: nextStageRenderMode }));
-    setWalls(normalizeWallSystem(payload.walls || {
-      ...DEFAULT_WALL_SYSTEM,
-      color: payload.building?.wallColor,
-      pointedArch: { ...DEFAULT_WALL_SYSTEM.pointedArch, enabled: payload.building?.type !== 'room' },
-    }, payload.building));
+    setWalls(savedProject.walls);
     sceneRef.current?.setNightPreview(false);
-    sceneRef.current?.setNightLights(payload.nightLights || []);
+    sceneRef.current?.setNightLights(savedProject.nightLights);
     sceneRef.current?.setNightLightGuidesVisible(false);
-    setZones(Array.isArray(payload.zones) ? payload.zones : []);
-    const normalizedPlacements = payload.placements.filter((placement) => placement && !placement.generatedFromZone).map((placement) => {
+    setZones(savedProject.zones);
+    const normalizedPlacements = savedProject.placements.filter((placement) => placement && !placement.generatedFromZone).map((placement) => {
       const surfaceId = placement.surfaceId || 'north_interior';
-      const transform = placement.transform || defaultPlacementTransform(surfaceId, payload.building, payload.walls);
+      const transform = placement.transform || defaultPlacementTransform(surfaceId, savedProject.building, savedProject.walls);
       return {
         ...placement,
         surfaceId,
@@ -1857,13 +2114,14 @@ function App() {
       };
     });
     const validPlacementIds = new Set(normalizedPlacements.map((placement) => placement.id));
-    setAssemblies(Array.isArray(payload.assemblies) ? payload.assemblies.map((assembly) => ({
+    setAssemblies(savedProject.assemblies.map((assembly) => ({
       ...assembly,
       placementIds: Array.isArray(assembly.placementIds)
         ? assembly.placementIds.filter((id) => validPlacementIds.has(id))
         : [],
-    })) : []);
+    })));
     setPlacements(normalizedPlacements);
+    setProjectInstances(savedProject.projectInstances || []);
     setSelectedPlacementId(null);
     setSelectedZoneId(null);
     setSelectedAssemblyId(null);
@@ -1912,9 +2170,10 @@ function App() {
   }
 
   function newProject() {
-    if ((placements.length || activeProjectAssetId) && !window.confirm('Start a new Mehraz project?')) return;
+    if ((placements.length || projectInstances.length || activeProjectAssetId) && !window.confirm('Start a new Mehraz project?')) return;
     setBuilding(normalizeBuilding());
-    setWalls(normalizeWallSystem(DEFAULT_WALL_SYSTEM, normalizeBuilding()));
+    const defaultBuilding = normalizeBuilding();
+    setWalls(portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, defaultBuilding));
     setStageRenderMode('textured');
     setExportOptions((value) => ({ ...value, stageRenderMode: 'textured' }));
     sceneRef.current?.setNightPreview(false);
@@ -1923,14 +2182,18 @@ function App() {
     setZones([]);
     setAssemblies([]);
     setPlacements([]);
+    setProjectInstances([]);
     setSelectedPlacementId(null);
+    setSelectedProjectInstanceId(null);
     setSelectedZoneId(null);
     setSelectedAssemblyId(null);
     setAssemblyDraftSelection([]);
     setActiveProjectAssetId(null);
     setActiveProjectVersionId(null);
     setSelectedProjectVersionId('');
-    setProjectName('My Mehraz iwan');
+    setEditingProjectInstance(null);
+    compositionReturnRef.current = null;
+    setProjectName('My Mehraz portal');
     setLibraryMessage('New architectural project ready.');
     showFrontStageView();
   }
@@ -1964,7 +2227,7 @@ function App() {
     if (!exportOpen) return;
     const frame = requestAnimationFrame(refreshExportPreview);
     return () => cancelAnimationFrame(frame);
-  }, [exportOpen, exportOptions, building, walls, nightLighting, renderedPlacements]);
+  }, [exportOpen, exportOptions, building, walls, nightLighting, renderedPlacements, projectInstances]);
 
   function openExport() {
     setExportOpen(true);
@@ -2034,6 +2297,25 @@ function App() {
   }
 
   function updateWallGroup(group, patch) {
+    const portalKarbandiGeometryFields = new Set([
+      'ribCount',
+      'ribWidth',
+      'ribDepth',
+      'referenceAngle',
+      'referenceZ',
+      'referenceRotation',
+      'span',
+      'springHeightOffset',
+      'redOffset',
+      'greenOffset',
+      'greenHeightOffset',
+    ]);
+    if (group === 'karbandi'
+      && building.type !== 'room'
+      && Object.keys(patch).some((key) => portalKarbandiGeometryFields.has(key))) {
+      updateKarbandiDesign(patch);
+      return;
+    }
     setWalls((value) => normalizeWallSystem({
       ...value,
       [group]: { ...value[group], ...patch },
@@ -2052,19 +2334,36 @@ function App() {
 
   function updateKarbandiDesign(patch) {
     setWalls((value) => {
-      const karbandi = { ...value.karbandi, ...patch };
+      const normalizedPatch = Object.prototype.hasOwnProperty.call(patch, 'ribCount')
+        ? { ...patch, ribCount: normalizeKarbandiRibCount(patch.ribCount) }
+        : patch;
+      const karbandi = {
+        ...value.karbandi,
+        ...normalizedPatch,
+        ...(building.type !== 'room' ? { autoClip: true } : {}),
+      };
+      if (building.type !== 'room' && building.portalPlanShape === 'octagon') {
+        Object.assign(karbandi, solveKarbandiWallSeating(karbandi, building, value, {
+          preserveReferenceZ: Object.prototype.hasOwnProperty.call(patch, 'referenceZ'),
+        }));
+        return normalizeWallSystem({ ...value, karbandi }, building);
+      }
+      const reseatWholeDesign = Object.prototype.hasOwnProperty.call(patch, 'ribCount')
+        || Object.prototype.hasOwnProperty.call(patch, 'referenceAngle')
+        || Object.prototype.hasOwnProperty.call(patch, 'referenceZ');
+      if (reseatWholeDesign) {
+        Object.assign(karbandi, solveKarbandiWallSeating(karbandi, building, value, {
+          preserveReferenceZ: Object.prototype.hasOwnProperty.call(patch, 'referenceZ'),
+        }));
+        return normalizeWallSystem({ ...value, karbandi }, building);
+      }
       if (!Object.prototype.hasOwnProperty.call(patch, 'span')) {
         karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
       }
-      if (Object.prototype.hasOwnProperty.call(patch, 'span')
-        || Object.prototype.hasOwnProperty.call(patch, 'ribCount')
-        || Object.prototype.hasOwnProperty.call(patch, 'referenceAngle')) {
-        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
-        if (!Object.prototype.hasOwnProperty.call(patch, 'span')) {
-          karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
-          karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
-        }
+      if (Object.prototype.hasOwnProperty.call(patch, 'span')) {
+        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, karbandiReferenceDepth);
       }
+      karbandi.groupY = karbandiGroupYForWallTopLegCenters(karbandi, building, value);
       karbandi.groupZ = karbandiGroupZForWallLegCenters(karbandi, building, value);
       return normalizeWallSystem({ ...value, karbandi }, building);
     });
@@ -2079,31 +2378,300 @@ function App() {
         ...(selectingKarbandi ? {
           ribCount: DEFAULT_WALL_SYSTEM.karbandi.ribCount,
           referenceAngle: DEFAULT_WALL_SYSTEM.karbandi.referenceAngle,
+          groupScale: DEFAULT_WALL_SYSTEM.karbandi.groupScale,
         } : {}),
       };
       if (selectingKarbandi) {
         karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
-        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
+        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, karbandiReferenceDepth);
         karbandi.span = karbandiSpanForWallLegCenters(karbandi, building, value);
-        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, building.depth);
+        karbandi.referenceZ = karbandiReferenceZForRibCount(karbandi, karbandiReferenceDepth);
+        karbandi.groupY = karbandiGroupYForWallTopLegCenters(karbandi, building, value);
         karbandi.groupZ = karbandiGroupZForWallLegCenters(karbandi, building, value);
       }
       return normalizeWallSystem({
         ...value,
+        portalTransition: type === 'karbandi' && enabled ? 'karbandi' : value.portalTransition,
         ahang: {
           ...value.ahang,
-          enabled: type === 'ahang' ? enabled : (enabled ? false : value.ahang?.enabled),
+          enabled: type === 'ahang' ? enabled : value.ahang?.enabled,
         },
         karbandi,
       }, building);
     });
   }
 
-  function updateWallSideRecord(group, side, nextValue) {
+  function selectPortalCover(type) {
+    if (!['none', 'ahang', 'dome'].includes(type)) return;
     setWalls((value) => normalizeWallSystem({
       ...value,
-      [group]: { ...value[group], [side]: nextValue },
+      portalCover: type,
+      ahang: { ...value.ahang, enabled: type === 'ahang' },
     }, building));
+    if (type === 'dome') {
+      setBuilding((value) => normalizeBuilding({
+        ...value,
+        domeEnabled: true,
+        domeCoverType: type,
+        ...(type === 'dome' ? {
+          domePatternCoverage: 85,
+          domeArch: {
+            ...value.domeArch,
+            redOffset: -1.25,
+            greenOffset: 2,
+            greenHeightOffset: 2.2 - Math.max(
+              ...['north', 'east', 'south', 'west'].map((side) => (
+                value.height + (walls.extraHeights?.[side] || 0)
+              )),
+            ),
+          },
+        } : {}),
+      }));
+    }
+  }
+
+  function selectPortalTransition(type) {
+    if ((building.portalPlanShape || 'square') !== 'square' && type !== 'karbandi') return;
+    if (type === 'karbandi') {
+      setCoverEnabled('karbandi', true);
+      return;
+    }
+    setWalls((value) => normalizeWallSystem({
+      ...value,
+      portalTransition: type,
+      karbandi: { ...value.karbandi, enabled: false },
+    }, building));
+  }
+
+  function updateDomeTransitionSettings(type, patch) {
+    setBuilding((value) => normalizeBuilding({
+      ...value,
+      domeTransitionSettings: {
+        ...value.domeTransitionSettings,
+        [type]: {
+          ...value.domeTransitionSettings?.[type],
+          ...patch,
+        },
+      },
+    }));
+  }
+
+  function addRoomPlanOpening(type) {
+    const nextOpening = createRoomPlanOpening(
+      type,
+      globalThis.crypto?.randomUUID?.() || `room-opening-${Date.now()}`,
+    );
+    updateWalls({ roomPlanOpenings: [...(walls.roomPlanOpenings || []), nextOpening] });
+  }
+
+  function selectBuildingType(buildingType) {
+    if (buildingType === building.buildingType) return;
+    const type = buildingType === 'portal' ? 'iwan' : 'room';
+    const roomPlanShape = buildingType === 'vestibule'
+      ? 'octagon'
+      : buildingType === 'room'
+        ? 'square'
+        : building.roomPlanShape;
+    const nextBuilding = buildingForSelectedType(building, buildingType, walls.extraHeights);
+    setBuilding(nextBuilding);
+    setWalls((value) => {
+      const nextWalls = {
+        ...value,
+        roomPlanOpenings: type === 'room'
+          ? roomPlanOpeningsWithDefaultDoor(
+            value.roomPlanOpenings,
+            roomPlanShape,
+            globalThis.crypto?.randomUUID?.() || `room-opening-${Date.now()}`,
+          )
+          : value.roomPlanOpenings,
+      };
+      return buildingType === 'portal'
+        ? portalDefaultWallSystem(nextWalls, nextBuilding)
+        : normalizeWallSystem(nextWalls, nextBuilding);
+    });
+  }
+
+  function selectRoomPlanShape(roomPlanShape) {
+    if (roomPlanShape === building.roomPlanShape) return;
+    const nextBuilding = normalizeBuilding({ ...building, roomPlanShape });
+    setBuilding(nextBuilding);
+    setWalls((value) => normalizeWallSystem({
+      ...value,
+      roomPlanOpenings: roomPlanOpeningsWithDefaultDoor(
+        value.roomPlanOpenings,
+        roomPlanShape,
+        globalThis.crypto?.randomUUID?.() || `room-opening-${Date.now()}`,
+      ),
+    }, nextBuilding));
+  }
+
+  function selectPortalPlanShape(portalPlanShape) {
+    if (portalPlanShape === building.portalPlanShape) return;
+    const nextBuilding = normalizeBuilding({ ...building, portalPlanShape });
+    setBuilding(nextBuilding);
+    setWalls((value) => normalizeWallSystem({
+      ...value,
+      ...(portalPlanShape === 'square' ? {} : {
+        portalTransition: 'karbandi',
+        karbandi: { ...value.karbandi, enabled: true },
+      }),
+    }, nextBuilding));
+  }
+
+  function updateRoomPlanOpening(id, patch) {
+    updateWalls({
+      roomPlanOpenings: (walls.roomPlanOpenings || []).map((opening) => (
+        opening.id === id ? { ...opening, ...patch } : opening
+      )),
+    });
+  }
+
+  function deleteRoomPlanOpening(id) {
+    updateWalls({ roomPlanOpenings: (walls.roomPlanOpenings || []).filter((opening) => opening.id !== id) });
+  }
+
+  function selectRoomDomeTransition(type) {
+    setBuilding((value) => normalizeBuilding({
+      ...value,
+      domeTransition: type,
+      domeDrumColor: type === 'squinch' && (value.domeDrumColor || '').toLowerCase() === '#b3a62c'
+        ? walls.color
+        : value.domeDrumColor,
+    }));
+    if (type === 'squinch') {
+      setWalls((value) => {
+        const drumBond = value.bricks?.sideBonds?.room_dome_drum;
+        const migratesOldDefault = !drumBond
+          || (drumBond.source === 'builtin' && drumBond.builtIn === 'stack');
+        if (!migratesOldDefault) return value;
+        return normalizeWallSystem({
+          ...value,
+          bricks: {
+            ...value.bricks,
+            sideBonds: {
+              ...value.bricks.sideBonds,
+              room_dome_drum: { source: 'builtin', builtIn: 'running', assetId: null, name: 'Running bond', payload: null },
+            },
+          },
+        }, { ...building, domeTransition: type });
+      });
+    }
+  }
+
+  function addProjectToStage(asset, version = asset?.currentVersion) {
+    try {
+      const nextIdentity = projectIdentityAfterStageAddition({
+        projectInstanceCount: projectInstancesRef.current.length,
+        activeProjectAssetId,
+        activeProjectVersionId,
+        selectedProjectVersionId,
+        projectName,
+      });
+      const payload = normalizeMehrazProjectPayload(version?.payload);
+      const spacing = Math.max(5, Number(payload.building.width) || 4) + 1;
+      const instance = normalizeProjectInstance({
+        id: globalThis.crypto?.randomUUID?.() || `project-instance-${Date.now()}`,
+        assetId: asset?.id || null,
+        versionId: version?.id || asset?.current_version_id || null,
+        versionNumber: version?.version_number || asset?.currentVersion?.version_number || null,
+        name: asset?.name || 'Added Mehraz project',
+        payload,
+        transform: {
+          position: [(projectInstancesRef.current.length + 1) * spacing, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+      }, projectInstancesRef.current.length);
+      if (!instance) throw new Error('This project version cannot be added to the stage.');
+      setProjectInstances((items) => {
+        const nextItems = [...items, instance];
+        projectInstancesRef.current = nextItems;
+        return nextItems;
+      });
+      if (nextIdentity.createsComposition) {
+        setActiveProjectAssetId(nextIdentity.activeProjectAssetId);
+        setActiveProjectVersionId(nextIdentity.activeProjectVersionId);
+        setSelectedProjectVersionId(nextIdentity.selectedProjectVersionId);
+        setProjectName(nextIdentity.projectName);
+      }
+      setSelectedProjectInstanceId(instance.id);
+      setSelectedPlacementId(null);
+      setSelectedZoneId(null);
+      setRightTab('project');
+      setLibraryMessage(nextIdentity.createsComposition
+        ? `${instance.name} added. Save will create a new composite project containing every project on the stage.`
+        : `${instance.name} added as a locked project group. Double-click it to edit in isolation.`);
+    } catch (error) {
+      setLibraryMessage(error.message);
+    }
+  }
+
+  function openProjectInstanceForEditing(id) {
+    const instance = projectInstancesRef.current.find((item) => item.id === id);
+    if (!instance || editingProjectInstance) return;
+    compositionReturnRef.current = {
+      building: buildingRef.current,
+      walls: wallsRef.current,
+      stageRenderMode,
+      nightLights: nightLightingRef.current.lights,
+      zones: zonesRef.current,
+      assemblies: assembliesRef.current,
+      placements: placementsRef.current,
+      projectInstances: projectInstancesRef.current,
+      activeProjectAssetId,
+      activeProjectVersionId,
+      selectedProjectVersionId,
+      projectName,
+    };
+    setEditingProjectInstance({ ...instance, saved: false });
+    setSelectedProjectInstanceId(null);
+    const asset = projects.find((project) => project.id === instance.assetId) || {
+      id: instance.assetId,
+      name: instance.name,
+      current_version_id: instance.versionId,
+    };
+    applyProject(instance.payload, asset, {
+      id: instance.versionId,
+      version_number: instance.versionNumber,
+      payload: instance.payload,
+    });
+    setLibraryMessage(`${instance.name} is isolated for editing. Save a new version, then close edit to return.`);
+  }
+
+  function closeProjectInstanceEdit() {
+    const composition = compositionReturnRef.current;
+    if (!composition) return;
+    setBuilding(composition.building);
+    setWalls(composition.walls);
+    setStageRenderMode(composition.stageRenderMode);
+    setExportOptions((value) => ({ ...value, stageRenderMode: composition.stageRenderMode }));
+    setZones(composition.zones);
+    setAssemblies(composition.assemblies);
+    setPlacements(composition.placements);
+    setProjectInstances(composition.projectInstances);
+    setActiveProjectAssetId(composition.activeProjectAssetId);
+    setActiveProjectVersionId(composition.activeProjectVersionId);
+    setSelectedProjectVersionId(composition.selectedProjectVersionId);
+    setProjectName(composition.projectName);
+    sceneRef.current?.setNightPreview(false);
+    sceneRef.current?.setNightLights(composition.nightLights);
+    sceneRef.current?.setNightLightGuidesVisible(false);
+    setNightLighting((value) => ({ ...value, preview: false, guides: false, lights: composition.nightLights }));
+    setSelectedProjectInstanceId(editingProjectInstance?.id || null);
+    setSelectedPlacementId(null);
+    setSelectedZoneId(null);
+    setEditingProjectInstance(null);
+    compositionReturnRef.current = null;
+    setRightTab('project');
+    setLibraryMessage(editingProjectInstance?.saved
+      ? 'Saved project version updated in the composition.'
+      : 'Returned to the composition without changing the pinned project version.');
+    showFrontStageView();
+  }
+
+  function setDomeTransitionCoverEnabled(enabled) {
+    setBuilding((value) => normalizeBuilding({ ...value, domeTransitionCoverEnabled: enabled }));
+    if (building.domeTransition === 'karbandi') updateWallGroup('karbandi', { coverEnabled: enabled });
   }
 
   function toggleWallSide(side) {
@@ -2116,6 +2684,24 @@ function App() {
   }
 
   function activateWallSide(side) {
+    if (['room_dome', 'room_dome_inner', 'room_dome_extra_leg', 'room_dome_drum', 'room_dome_transition', 'room_dome_ring'].includes(side)) {
+      setSelectedWallSide(side);
+      setSelectedOpeningGuide(null);
+      setSelectedPlacementId(null);
+      setSelectedZoneId(null);
+      setRightTab(side === 'room_dome_transition' ? 'transition' : 'cover');
+      sceneRef.current?.selectWallSide(side, false);
+      scrollInspectorTo(side === 'room_dome_transition'
+        ? roomTransitionRef
+        : side === 'room_dome_inner'
+          ? roomInnerDomeRef
+        : side === 'room_dome_drum'
+          ? roomDomeDrumRef
+        : side === 'room_dome_extra_leg'
+          ? roomDomeExtraLegRef
+          : side === 'room_dome_ring' ? roomDomeRingRef : roomDomeRef);
+      return;
+    }
     const surfaceId = surfaceIdForWallSide(side, building);
     if (!surfaceId) return;
     setSelectedWallSide(side);
@@ -2126,26 +2712,52 @@ function App() {
     sceneRef.current?.selectWallSide(side, false);
   }
 
-  function activateOpeningGuide(type) {
+  function activateOpeningGuide(type, side = 'south') {
     if (!['door', 'window'].includes(type)) return;
-    setSelectedOpeningGuide(type);
-    setSelectedWallSide('south');
+    const wallSide = building.type === 'room' && ROOM_WALL_SIDES.includes(side) ? side : 'south';
+    const guide = building.type === 'room' ? `${wallSide}:${type}` : type;
+    setSelectedOpeningGuide(guide);
+    setSelectedWallSide(wallSide);
+    setSelectedPlacementId(null);
+    setSelectedProjectInstanceId(null);
+    setSelectedZoneId(null);
+    sceneRef.current?.setSelectedOpeningGuide(guide);
+  }
+
+  function activateRoomPlanOpeningGuide(opening) {
+    if (!opening?.id) return;
+    const guide = `plan:${opening.id}`;
+    setSelectedOpeningGuide(guide);
+    setSelectedWallSide(null);
     setSelectedPlacementId(null);
     setSelectedZoneId(null);
-    sceneRef.current?.setSelectedOpeningGuide(type);
+    sceneRef.current?.setSelectedOpeningGuide(guide);
+  }
+
+  function updateGlobalWallThickness(wallThickness) {
+    setBuilding((value) => normalizeBuilding({ ...value, wallThickness }));
+    if (building.type === 'room') {
+      setWalls((value) => normalizeWallSystem({
+        ...value,
+        roomExteriorOffsets: Object.fromEntries(ROOM_WALL_SIDES.map((side) => [
+          side,
+          (value.sideOffsets?.[side] || 0) + wallThickness,
+        ])),
+      }, { ...building, wallThickness }));
+    }
   }
 
   function changeTargetSurface(surfaceId) {
     setTargetSurfaceId(surfaceId);
-    const side = wallSideForSurfaceId(surfaceId);
+    const side = wallSideForSurfaceId(surfaceId, building);
     setSelectedWallSide(side);
     setSelectedOpeningGuide(null);
     if (side) sceneRef.current?.selectWallSide(side, false);
     else sceneRef.current?.setSelectedWallSide(null);
   }
 
-  function setWallBond(side, selection) {
-    activateWallSide(side);
+  function setWallBond(side, selection, wallSide = side) {
+    activateWallSide(wallSide);
     setWalls((value) => {
       let bond;
       if (selection.startsWith('library:')) {
@@ -2224,10 +2836,10 @@ function App() {
     setWallBondOffset(side, patch);
   }
 
-  function renderWallBondControls(side) {
+  function renderWallBondControls(side, { wallSide = side, label = null } = {}) {
     return (
-      <div className={`wall-bond-row ${selectedWallSide === side || (side === 'arch' && selectedWallSide === 'south_arch') ? 'active' : ''}`} onClick={() => activateWallSide(side)}>
-        <label><span>{WALL_BOND_LABELS[side] || side} decorative face bond</span><select value={wallBondValue(side)} onChange={(event) => setWallBond(side, event.target.value)}>
+      <div className={`wall-bond-row ${selectedWallSide === wallSide || (wallSide === 'arch' && selectedWallSide === 'south_arch') ? 'active' : ''}`} onClick={() => activateWallSide(wallSide)}>
+        <label><span>{label || `${WALL_BOND_LABELS[side] || side} decorative face bond`}</span><select value={wallBondValue(side)} onChange={(event) => setWallBond(side, event.target.value, wallSide)}>
           {Object.entries(BUILT_IN_BONDS).map(([id, bond]) => <option value={`builtin:${id}`} key={id}>{bond.label}</option>)}
           {wallPatternAssets.map((asset) => <option value={`library:${asset.id}`} key={asset.id}>Library Â· {asset.asset_type === 'girih_pattern' ? 'Girih' : 'Brick'} Â· {asset.name}</option>)}
         </select></label>
@@ -2250,16 +2862,62 @@ function App() {
     );
   }
 
+  function renderRoomPlanWallControls() {
+    if (building.type !== 'room' || (building.roomPlanShape || 'square') === 'square') return null;
+    return <>
+      <fieldset className="room-wall-surfaces"><legend>Room wall surfaces</legend>
+        {renderWallBondControls('room_plan_exterior', { label: 'All exterior wall surfaces bond' })}
+        {renderWallBondControls('room_plan_interior', { label: 'All interior wall surfaces bond' })}
+      </fieldset>
+      <fieldset className="room-plan-openings"><legend>Doors and windows</legend>
+        <div className="placement-actions">
+          <button type="button" className="primary" onClick={() => addRoomPlanOpening('door')}><Plus size={14} /> Add door</button>
+          <button type="button" onClick={() => addRoomPlanOpening('window')}><Plus size={14} /> Add window</button>
+        </div>
+        {(walls.roomPlanOpenings || []).map((opening, index) => {
+          const sideCount = building.roomPlanShape === 'circle' ? 64 : building.roomPlanShape === 'octagon' ? 8 : building.roomPolygonSides;
+          const wallPosition = ((sideCount / 2 - 0.5) + (((opening.rotation || 0) % 360) + 360) % 360 / 360 * sideCount) % sideCount;
+          const wallNumber = Math.floor(wallPosition) + 1;
+          const openingSpringHeight = (opening.type === 'window' ? opening.sillHeight : 0) + opening.height;
+          const updateOpeningArch = (patch) => updateRoomPlanOpening(opening.id, { arch: { ...opening.arch, ...patch } });
+          return <fieldset
+            className={`room-plan-opening-card ${selectedRoomPlanOpeningGuideId === opening.id ? 'active' : ''}`}
+            key={opening.id}
+            onPointerDown={() => activateRoomPlanOpeningGuide(opening)}
+            onFocusCapture={() => activateRoomPlanOpeningGuide(opening)}
+          ><legend>{opening.type === 'window' ? 'Window' : 'Door'} {index + 1} · wall {wallNumber}</legend>
+            <div className="field-grid">
+              <NumberField label="Center position around room · °" value={opening.rotation} min={0} max={359.9} step={1} onChange={(rotation) => updateRoomPlanOpening(opening.id, { rotation })} />
+              <label><span>Opening head</span><select value={opening.head || 'lintel'} onChange={(event) => updateRoomPlanOpening(opening.id, { head: event.target.value })}><option value="lintel">Horizontal lintel</option><option value="arch">Arch</option></select></label>
+              <NumberField label="Width · m" value={opening.width} min={0.3} max={12} step={0.1} onChange={(width) => updateRoomPlanOpening(opening.id, { width })} />
+              <NumberField label={opening.head === 'arch' ? 'Spring height · m' : 'Height · m'} value={opening.height} min={0.3} max={15} step={0.1} onChange={(height) => updateRoomPlanOpening(opening.id, { height })} />
+              {opening.type === 'window' && <NumberField label="Sill height · m" value={opening.sillHeight} min={0} max={18} step={0.1} onChange={(sillHeight) => updateRoomPlanOpening(opening.id, { sillHeight })} />}
+            </div>
+            {opening.head === 'arch' && <div className="field-grid">
+              <NumberField label="Red point offset · m" value={opening.arch?.redOffset ?? -0.15} min={-20} max={20} step={0.05} onChange={(redOffset) => updateOpeningArch({ redOffset })} />
+              <NumberField label="Green point offset · m" value={opening.arch?.greenOffset ?? 0.55} min={0.05} max={20} step={0.05} onChange={(greenOffset) => updateOpeningArch({ greenOffset })} />
+              <NumberField label="Green point height · m" value={opening.arch?.greenHeight ?? 0.8} min={-40} max={40} step={0.05} onChange={(greenHeight) => updateOpeningArch({ greenHeight, greenHeightOffset: greenHeight - openingSpringHeight })} />
+            </div>}
+            <div className="placement-actions">
+              <button type="button" title="Rotate opening 5 degrees counterclockwise" onClick={() => updateRoomPlanOpening(opening.id, { rotation: opening.rotation - 5 })}><RotateCw size={14} style={{ transform: 'scaleX(-1)' }} /> 5°</button>
+              <button type="button" title="Rotate opening 5 degrees clockwise" onClick={() => updateRoomPlanOpening(opening.id, { rotation: opening.rotation + 5 })}><RotateCw size={14} /> 5°</button>
+              <button type="button" className="danger" title="Delete opening" onClick={() => deleteRoomPlanOpening(opening.id)}><Trash2 size={14} /> Delete</button>
+            </div>
+          </fieldset>;
+        })}
+      </fieldset>
+    </>;
+  }
+
   function renderWallVisibilityAndMaterial() {
     return (
       <CollapsiblePanel panelRef={wallSettingsRef} collapsible={false} className="wall-material-panel" title="Wall visibility and material">
         <div className="compact-check-grid">
-          <label className="check-field"><input type="checkbox" checked={walls.enabled} onChange={(event) => updateWalls({ enabled: event.target.checked })} /><span>Show frame walls</span></label>
           <label className="check-field"><input type="checkbox" checked={walls.shadows} onChange={(event) => updateWalls({ shadows: event.target.checked })} /><span>Wall and arch shadows</span></label>
         </div>
         <div className="field-grid compact-field-grid">
           <label><span>Wall color</span><input type="color" value={walls.color} onChange={(event) => updateWalls({ color: event.target.value })} /></label>
-          <NumberField label="Wall thickness · m" value={building.wallThickness} min={0.1} max={1.5} step={0.05} onChange={(wallThickness) => setBuilding((value) => normalizeBuilding({ ...value, wallThickness }))} />
+          <NumberField label={building.type === 'room' ? 'All wall thicknesses · m' : 'Wall thickness · m'} value={building.wallThickness} min={0.1} max={1.5} step={0.05} onChange={updateGlobalWallThickness} />
         </div>
         <div className="compact-material-group">
           <div className="compact-material-heading">
@@ -2278,13 +2936,6 @@ function App() {
             <NumberField label="Mortar gap · m" value={walls.stoneBase.mortar} min={0.001} max={0.1} step={0.001} onChange={(mortar) => updateWallGroup('stoneBase', { mortar })} />
             <label><span>Mortar color</span><input type="color" value={walls.stoneBase.mortarColor} onChange={(event) => updateWallGroup('stoneBase', { mortarColor: event.target.value })} /></label>
           </div>
-        </div>
-        <div className="compact-material-group">
-          <div className="compact-material-heading">
-            <label className="check-field"><input type="checkbox" checked={walls.edges.enabled} onChange={(event) => updateWallGroup('edges', { enabled: event.target.checked })} /><span>Wall and arch edges</span></label>
-            <label><span>Edge color</span><input type="color" value={walls.edges.color} onChange={(event) => updateWallGroup('edges', { color: event.target.value })} /></label>
-          </div>
-          <NumberField label="Edge thickness · px" value={walls.edges.thickness} min={0.5} max={8} step={0.5} onChange={(thickness) => updateWallGroup('edges', { thickness })} />
         </div>
         <div className="compact-material-group">
           <div className="compact-material-heading">
@@ -2316,10 +2967,14 @@ function App() {
     0.05,
     building.height + walls.extraHeights.east,
     building.height + walls.extraHeights.west,
+    ...(building.type === 'room' ? [
+      building.height + walls.extraHeights.north,
+      building.height + walls.extraHeights.south,
+    ] : []),
   );
   const karbandiSpringHeight = karbandiSideTop + (walls.karbandi?.springHeightOffset || 0);
   const karbandiGreenHeight = karbandiSpringHeight + (walls.karbandi?.greenHeightOffset || 0);
-  const referenceZOverlapSolutions = karbandiReferenceZSolutions(walls.karbandi, building.depth);
+  const referenceZOverlapSolutions = karbandiReferenceZSolutions(walls.karbandi, karbandiReferenceDepth);
   const stepKarbandiReferenceZSolution = (direction) => {
     if (!referenceZOverlapSolutions.length) return;
     const current = Number(walls.karbandi?.referenceZ) || 0;
@@ -2336,8 +2991,9 @@ function App() {
         setWelcomeDismissed(true);
         const karbandiInput = event.target.closest?.('[data-karbandi-settings] input, [data-karbandi-settings] select, [data-karbandi-settings] textarea, [data-karbandi-settings] [data-karbandi-input-control]');
         sceneRef.current?.setKarbandiReferenceEditing(Boolean(karbandiInput));
-        const ribArchInput = event.target.closest?.('[data-karbandi-arch] input, [data-karbandi-arch] select, [data-karbandi-arch] textarea');
+        const ribArchInput = isKarbandiRibArchEditorTarget(event.target);
         sceneRef.current?.setKarbandiRibArchEditing(Boolean(ribArchInput));
+        sceneRef.current?.setSquinchArchEditing(Boolean(event.target.closest?.('[data-squinch-arch]')));
       }}
       onKeyDownCapture={() => setWelcomeDismissed(true)}
     >
@@ -2493,18 +3149,22 @@ function App() {
               <button title="Front view" className={stageView === 'front' ? 'active' : ''} onClick={() => changeStageView('front')}>Front</button>
               <button title="Side view" className={stageView === 'side' ? 'active' : ''} onClick={() => changeStageView('side')}>Side</button>
               <button title="Isometric view" className={stageView === 'isometric' ? 'active' : ''} onClick={() => changeStageView('isometric')}>Iso</button>
+              <button title="Slice through the center on the current X section plane" disabled={!sliceAvailable} className={roomSectionView && roomSectionAxis === 'x' ? 'active' : ''} onClick={() => selectRoomSectionView('x')}><ScanLine size={13} /> X Slice</button>
+              <button title="Slice through the center at 90 degrees to the X section" disabled={!sliceAvailable} className={roomSectionView && roomSectionAxis === 'y' ? 'active' : ''} onClick={() => selectRoomSectionView('y')}><ScanLine size={13} /> Y Slice</button>
             </div>
           </div>
+          {roomSectionView && <div className="room-section-view-label"><strong>{roomSectionAxis.toUpperCase()} Slice</strong><span>Current model and every staged project sliced through their local centers</span><button type="button" onClick={closeRoomSectionView}><X size={13} /> Close</button></div>}
+          {editingProjectInstance && <div className="project-isolation-label"><strong>Editing {editingProjectInstance.name}</strong><span>Isolated project group · save a new version before returning</span><button type="button" onClick={closeProjectInstanceEdit}><ArrowLeft size={13} /> Close edit</button></div>}
         </section>
 
         <aside ref={inspectorRef} className="inspector">
           <div className="inspector-tabs">
             <button className={rightTab === 'building' ? 'active' : ''} onClick={() => setRightTab('building')}>Building</button>
-            <button className={rightTab === 'context' ? 'active' : ''} onClick={() => setRightTab('context')}>Walls</button>
+            <button className={rightTab === 'transition' ? 'active' : ''} disabled={!transitionAvailable} title={transitionAvailable ? undefined : 'This plan bears its cover directly without a transition'} onClick={() => setRightTab('transition')}>Transition</button>
             <button className={rightTab === 'cover' ? 'active' : ''} onClick={() => {
               setRightTab('cover');
-              if (!walls.ahang?.enabled && !walls.karbandi?.enabled) setCoverEnabled('ahang', true);
             }}>Cover</button>
+            <button className={rightTab === 'context' ? 'active' : ''} onClick={() => setRightTab('context')}>Walls</button>
             <button className={rightTab === 'lights' ? 'active' : ''} onClick={() => setRightTab('lights')}>Lights</button>
             <button className={rightTab === 'construction' ? 'active' : ''} onClick={() => setRightTab('construction')}>Steps</button>
             <button className={rightTab === 'project' ? 'active' : ''} onClick={() => setRightTab('project')}>Project</button>
@@ -2513,15 +3173,93 @@ function App() {
           {rightTab === 'building' && (
             <section className="inspector-section">
               <div className="section-heading"><Building2 size={17} /><div><strong>Architectural shell</strong><small>Mehraz owns building geometry</small></div></div>
-              <CollapsiblePanel collapsible={false} title="Building dimensions">
-                <label><span>Building type</span><select value={building.type} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, type: event.target.value }))}><option value="iwan">Iwan Â· pointed portal</option><option value="room">Room Â· four walls</option></select></label>
+              <CollapsiblePanel collapsible={false} title={building.buildingType === 'vestibule' ? 'Vestibule size' : building.type === 'room' ? 'Room size' : 'Building dimensions'}>
+                <div className="building-mode-controls">
+                  <div className="room-cover-mode-group">
+                    <span>Building type</span>
+                    <div className="room-cover-toggle building-shell-type-toggle" role="group" aria-label="Building type">
+                      {[
+                        ['portal', 'Portal'],
+                        ['room', 'Room'],
+                        ['vestibule', 'Vestibule'],
+                      ].map(([type, label]) => <button
+                        type="button"
+                        key={type}
+                        className={(building.buildingType || (building.type === 'room' ? 'room' : 'portal')) === type ? 'active' : ''}
+                        aria-pressed={(building.buildingType || (building.type === 'room' ? 'room' : 'portal')) === type}
+                        onClick={() => selectBuildingType(type)}
+                      >{label}</button>)}
+                    </div>
+                  </div>
+                  {building.buildingType === 'portal' && <div className="room-cover-mode-group">
+                    <span>Floor plan</span>
+                    <div className="room-cover-toggle floor-plan-toggle" role="group" aria-label="Portal floor plan">
+                      {[
+                        ['square', 'Square'],
+                        ['octagon', 'Octagon'],
+                        ['circle', 'Circle'],
+                      ].map(([shape, label]) => <button
+                        type="button"
+                        key={shape}
+                        className={(building.portalPlanShape || 'square') === shape ? 'active' : ''}
+                        aria-pressed={(building.portalPlanShape || 'square') === shape}
+                        onClick={() => selectPortalPlanShape(shape)}
+                      >{label}</button>)}
+                    </div>
+                  </div>}
+                  {building.type === 'room' && building.buildingType !== 'vestibule' && <div className="room-cover-mode-group">
+                    <span>Floor plan</span>
+                    <div className="room-cover-toggle floor-plan-toggle" role="group" aria-label="Floor plan">
+                      {[
+                        ['square', 'Square'],
+                        ['octagon', 'Octagon'],
+                        ['circle', 'Circle'],
+                        ['polygon', 'Custom'],
+                      ].map(([shape, label]) => <button
+                        type="button"
+                        key={shape}
+                        className={(building.roomPlanShape || 'square') === shape ? 'active' : ''}
+                        aria-pressed={(building.roomPlanShape || 'square') === shape}
+                        title={shape === 'polygon' ? 'Custom polygon' : undefined}
+                        onClick={() => selectRoomPlanShape(shape)}
+                      >{label}</button>)}
+                    </div>
+                  </div>}
+                </div>
+                {building.type === 'room' && building.roomPlanShape === 'polygon' && <NumberField label="Polygon sides" value={building.roomPolygonSides ?? 6} min={3} max={32} step={1} onChange={(roomPolygonSides) => setBuilding((value) => normalizeBuilding({ ...value, roomPolygonSides }))} />}
                 <label><span>Ground color</span><input type="color" value={building.groundColor} onChange={(event) => setBuilding((value) => ({ ...value, groundColor: event.target.value }))} /></label>
                 <div className="field-grid">
                   <NumberField label="Width Â· m" value={building.width} min={2} max={30} onChange={(width) => setBuilding((value) => normalizeBuilding({ ...value, width }))} />
-                  <NumberField label="Depth Â· m" value={building.depth} min={2} max={30} onChange={(depth) => setBuilding((value) => normalizeBuilding({ ...value, depth }))} />
+                  {building.type === 'room'
+                    ? <NumberField label={`${building.buildingType === 'vestibule' ? 'Vestibule' : 'Room'} length · m`} value={building.length} min={2} max={30} onChange={(length) => setBuilding((value) => normalizeBuilding({ ...value, length }))} />
+                    : <NumberField label="Portal depth Â· m" value={building.iwanDepth} min={2} max={30} onChange={(iwanDepth) => setBuilding((value) => normalizeBuilding({ ...value, iwanDepth, depth: iwanDepth }))} />}
                   <NumberField label="Height Â· m" value={building.height} min={2} max={20} onChange={(height) => setBuilding((value) => normalizeBuilding({ ...value, height }))} />
                   <NumberField label="Wall Â· m" value={building.wallThickness} min={0.1} max={1.5} step={0.05} onChange={(wallThickness) => setBuilding((value) => normalizeBuilding({ ...value, wallThickness }))} />
                 </div>
+                {building.type === 'room' && <fieldset className="room-exterior-column-settings">
+                  <legend>Exterior edge columns</legend>
+                  <div className="field-grid">
+                    <label className="check-field room-exterior-columns-toggle"><input type="checkbox" checked={building.roomExteriorColumnsEnabled === true} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, roomExteriorColumnsEnabled: event.target.checked }))} /><span>Show exterior columns</span></label>
+                    <div className="room-cover-mode-group room-exterior-column-profile">
+                      <span>Column profile</span>
+                      <div className="room-cover-toggle building-type-toggle" role="group" aria-label="Column profile">
+                        {[
+                          ['circle', 'Circle'],
+                          ['square', 'Square'],
+                        ].map(([profile, label]) => <button
+                          type="button"
+                          key={profile}
+                          className={(building.roomExteriorColumnProfile || 'circle') === profile ? 'active' : ''}
+                          aria-pressed={(building.roomExteriorColumnProfile || 'circle') === profile}
+                          onClick={() => setBuilding((value) => normalizeBuilding({ ...value, roomExteriorColumnProfile: profile }))}
+                        >{label}</button>)}
+                      </div>
+                    </div>
+                    <NumberField label={building.roomExteriorColumnProfile === 'square' ? 'Column half-size · m' : 'Column radius · m'} value={building.roomExteriorColumnRadius ?? 0.2} min={0.05} max={2} step={0.05} onChange={(roomExteriorColumnRadius) => setBuilding((value) => normalizeBuilding({ ...value, roomExteriorColumnRadius }))} />
+                    {building.roomExteriorColumnProfile === 'square' && <NumberField label="Profile rotation · °" value={building.roomExteriorSquareColumnRotation ?? 0} min={-360} max={360} step={1} onChange={(roomExteriorSquareColumnRotation) => setBuilding((value) => normalizeBuilding({ ...value, roomExteriorSquareColumnRotation }))} />}
+                    {building.roomPlanShape === 'circle' && <NumberField label="Columns around room" value={building.roomExteriorCircleColumnCount ?? 8} min={3} max={64} step={1} onChange={(roomExteriorCircleColumnCount) => setBuilding((value) => normalizeBuilding({ ...value, roomExteriorCircleColumnCount }))} />}
+                  </div>
+                </fieldset>}
               </CollapsiblePanel>
               <CollapsiblePanel collapsible={false} title="Available surfaces">
                 <div className="surface-list">{surfaces.map((surface) => <span key={surface.id}>{surface.label}</span>)}</div>
@@ -2532,6 +3270,7 @@ function App() {
           {rightTab === 'context' && (
             <section className="inspector-section wall-global-controls">
               {renderWallVisibilityAndMaterial()}
+              {renderRoomPlanWallControls()}
             </section>
           )}
 
@@ -2539,8 +3278,8 @@ function App() {
 
           {rightTab === 'context' && selectedWallSide && (
             <section className="inspector-section wall-controls">
-              <div className="section-heading"><BrickWall size={17} /><div><strong>{selectedWallLabel}</strong><small>Selected wall settings and zones</small></div></div>
-              {['north', 'north_sides'].includes(selectedWallSide) && <CollapsiblePanel panelRef={wallNorthSidesRef} collapsible={false} title="North side wall settings">
+              <div className="section-heading"><BrickWall size={17} /><div><strong>{selectedWallLabel}</strong><small>{building.type === 'room' && ROOM_WALL_SIDES.includes(selectedWallSide) ? 'Whole wall selected · interior and exterior settings below' : 'Selected wall settings and zones'}</small></div></div>
+              {building.type !== 'room' && ['north', 'north_sides'].includes(selectedWallSide) && <CollapsiblePanel panelRef={wallNorthSidesRef} collapsible={false} title="North side wall settings">
                 {renderWallBondControls('north_sides')}
                 <div className="field-grid">
                   <NumberField label="Outward width Â· each side" value={walls.northWall.outwardWidth} min={0} max={10} step={0.1} onChange={(outwardWidth) => updateWallGroup('northWall', { outwardWidth })} />
@@ -2555,45 +3294,63 @@ function App() {
                 </div>
               </CollapsiblePanel>}
 
-              {selectedWallSide === 'north_top' && <CollapsiblePanel panelRef={wallNorthTopRef} collapsible={false} title="North wall arch and top settings" guide="The two red circles construct the mirrored lower arch sections; the two green circles construct the upper sections. Red-point movement is horizontal and mirrored automatically. This design is preserved when switching between Ahang and Karbandi.">
+              {selectedWallSide === 'north_top' && <CollapsiblePanel panelRef={wallNorthTopRef} collapsible={false} title="North wall top finish">
                 {renderWallBondControls('north_top')}
                 <label className="check-field"><input type="checkbox" checked={walls.pointedArch.enabled} onChange={(event) => updateWallGroup('pointedArch', { enabled: event.target.checked })} /><span>Pointed arch opening in north wall</span></label>
                 <div className="field-grid">
                   <NumberField label="Red point offset · m" value={walls.pointedArch.redOffset ?? 0} min={-20} max={20} step={0.05} onChange={(redOffset) => updateWallGroup('pointedArch', { redOffset })} />
                   <NumberField label="Green point offset · m" value={walls.pointedArch.greenOffset ?? building.openingWidth * 0.5} min={0.05} max={20} step={0.05} onChange={(greenOffset) => updateWallGroup('pointedArch', { greenOffset })} />
-                  <NumberField
-                    label="Green point height · m"
-                    value={normalizeWallSystem(walls, building).pointedArch.greenHeight}
-                    min={-40}
-                    max={40}
-                    step={0.05}
-                    onChange={(greenHeight) => updateWallGroup('pointedArch', {
-                      greenHeight,
-                      greenHeightOffset: greenHeight - Math.max(
-                        0.05,
-                        building.height + walls.extraHeights.east,
-                        building.height + walls.extraHeights.west,
-                      ),
-                    })}
-                  />
-                  <NumberField label="Extra above arch Â· m" value={walls.northWall.archTopExtension} min={0} max={10} step={0.1} onChange={(archTopExtension) => updateWallGroup('northWall', { archTopExtension })} />
+                  <NumberField label="Green point height · m" value={normalizeWallSystem(walls, building).pointedArch.greenHeight} min={-40} max={40} step={0.05} onChange={(greenHeight) => updateWallGroup('pointedArch', {
+                    greenHeight,
+                    greenHeightOffset: greenHeight - Math.max(
+                      0.05,
+                      building.height + walls.extraHeights.east,
+                      building.height + walls.extraHeights.west,
+                    ),
+                  })} />
+                  <NumberField label="Extra above arch · m" value={walls.northWall.archTopExtension} min={0} max={10} step={0.1} onChange={(archTopExtension) => updateWallGroup('northWall', { archTopExtension })} />
                 </div>
               </CollapsiblePanel>}
 
-              {selectedWallSide === 'south' && <CollapsiblePanel panelRef={wallSouthRef} collapsible={false} title="South wall settings" guide="Horizontal lintels use soldier courses. Arched openings use curved border bricks, and the window sill remains a soldier course.">
-                {renderWallBondControls('south')}
+              {((building.type === 'room' && (building.roomPlanShape || 'square') === 'square' && ROOM_WALL_SIDES.includes(selectedWallSide)) || (building.type !== 'room' && selectedWallSide === 'south')) && <CollapsiblePanel
+                panelRef={wallSouthRef}
+                collapsible={false}
+                hideHeading={building.type === 'room'}
+                title={`${selectedWallLabel} settings`}
+                guide={building.type === 'room'
+                  ? 'Click either side of a wall in the model to select and highlight the complete wall. Interior and exterior bounds and finishes remain independent; openings are shared. Every Room wall uses the same construction system. Horizontal lintels use soldier courses, arched openings use curved border bricks, and window sills remain soldier courses.'
+                  : 'Horizontal lintels use soldier courses; arched openings use curved border bricks; and window sills remain soldier courses.'}
+              >
+                {building.type === 'room' ? <>
+                  {renderWallBondControls(`${selectedWallSide}_exterior`, {
+                    wallSide: selectedWallSide,
+                    label: 'Exterior decorative face bond',
+                  })}
+                  {renderWallBondControls(selectedWallSide, {
+                    wallSide: selectedWallSide,
+                    label: 'Interior decorative face bond',
+                  })}
+                </> : renderWallBondControls(selectedWallSide)}
                 {['door', 'window'].map((type) => {
-                  const opening = walls.southOpenings[type];
+                  const openingWallSide = building.type === 'room' ? selectedWallSide : 'south';
+                  const opening = building.type === 'room' ? walls.roomWallOpenings[openingWallSide][type] : walls.southOpenings[type];
                   const openingBottom = type === 'window' ? opening.sillHeight : 0;
                   const openingSpringHeight = openingBottom + opening.height;
-                  const updateOpening = (patch) => updateWallGroup('southOpenings', { [type]: { ...opening, ...patch } });
+                  const updateOpening = (patch) => building.type === 'room'
+                    ? updateWallGroup('roomWallOpenings', {
+                      [openingWallSide]: {
+                        ...walls.roomWallOpenings[openingWallSide],
+                        [type]: { ...opening, ...patch },
+                      },
+                    })
+                    : updateWallGroup('southOpenings', { [type]: { ...opening, ...patch } });
                   const updateOpeningArch = (patch) => updateOpening({ arch: { ...opening.arch, ...patch } });
                   return (
                     <div
-                      className={`opening-card ${selectedOpeningGuide === type ? 'active' : ''}`}
+                      className={`opening-card ${selectedOpeningGuideType === type && selectedOpeningGuideSide === openingWallSide ? 'active' : ''}`}
                       key={type}
-                      onPointerDown={() => activateOpeningGuide(type)}
-                      onFocusCapture={() => activateOpeningGuide(type)}
+                      onPointerDown={() => activateOpeningGuide(type, openingWallSide)}
+                      onFocusCapture={() => activateOpeningGuide(type, openingWallSide)}
                     >
                       <label className="check-field"><input type="checkbox" checked={opening.enabled} onChange={(event) => updateOpening({ enabled: event.target.checked })} /><span className="guided-heading">{type[0].toUpperCase() + type.slice(1)} <HelpTooltip label={`${type} opening`}>{opening.head === 'arch' ? 'Red circles form the lower opening arch; green circles continue from the tangent points to the crown.' : 'The horizontal head is supported by a raised soldier-brick lintel. Change Opening head to Arch to use the four-centre controls.'}</HelpTooltip></span></label>
                       <div className="field-grid">
@@ -2617,11 +3374,11 @@ function App() {
                 })}
               </CollapsiblePanel>}
 
-              {selectedWallSide === 'east' && <CollapsiblePanel panelRef={wallEastRef} collapsible={false} title="East wall settings">
+              {building.type !== 'room' && selectedWallSide === 'east' && <CollapsiblePanel panelRef={wallEastRef} collapsible={false} title="East wall settings">
                 {renderWallBondControls('east')}
               </CollapsiblePanel>}
 
-              {selectedWallSide === 'west' && <CollapsiblePanel panelRef={wallWestRef} collapsible={false} title="West wall settings">
+              {building.type !== 'room' && selectedWallSide === 'west' && <CollapsiblePanel panelRef={wallWestRef} collapsible={false} title="West wall settings">
                 {renderWallBondControls('west')}
               </CollapsiblePanel>}
 
@@ -2643,49 +3400,320 @@ function App() {
             </section>
           )}
 
-          {rightTab === 'cover' && (
+          {(rightTab === 'cover' || rightTab === 'transition') && (
             <section className="inspector-section">
-              <div className="section-heading"><Layers3 size={17} /><div><strong>Cover systems</strong><small>Choose Ahang or Karbandi · north-wall arch stays independent</small></div></div>
-              <div className="cover-subtabs" role="tablist" aria-label="Cover system">
-                <button type="button" role="tab" aria-selected={activeCoverType === 'karbandi'} className={activeCoverType === 'karbandi' ? 'active' : ''} onClick={() => setCoverEnabled('karbandi', true)}>Karbandi</button>
-                <button type="button" role="tab" aria-selected={activeCoverType === 'ahang'} className={activeCoverType === 'ahang' ? 'active' : ''} onClick={() => setCoverEnabled('ahang', true)}>Ahang</button>
-              </div>
-              {activeCoverType === 'ahang' && <div ref={wallArchRef} className="cover-settings" role="tabpanel">
-                <div className="cover-settings-heading"><strong className="guided-heading">Ahang settings <HelpTooltip label="Ahang settings">Ahang uses the arch designed in the North wall section and extends it across the portal enclosure. Choose a saved Muqarnas assembly below; Mehraz fits it under the arch while preserving its aspect ratio.</HelpTooltip></strong><small>Arch-based portal cover</small></div>
-                {renderWallBondControls('arch')}
+              {building.type === 'room' && <div ref={roomDomeRef} className="cover-settings room-cover-settings" role="tabpanel" data-room-dome-settings>
+                {rightTab === 'cover' && <div className="cover-settings-heading"><strong className="guided-heading">Room cover <HelpTooltip label="Room cover">Choose the exterior cover form first. Square rooms offer transition systems; other floor plans carry the drum directly on their walls.</HelpTooltip></strong><small>Cover type and support</small></div>}
+                {rightTab === 'transition' && <div className="cover-settings-heading"><strong>Room transition</strong><small>Transition type, structure, and finish</small></div>}
+                <div className="room-cover-mode-controls">
+                  {rightTab === 'cover' && <div className="room-cover-mode-group">
+                    <span>Cover type</span>
+                    <div className="room-cover-toggle" role="group" aria-label="Cover type">
+                      {[
+                        ['dome', 'Dome'],
+                        ['cone', 'Cone'],
+                        ['pyramid', 'Pyramid'],
+                      ].map(([type, label]) => {
+                        const disabled = type === 'pyramid' && building.roomPlanShape === 'circle';
+                        return <button
+                          type="button"
+                          key={type}
+                          className={(building.domeCoverType || 'dome') === type ? 'active' : ''}
+                          aria-pressed={(building.domeCoverType || 'dome') === type}
+                          disabled={disabled}
+                          title={disabled ? 'Pyramid requires a polygonal room plan' : undefined}
+                          onClick={() => setBuilding((value) => normalizeBuilding({ ...value, domeCoverType: type }))}
+                        >{label}</button>;
+                      })}
+                    </div>
+                  </div>}
+                  {rightTab === 'transition' && <div className="room-cover-mode-group">
+                    <span>Transition type</span>
+                    {building.buildingType === 'vestibule' ? <div className="room-cover-toggle vestibule-transition-toggle" role="group" aria-label="Transition type">
+                      <button type="button" className="active" aria-pressed="true" disabled>Karbandi</button>
+                    </div> : (building.roomPlanShape || 'square') === 'square' ? <div className="room-cover-toggle" role="group" aria-label="Transition type">
+                      {[
+                        ['karbandi', 'Karbandi'],
+                        ['squinch', 'Squinch'],
+                        ['muqarnas', 'Muqarnas'],
+                      ].map(([type, label]) => <button
+                        type="button"
+                        key={type}
+                        className={building.domeTransition === type ? 'active' : ''}
+                        aria-pressed={building.domeTransition === type}
+                        onClick={() => selectRoomDomeTransition(type)}
+                      >{label}</button>)}
+                    </div> : <div className="room-cover-direct-bearing">Direct bearing · no transition</div>}
+                  </div>}
+                </div>
+                {rightTab === 'cover' && <fieldset
+                  className="outer-cover-settings"
+                  ref={roomDomeArchRef}
+                  data-room-dome-arch
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome', false)}
+                ><legend>{building.domeCoverType === 'cone' ? 'Outer cone' : building.domeCoverType === 'pyramid' ? 'Outer pyramid' : 'Outer dome'}</legend>
+                  {renderWallBondControls('room_dome', { wallSide: 'room_dome', label: `Outer ${building.domeCoverType || 'dome'} exterior bond` })}
+                  {renderWallBondControls('room_dome_interior', { wallSide: 'room_dome', label: `Outer ${building.domeCoverType || 'dome'} interior bond` })}
+                  <div className="field-grid">
+                    {(building.domeCoverType || 'dome') === 'dome' && <>
+                      <NumberField label="Red point offset · m" value={building.domeArch?.redOffset ?? 0} min={-20} max={20} step={0.05} onChange={(redOffset) => setBuilding((value) => normalizeBuilding({ ...value, domeArch: { ...value.domeArch, redOffset } }))} />
+                      <NumberField label="Green point offset · m" value={building.domeArch?.greenOffset ?? 2} min={0.05} max={20} step={0.05} onChange={(greenOffset) => setBuilding((value) => normalizeBuilding({ ...value, domeArch: { ...value.domeArch, greenOffset } }))} />
+                      <NumberField label="Green point height · m" value={roomDomeGreenHeight} min={-40} max={40} step={0.05} onChange={(greenHeight) => setBuilding((value) => normalizeBuilding({ ...value, domeArch: { ...value.domeArch, greenHeightOffset: greenHeight - roomOuterDomeSpringHeight } }))} />
+                    </>}
+                    {(building.domeCoverType || 'dome') !== 'dome' && <NumberField label={`${building.domeCoverType === 'pyramid' ? 'Pyramid' : 'Cone'} height · m`} value={building.domeCoverHeight ?? 5} min={0.2} max={20} step={0.05} onChange={(domeCoverHeight) => setBuilding((value) => normalizeBuilding({ ...value, domeCoverHeight }))} />}
+                    <NumberField label="Cover pattern coverage · %" value={building.domePatternCoverage ?? 85} min={0} max={100} step={1} onChange={(domePatternCoverage) => setBuilding((value) => normalizeBuilding({ ...value, domePatternCoverage }))} />
+                    <label><span>Cover bricks color</span><input type="color" value={building.domeColor || '#49b5ca'} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, domeColor: event.target.value }))} /></label>
+                  </div>
+                </fieldset>}
+                {rightTab === 'cover' && <fieldset
+                  ref={roomDomeExtraLegRef}
+                  data-room-dome-extra-leg
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome_extra_leg', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome_extra_leg', false)}
+                ><legend>Dome extra leg</legend>
+                  <div className="field-grid">
+                    <NumberField label="Extra leg height · m" value={building.domeOuterLegExtensionByCoverType?.[building.domeCoverType || 'dome'] ?? building.domeArch?.legExtension ?? 0} min={0} max={10} step={0.05} onChange={(legExtension) => setBuilding((value) => normalizeBuilding({
+                      ...value,
+                      domeOuterLegExtensionByCoverType: {
+                        ...value.domeOuterLegExtensionByCoverType,
+                        [value.domeCoverType || 'dome']: legExtension,
+                      },
+                    }))} />
+                    <label><span>Extra leg bricks color</span><input type="color" value={building.domeExtraLegColor || building.domeColor || '#49b5ca'} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, domeExtraLegColor: event.target.value }))} /></label>
+                  </div>
+                  {renderWallBondControls('room_dome_extra_leg', { wallSide: 'room_dome_extra_leg', label: 'Extra leg exterior bond' })}
+                  {renderWallBondControls('room_dome_extra_leg_interior', { wallSide: 'room_dome_extra_leg', label: 'Extra leg interior bond' })}
+                </fieldset>}
+                {rightTab === 'cover' && <fieldset
+                  ref={roomInnerDomeRef}
+                  data-room-inner-dome-arch
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome_inner', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome_inner', false)}
+                ><legend><span className="fieldset-legend-label">Inner dome <HelpTooltip label="Inner dome">The inner dome is a separate brick shell below the exterior dome. Its red and green construction circles define an independent four-centre profile and leave a real cavity between the two domes.</HelpTooltip></span></legend>
+                  <label className="check-field"><input type="checkbox" checked={building.innerDomeEnabled === true} onChange={(event) => setBuilding((value) => normalizeBuilding({
+                    ...value,
+                    innerDomeEnabledByTransition: {
+                      ...value.innerDomeEnabledByTransition,
+                      [value.domeTransition]: event.target.checked,
+                    },
+                  }))} /><span>Show inner dome</span></label>
+                  {renderWallBondControls('room_inner_dome_exterior', { wallSide: 'room_dome_inner', label: 'Inner dome exterior bond' })}
+                  {renderWallBondControls('room_inner_dome_interior', { wallSide: 'room_dome_inner', label: 'Inner dome interior bond' })}
+                  <div className="field-grid">
+                    <NumberField label="Red point offset · m" value={building.innerDomeArch?.redOffset ?? -0.75} min={-20} max={20} step={0.05} onChange={(redOffset) => setBuilding((value) => normalizeBuilding({ ...value, innerDomeArch: { ...value.innerDomeArch, redOffset } }))} />
+                    <NumberField label="Green point offset · m" value={building.innerDomeArch?.greenOffset ?? 0.95} min={0.05} max={20} step={0.05} onChange={(greenOffset) => setBuilding((value) => normalizeBuilding({ ...value, innerDomeArch: { ...value.innerDomeArch, greenOffset } }))} />
+                    <NumberField label="Green point height · m" value={roomInnerDomeGreenHeight} min={-40} max={40} step={0.05} onChange={(greenHeight) => setBuilding((value) => normalizeBuilding({ ...value, innerDomeArch: { ...value.innerDomeArch, greenHeightOffset: greenHeight - roomDomeSpringHeight } }))} />
+                    <NumberField label="Inner dome pattern coverage · %" value={building.innerDomePatternCoverage ?? 85} min={0} max={100} step={1} onChange={(innerDomePatternCoverage) => setBuilding((value) => normalizeBuilding({ ...value, innerDomePatternCoverage }))} />
+                    <label><span>Inner dome bricks color</span><input type="color" value={building.innerDomeColor || '#b88b5f'} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, innerDomeColor: event.target.value }))} /></label>
+                  </div>
+                  {building.innerDomeEnabled === true && <div className="field-grid">
+                    <label className="check-field"><input type="checkbox" checked={building.betweenDomeSupportWallsEnabled !== false} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, betweenDomeSupportWallsEnabled: event.target.checked }))} /><span>Between domes supporting walls</span></label>
+                    <NumberField label="Width around R/2 center · %" value={building.betweenDomeSupportWallsCoverage ?? 60} min={0} max={100} step={1} onChange={(betweenDomeSupportWallsCoverage) => setBuilding((value) => normalizeBuilding({ ...value, betweenDomeSupportWallsCoverage }))} />
+                  </div>}
+                </fieldset>}
+                {rightTab === 'cover' && <fieldset
+                  className="dome-ring-settings"
+                  ref={roomDomeRingRef}
+                  data-room-dome-ring
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome_ring', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome_ring', false)}
+                ><legend>Dome springing ring</legend>
+                  <label className="check-field"><input type="checkbox" checked={building.domeOuterRingEnabledByCoverType?.[building.domeCoverType || 'dome'] !== false} onChange={(event) => setBuilding((value) => normalizeBuilding({
+                    ...value,
+                    domeOuterRingEnabledByCoverType: {
+                      ...value.domeOuterRingEnabledByCoverType,
+                      [value.domeCoverType || 'dome']: event.target.checked,
+                    },
+                  }))} /><span>Show outer ring for {building.domeCoverType === 'cone' ? 'Cone' : building.domeCoverType === 'pyramid' ? 'Pyramid' : 'Dome'}</span></label>
+                  <label><span>Ring solid color</span><input type="color" value={building.domeRingColor || '#49b5ca'} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, domeRingColor: event.target.value }))} /></label>
+                </fieldset>}
+                {rightTab === 'cover' && <fieldset
+                  ref={roomDomeDrumRef}
+                  data-room-dome-drum
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome_drum', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome_drum', false)}
+                ><legend>Dome drum</legend>
+                  <div className="field-grid">
+                    <NumberField label="Drum height · m" value={building.domeDrumHeight ?? 0} min={0} max={10} step={0.05} onChange={(domeDrumHeight) => setBuilding((value) => normalizeBuilding({ ...value, domeDrumHeight }))} />
+                    <label><span>Drum bricks color</span><input type="color" value={building.domeTransition === 'squinch' && (building.domeDrumColor || '').toLowerCase() === '#b3a62c' ? walls.color : (building.domeDrumColor || '#b3a62c')} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, domeDrumColor: event.target.value }))} /></label>
+                  </div>
+                  {renderWallBondControls('room_dome_drum', { wallSide: 'room_dome_drum', label: 'Drum exterior bond' })}
+                  {renderWallBondControls('room_dome_drum_interior', { wallSide: 'room_dome_drum', label: 'Drum interior bond' })}
+                </fieldset>}
+                {rightTab === 'transition' && roomTransitionAvailable && <div
+                  className="room-transition-panel"
+                  ref={roomTransitionRef}
+                  data-room-dome-transition
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome_transition', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome_transition', false)}
+                >
+                <div className="cover-settings-heading"><strong>Transition finish</strong><small>Independent from the dome shell and drum</small></div>
+                {roomTransitionAvailable && <label className="check-field"><input type="checkbox" checked={building.domeTransitionCoverEnabled === true} onChange={(event) => setDomeTransitionCoverEnabled(event.target.checked)} /><span>Cover transition</span></label>}
+                {building.domeTransition === 'squinch' && renderWallBondControls('room_dome_transition_exterior', {
+                    wallSide: 'room_dome_transition',
+                    label: 'Transition exterior bond',
+                  })}
+                {renderWallBondControls('room_dome_transition', {
+                  wallSide: 'room_dome_transition',
+                  label: building.domeTransition === 'squinch' ? 'Transition interior bond' : 'Transition cover bond',
+                })}
+                {building.domeTransition === 'squinch' && <fieldset
+                  className="room-transition-settings"
+                  data-squinch-arch
+                  onPointerDownCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                  onFocusCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                  onInputCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                  onChangeCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                  onBlurCapture={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) sceneRef.current?.setSquinchArchEditing(false);
+                  }}
+                ><legend><span className="fieldset-legend-label">Squinch transition · 8 arches <HelpTooltip label="Squinch transition">The north-wall reference arch sets the transition height automatically. Four wall bays and four Karbandi-style corner bays support the selected drum.</HelpTooltip></span></legend><div className="field-grid">
+                  <NumberField label="Rib band width · m" value={building.domeTransitionSettings?.squinch?.ribWidth ?? 0.1} min={0.01} max={1} step={0.01} onChange={(ribWidth) => updateDomeTransitionSettings('squinch', { ribWidth })} />
+                  <NumberField label="Rib thickness · m" value={building.domeTransitionSettings?.squinch?.ribDepth ?? 0.46} min={0.01} max={1} step={0.01} onChange={(ribDepth) => updateDomeTransitionSettings('squinch', { ribDepth })} />
+                  <label><span>Rib color</span><input type="color" value={building.domeTransitionSettings?.squinch?.ribColor ?? '#3490b7'} onChange={(event) => updateDomeTransitionSettings('squinch', { ribColor: event.target.value })} /></label>
+                  <NumberField label="Vertical leg extension · m" value={building.domeTransitionSettings?.squinch?.legExtension ?? 1} min={0} max={10} step={0.05} onChange={(legExtension) => updateDomeTransitionSettings('squinch', { legExtension })} />
+                  <NumberField label="Spring height offset · m" value={building.domeTransitionSettings?.squinch?.springHeightOffset ?? 0} min={-10} max={10} step={0.05} onChange={(springHeightOffset) => updateDomeTransitionSettings('squinch', { springHeightOffset })} />
+                  <NumberField label="Red point offset · m" value={building.domeTransitionSettings?.squinch?.redOffset ?? -0.1} min={-20} max={20} step={0.05} onChange={(redOffset) => updateDomeTransitionSettings('squinch', { redOffset })} />
+                  <NumberField label="Green point offset · m" value={building.domeTransitionSettings?.squinch?.greenOffset ?? 0.45} min={0.05} max={20} step={0.05} onChange={(greenOffset) => updateDomeTransitionSettings('squinch', { greenOffset })} />
+                  <NumberField label="Green point height offset · m" value={building.domeTransitionSettings?.squinch?.greenHeightOffset ?? -0.65} min={-20} max={20} step={0.05} onChange={(greenHeightOffset) => updateDomeTransitionSettings('squinch', { greenHeightOffset })} />
+                </div>
+                  <label className="check-field"><input type="checkbox" checked={building.domeTransitionSettings?.squinch?.openWallArchBays === true} onChange={(event) => updateDomeTransitionSettings('squinch', { openWallArchBays: event.target.checked })} /><span>Open non-corner arch bays</span></label>
+                </fieldset>}
+                {building.domeTransition === 'pendentive' && <fieldset className="room-transition-settings"><legend>Pendentive transition</legend><div className="field-grid">
+                  <NumberField label="Transition height · m" value={building.domeTransitionHeight ?? 1.2} min={0.2} max={10} step={0.05} onChange={(domeTransitionHeight) => setBuilding((value) => normalizeBuilding({ ...value, domeTransitionHeight }))} />
+                  <NumberField label="Curvature" value={building.domeTransitionSettings?.pendentive?.curvature ?? 1.45} min={0.35} max={3} step={0.05} onChange={(curvature) => updateDomeTransitionSettings('pendentive', { curvature })} />
+                  <StepperNumberField label="Surface subdivisions" value={building.domeTransitionSettings?.pendentive?.subdivisions ?? 10} min={3} max={32} step={1} onChange={(subdivisions) => updateDomeTransitionSettings('pendentive', { subdivisions })} />
+                </div></fieldset>}
+                {building.domeTransition === 'muqarnas' && <fieldset className="room-transition-settings"><legend>Muqarnas transition</legend>
+                  <NumberField label="Transition height · m" value={building.domeTransitionHeight ?? 1.2} min={0.2} max={10} step={0.05} onChange={(domeTransitionHeight) => setBuilding((value) => normalizeBuilding({ ...value, domeTransitionHeight }))} />
+                  <label><span>Muqarnas assembly from library</span><select value={roomDomeMuqarnasPlacement?.assetId || ''} onChange={(event) => setRoomDomeMuqarnasAsset(event.target.value)}>
+                    <option value="">Select a Muqarnas assembly</option>
+                    {muqarnasAssets.map((asset) => <option value={asset.id} key={asset.id}>{asset.name} · v{asset.currentVersion?.version_number || '—'}</option>)}
+                  </select></label>
+                  {!muqarnasAssets.length && <p className="empty-state">No Muqarnas assemblies are available in your library. Create or load one in the Muqarnas app first.</p>}
+                  {roomDomeMuqarnasPlacement && <div className="placement-actions">
+                    <button type="button" onClick={refitRoomDomeMuqarnas}><Focus size={14} /> Refit to room</button>
+                    <button type="button" className="danger" onClick={() => setRoomDomeMuqarnasAsset('')}><Trash2 size={14} /> Remove</button>
+                  </div>}
+                </fieldset>}
+                </div>}
+              </div>}
+              {rightTab === 'transition' && portalTransitionAvailable && <div className="cover-subtabs" role="tablist" aria-label="Portal transition system">
+                {portalTransitionOptions.map(([type, label]) => <button
+                  type="button"
+                  role="tab"
+                  key={type}
+                  aria-selected={portalTransitionType === type}
+                  className={portalTransitionType === type ? 'active' : ''}
+                  onClick={() => selectPortalTransition(type)}
+                >{label}</button>)}
+              </div>}
+              {rightTab === 'cover' && portalTransitionAvailable && <>
+                <div className="cover-subtabs" role="tablist" aria-label="Portal cover system">
+                  {[
+                    ['none', 'No cover'],
+                    ['ahang', 'Ahang'],
+                    ['dome', 'Dome'],
+                  ].map(([type, label]) => <button
+                    type="button"
+                    role="tab"
+                    key={type}
+                    aria-selected={portalCoverType === type}
+                    className={portalCoverType === type ? 'active' : ''}
+                    onClick={() => selectPortalCover(type)}
+                  >{label}</button>)}
+                </div>
+                {portalCoverType === 'none' && <p className="empty-state" role="tabpanel">No Portal cover selected.</p>}
+                {portalCoverType === 'ahang' && <div className="cover-settings" role="tabpanel">
+                  <div className="cover-settings-heading"><strong className="guided-heading">Ahang settings <HelpTooltip label="Ahang settings">Ahang uses the north-wall arch and extends it across the Portal enclosure.</HelpTooltip></strong><small>Arch-based Portal cover</small></div>
+                  {renderWallBondControls('arch')}
+                </div>}
+                {portalCoverType === 'dome' && <div
+                  className="cover-settings"
+                  role="tabpanel"
+                  ref={roomDomeArchRef}
+                  data-portal-upper-cover-settings
+                  data-room-dome-arch
+                  onPointerDownCapture={() => sceneRef.current?.selectWallSide('room_dome', false)}
+                  onFocusCapture={() => sceneRef.current?.selectWallSide('room_dome', false)}
+                >
+                  <div className="cover-settings-heading"><strong>Dome settings</strong><small>Half cover clipped at the Portal facade</small></div>
+                  {renderWallBondControls('room_dome', { wallSide: 'room_dome', label: 'Dome exterior bond' })}
+                  {renderWallBondControls('room_dome_interior', { wallSide: 'room_dome', label: 'Dome interior bond' })}
+                  <p className="field-note">The Portal Dome uses the north-wall arch green circle directly.</p>
+                  <div className="field-grid">
+                    <NumberField label="Green point offset · m" value={walls.pointedArch?.greenOffset ?? 1} min={0.05} max={20} step={0.05} onChange={(greenOffset) => setWalls((value) => normalizeWallSystem({ ...value, pointedArch: { ...value.pointedArch, greenOffset } }, building))} />
+                    <NumberField label="Green point height · m" value={walls.pointedArch?.greenHeight ?? 5} min={-40} max={40} step={0.05} onChange={(greenHeight) => setWalls((value) => normalizeWallSystem({ ...value, pointedArch: { ...value.pointedArch, greenHeight } }, building))} />
+                    <NumberField label="Cover pattern coverage · %" value={building.domePatternCoverage ?? 85} min={0} max={100} step={1} onChange={(domePatternCoverage) => setBuilding((value) => normalizeBuilding({ ...value, domePatternCoverage }))} />
+                    <label><span>Cover bricks color</span><input type="color" value={building.domeColor || '#49b5ca'} onChange={(event) => setBuilding((value) => normalizeBuilding({ ...value, domeColor: event.target.value }))} /></label>
+                  </div>
+                </div>}
+              </>}
+              {rightTab === 'transition' && portalTransitionAvailable && portalTransitionType === 'squinch' && <div
+                className="cover-settings"
+                role="tabpanel"
+                data-portal-squinch-settings
+                data-squinch-arch
+                onPointerDownCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                onFocusCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                onInputCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                onChangeCapture={() => sceneRef.current?.setSquinchArchEditing(true)}
+                onBlurCapture={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) sceneRef.current?.setSquinchArchEditing(false);
+                }}
+              >
+                <div className="cover-settings-heading"><strong>Squinch settings</strong><small>North half of the square-room Squinch</small></div>
+                <label className="check-field"><input type="checkbox" checked={building.domeTransitionCoverEnabled === true} onChange={(event) => setDomeTransitionCoverEnabled(event.target.checked)} /><span>Cover Squinch transition</span></label>
+                {renderWallBondControls('room_dome_transition_exterior', { wallSide: 'room_dome_transition', label: 'Transition exterior bond' })}
+                {renderWallBondControls('room_dome_transition', { wallSide: 'room_dome_transition', label: 'Transition interior bond' })}
+                <fieldset className="room-transition-settings"><legend>Squinch transition · Portal half</legend><div className="field-grid">
+                  <NumberField label="Rib band width · m" value={building.domeTransitionSettings?.squinch?.ribWidth ?? 0.1} min={0.01} max={1} step={0.01} onChange={(ribWidth) => updateDomeTransitionSettings('squinch', { ribWidth })} />
+                  <NumberField label="Rib thickness · m" value={building.domeTransitionSettings?.squinch?.ribDepth ?? 0.46} min={0.01} max={1} step={0.01} onChange={(ribDepth) => updateDomeTransitionSettings('squinch', { ribDepth })} />
+                  <label><span>Rib color</span><input type="color" value={building.domeTransitionSettings?.squinch?.ribColor ?? '#3490b7'} onChange={(event) => updateDomeTransitionSettings('squinch', { ribColor: event.target.value })} /></label>
+                  <NumberField label="Vertical leg extension · m" value={building.domeTransitionSettings?.squinch?.legExtension ?? 1} min={0} max={10} step={0.05} onChange={(legExtension) => updateDomeTransitionSettings('squinch', { legExtension })} />
+                  <NumberField label="Spring height offset · m" value={building.domeTransitionSettings?.squinch?.springHeightOffset ?? 0} min={-10} max={10} step={0.05} onChange={(springHeightOffset) => updateDomeTransitionSettings('squinch', { springHeightOffset })} />
+                  <NumberField label="Red point offset · m" value={building.domeTransitionSettings?.squinch?.redOffset ?? -0.1} min={-20} max={20} step={0.05} onChange={(redOffset) => updateDomeTransitionSettings('squinch', { redOffset })} />
+                  <NumberField label="Green point offset · m" value={building.domeTransitionSettings?.squinch?.greenOffset ?? 0.45} min={0.05} max={20} step={0.05} onChange={(greenOffset) => updateDomeTransitionSettings('squinch', { greenOffset })} />
+                  <NumberField label="Green point height offset · m" value={building.domeTransitionSettings?.squinch?.greenHeightOffset ?? -0.65} min={-20} max={20} step={0.05} onChange={(greenHeightOffset) => updateDomeTransitionSettings('squinch', { greenHeightOffset })} />
+                </div>
+                  <label className="check-field"><input type="checkbox" checked={building.domeTransitionSettings?.squinch?.openWallArchBays === true} onChange={(event) => updateDomeTransitionSettings('squinch', { openWallArchBays: event.target.checked })} /><span>Open non-corner arch bays</span></label>
+                </fieldset>
+              </div>}
+              {rightTab === 'transition' && portalTransitionAvailable && portalTransitionType === 'muqarnas' && <div ref={wallArchRef} className="cover-settings" role="tabpanel" data-portal-muqarnas-settings>
+                <div className="cover-settings-heading"><strong>Muqarnas settings</strong><small>Library assembly fitted beneath the Portal arch</small></div>
                 <label className="check-field"><input type="checkbox" checked={walls.pointedArch.moduleInfill} onChange={(event) => updateWallGroup('pointedArch', { moduleInfill: event.target.checked })} /><span>Fill above open Muqarnas modules</span></label>
-                <label><span>Muqarnas under arch</span><select value={archMuqarnasPlacement?.assetId || ''} onChange={(event) => setArchMuqarnasAsset(event.target.value)}>
+                <label><span>Muqarnas assembly</span><select value={archMuqarnasPlacement?.assetId || ''} onChange={(event) => setArchMuqarnasAsset(event.target.value)}>
                   <option value="">No Muqarnas selected</option>
                   {muqarnasAssets.map((asset) => <option value={asset.id} key={asset.id}>{asset.name} · v{asset.currentVersion?.version_number || '—'}</option>)}
                 </select></label>
-                {archMuqarnasPlacement && (
-                  <>
-                    <fieldset><legend>Muqarnas position · metres</legend><div className="field-grid three">{['X', 'Y', 'Z'].map((axis, index) => <NumberField key={axis} label={axis} value={archMuqarnasPlacement.transform?.position?.[index] ?? 0} min={-20} max={20} step={0.05} onChange={(value) => updateArchMuqarnasVector('position', index, value)} />)}</div></fieldset>
-                    <fieldset><legend>Muqarnas rotation · degrees</legend><div className="field-grid three">{['X', 'Y', 'Z'].map((axis, index) => <NumberField key={axis} label={axis} value={archMuqarnasPlacement.transform?.rotation?.[index] ?? 0} min={-360} max={360} step={1} onChange={(value) => updateArchMuqarnasVector('rotation', index, value)} />)}</div></fieldset>
-                    <fieldset><legend>Muqarnas dimensions - metres</legend><div className="field-grid three">{['Width', 'Height', 'Depth'].map((label, index) => <NumberField key={label} label={label} value={Number((archMuqarnasDimensions?.[index] || 0).toFixed(3))} min={0.05} max={100} step={0.05} onChange={(value) => updateArchMuqarnasDimension(index, value)} />)}</div></fieldset>
-                    <label className="check-field"><input type="checkbox" checked={archMuqarnasPlacement.options?.keepAspectRatio !== false} onChange={(event) => setArchMuqarnasKeepAspectRatio(event.target.checked)} /><span>Keep aspect ratio</span></label>
-                    <div className="placement-actions">
-                      <button type="button" onClick={refitArchMuqarnas}><Focus size={14} /> Refit under arch</button>
-                      <button type="button" className="danger" onClick={deleteArchMuqarnas}><Trash2 size={14} /> Delete Muqarnas</button>
-                    </div>
-                  </>
-                )}
+                {!muqarnasAssets.length && <p className="empty-state">No Muqarnas assemblies are available in your library. Create or load one in the Muqarnas app first.</p>}
+                {archMuqarnasPlacement && <>
+                  <fieldset><legend>Muqarnas position · metres</legend><div className="field-grid three">{['X', 'Y', 'Z'].map((axis, index) => <NumberField key={axis} label={axis} value={archMuqarnasPlacement.transform?.position?.[index] ?? 0} min={-20} max={20} step={0.05} onChange={(value) => updateArchMuqarnasVector('position', index, value)} />)}</div></fieldset>
+                  <fieldset><legend>Muqarnas rotation · degrees</legend><div className="field-grid three">{['X', 'Y', 'Z'].map((axis, index) => <NumberField key={axis} label={axis} value={archMuqarnasPlacement.transform?.rotation?.[index] ?? 0} min={-360} max={360} step={1} onChange={(value) => updateArchMuqarnasVector('rotation', index, value)} />)}</div></fieldset>
+                  <fieldset><legend>Muqarnas dimensions · metres</legend><div className="field-grid three">{['Width', 'Height', 'Depth'].map((label, index) => <NumberField key={label} label={label} value={Number((archMuqarnasDimensions?.[index] || 0).toFixed(3))} min={0.05} max={100} step={0.05} onChange={(value) => updateArchMuqarnasDimension(index, value)} />)}</div></fieldset>
+                  <label className="check-field"><input type="checkbox" checked={archMuqarnasPlacement.options?.keepAspectRatio !== false} onChange={(event) => setArchMuqarnasKeepAspectRatio(event.target.checked)} /><span>Keep aspect ratio</span></label>
+                  <div className="placement-actions">
+                    <button type="button" onClick={refitArchMuqarnas}><Focus size={14} /> Refit under arch</button>
+                    <button type="button" className="danger" onClick={deleteArchMuqarnas}><Trash2 size={14} /> Delete Muqarnas</button>
+                  </div>
+                </>}
               </div>}
-              {activeCoverType === 'karbandi' && <div
+              {((rightTab === 'transition' && portalTransitionAvailable && portalTransitionType === 'karbandi') || (rightTab === 'transition' && roomTransitionAvailable && building.domeTransition === 'karbandi')) && <div
                 className="cover-settings"
                 role="tabpanel"
                 data-karbandi-settings
                 onFocusCapture={(event) => {
-                  if (event.target.matches('input, select, textarea')) {
+                  if (event.target.matches('input, select, textarea') && !event.target.matches('[data-karbandi-guide-toggle]')) {
                     sceneRef.current?.setKarbandiReferenceEditing(true);
                     sceneRef.current?.setKarbandiRibArchEditing(Boolean(event.target.closest('[data-karbandi-arch]')));
                   }
                 }}
                 onInputCapture={(event) => {
-                  if (event.target.matches('input, select, textarea')) sceneRef.current?.setKarbandiReferenceEditing(true);
+                  if (event.target.matches('input, select, textarea') && !event.target.matches('[data-karbandi-guide-toggle]')) sceneRef.current?.setKarbandiReferenceEditing(true);
                 }}
                 onChangeCapture={(event) => {
-                  if (event.target.matches('input, select, textarea')) sceneRef.current?.setKarbandiReferenceEditing(true);
+                  if (event.target.matches('input, select, textarea') && !event.target.matches('[data-karbandi-guide-toggle]')) sceneRef.current?.setKarbandiReferenceEditing(true);
                 }}
                 onBlurCapture={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -2694,44 +3722,51 @@ function App() {
                   }
                 }}
               >
-                <div className="cover-settings-heading"><strong className="guided-heading">Karbandi settings <HelpTooltip label="Karbandi settings">Configure the roof finish, reference rib network, rib arch construction, and final assembly transform. Use each section’s question mark for detailed guidance.</HelpTooltip></strong><small>Rotating rib-vault cover</small></div>
+                <div className="cover-settings-heading"><strong className="guided-heading">Karbandi settings <HelpTooltip label="Karbandi settings">Configure the roof finish, reference rib network, rib arch construction, and final assembly transform. Use each section’s question mark for detailed guidance.</HelpTooltip></strong><small>{portalTransitionAvailable ? 'Rotating rib-vault Portal transition' : 'Rotating rib-vault cover'}</small></div>
                 <fieldset className="karbandi-roof-fieldset"><legend><span className="fieldset-legend-label">Roof <HelpTooltip label="Karbandi roof">Enable the roof cover, then choose either the brick infill pattern or a solid gypsum finish and its colors.</HelpTooltip></span></legend>
-                  <label className="check-field roof-cover-check"><input type="checkbox" checked={walls.karbandi?.coverEnabled === true} disabled={walls.karbandi?.enabled !== true} onChange={(event) => updateWallGroup('karbandi', { coverEnabled: event.target.checked })} /><span>Cover Karbandi roof</span></label>
+                  {building.type !== 'room' && <label className="check-field roof-cover-check"><input type="checkbox" checked={walls.karbandi?.coverEnabled === true} disabled={walls.karbandi?.enabled !== true} onChange={(event) => updateWallGroup('karbandi', { coverEnabled: event.target.checked })} /><span>Cover Karbandi roof</span></label>}
                   <label><span>Roof finish</span><select value={walls.karbandi?.coverFinish ?? 'bricks'} onChange={(event) => updateWallGroup('karbandi', { coverFinish: event.target.value })}><option value="bricks">Bricks</option><option value="solid">Gypsum · solid color</option></select></label>
                   {walls.karbandi?.coverFinish === 'solid' && <label><span>Gypsum color</span><input type="color" value={walls.karbandi?.coverColor ?? '#eee8dc'} onChange={(event) => updateWallGroup('karbandi', { coverColor: event.target.value })} /></label>}
                     {walls.karbandi?.coverFinish === 'bricks' && <label><span>Roof infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor ?? DEFAULT_WALL_SYSTEM.karbandi.web.infillBrickColor} onChange={(event) => updateKarbandiWeb({ infillBrickColor: event.target.value })} /></label>}
                     {walls.karbandi?.coverFinish === 'bricks' && <label><span>Alternate infill brick color</span><input type="color" value={walls.karbandi?.web?.infillBrickColor2 ?? '#9f663b'} onChange={(event) => updateKarbandiWeb({ infillBrickColor2: event.target.value })} /></label>}
                     {walls.karbandi?.coverFinish === 'bricks' && <NumberField label="Roof infill brick height · m" value={walls.karbandi?.web?.infillBrickHeight ?? 0.06} min={0.01} max={0.5} step={0.005} onChange={(infillBrickHeight) => updateKarbandiWeb({ infillBrickHeight })} />}
+                    <StepperNumberField label="South/east/west roof boundary offset · m" value={walls.karbandi?.web?.wallRoofBoundaryOffset ?? -0.07} min={-1} max={1} step={0.01} onChange={(wallRoofBoundaryOffset) => updateKarbandiWeb({ wallRoofBoundaryOffset })} />
                 </fieldset>
-                <fieldset><legend><span className="fieldset-legend-label">South corner guide ribs <HelpTooltip label="South corner guide ribs">Each hidden southwest and southeast roof guide is rebuilt from the two nearest visible ribs whose legs reach the walls on either side of that guide. At 0% it follows the left rib profile, at 100% the right rib profile, and 50% balances both.</HelpTooltip></span></legend>
-                  <NumberField label="Southwest guide balance · %" value={(walls.karbandi?.web?.southWestGuideBlend ?? 0.5) * 100} min={0} max={100} step={5} onChange={(southWestGuideBalance) => updateKarbandiWeb({ southWestGuideBlend: southWestGuideBalance / 100 })} />
-                  <NumberField label="Southeast guide balance · %" value={(walls.karbandi?.web?.southEastGuideBlend ?? 0.5) * 100} min={0} max={100} step={5} onChange={(southEastGuideBalance) => updateKarbandiWeb({ southEastGuideBlend: southEastGuideBalance / 100 })} />
-                </fieldset>
-                <fieldset className="karbandi-ribs-fieldset"><legend><span className="fieldset-legend-label">Ribs <HelpTooltip label="Karbandi ribs">Design one reference rib, then Mehraz rotates it around the midpoint of the north wall exterior face. Portal clipping stays at the wall faces. Auto clipping additionally trims unsupported legs back to their first rib intersection. While editing, ribs nearest the interior wall surfaces turn orange and form the automatic clipping frame. Other legs are removed up to their first junction with that frame, including the bay beside the north wall. In manual cut mode, repeatedly click a rib leg to advance through successive physical junctions; detached pieces are removed automatically. Auto clipping is {walls.karbandi?.autoClip !== false ? 'active' : 'reset'}, with {(walls.karbandi?.manualCuts || []).reduce((sum, cut) => sum + Math.max(1, Number(cut.steps) || 1), 0)} manual clips. The cyan outline appears only while the reference rib is selected.</HelpTooltip></span></legend>
+                <fieldset className="karbandi-ribs-fieldset"><legend><span className="fieldset-legend-label">Ribs <HelpTooltip label="Karbandi ribs">Design one reference rib, then Mehraz rotates it around the Portal north-wall exterior center or the Room center. Auto clipping trims unsupported legs back to their first rib intersection. The rotation guide draws the leg circle and division points, reveals clipped portions at 30% opacity, colors wall-supported ribs orange, and keeps the reference highlight above orange.</HelpTooltip></span></legend>
                 <div className="placement-actions">
                   <button type="button" className={walls.karbandi?.autoClip !== false ? 'primary' : ''} onClick={() => updateWallGroup('karbandi', { autoClip: true })}>{walls.karbandi?.autoClip !== false ? 'Auto clipping on' : 'Auto clip ribs'}</button>
                   <button type="button" onClick={() => updateWallGroup('karbandi', { autoClip: false })}>Reset auto clips</button>
-                  <button type="button" className={walls.karbandi?.cutMode ? 'primary' : ''} onClick={() => updateWallGroup('karbandi', { cutMode: !walls.karbandi?.cutMode })}>{walls.karbandi?.cutMode ? 'Manual clip on' : 'Manual clip'}</button>
-                  <button type="button" onClick={() => updateWallGroup('karbandi', { manualCuts: [] })}>Reset manual cuts</button>
                 </div>
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    data-karbandi-guide-toggle
+                    checked={walls.karbandi?.guideVisible === true}
+                    onChange={(event) => updateWallGroup('karbandi', { guideVisible: event.target.checked })}
+                  />
+                  <span>Show rib rotation guide</span>
+                </label>
+                <label className="check-field">
+                  <input
+                    type="checkbox"
+                    data-karbandi-guide-toggle
+                    checked={walls.karbandi?.archIntersectionGuideVisible === true}
+                    onChange={(event) => updateWallGroup('karbandi', { archIntersectionGuideVisible: event.target.checked })}
+                  />
+                  <span>Show rib arch intersection guide</span>
+                </label>
                 <div className="field-grid">
                   <label><span>Rib color</span><input type="color" value={walls.karbandi?.ribColor ?? walls.color} onChange={(event) => updateWallGroup('karbandi', { ribColor: event.target.value })} /></label>
                   <label><span>Reference rib highlight</span><input type="color" value={walls.karbandi?.referenceRibColor ?? DEFAULT_WALL_SYSTEM.karbandi.referenceRibColor} onChange={(event) => updateWallGroup('karbandi', { referenceRibColor: event.target.value })} /></label>
                   <StepperNumberField label="Rib band width · m" value={walls.karbandi?.ribWidth ?? DEFAULT_WALL_SYSTEM.karbandi.ribWidth} min={0.01} max={2} step={0.01} onChange={(ribWidth) => updateKarbandiDesign({ ribWidth })} />
                   <StepperNumberField label="Rib depth · m" value={walls.karbandi?.ribDepth ?? DEFAULT_WALL_SYSTEM.karbandi.ribDepth} min={0.01} max={2} step={0.01} onChange={(ribDepth) => updateKarbandiDesign({ ribDepth })} />
-                  <StepperNumberField label="Rib count" value={walls.karbandi?.ribCount ?? DEFAULT_WALL_SYSTEM.karbandi.ribCount} min={2} max={64} step={1} onChange={(ribCount) => updateKarbandiDesign({
-                    ribCount,
-                    referenceZ: karbandiReferenceZForRibCount({ ...walls.karbandi, ribCount }, building.depth),
-                  })} />
-                  <StepperNumberField label="Reference rib angle · degrees" value={walls.karbandi?.referenceAngle ?? DEFAULT_WALL_SYSTEM.karbandi.referenceAngle} min={1} max={359} step={1} onChange={(referenceAngle) => updateKarbandiDesign({
-                    referenceAngle,
-                    referenceZ: karbandiReferenceZForRibCount({ ...walls.karbandi, referenceAngle }, building.depth),
-                  })} />
+                  <StepperNumberField label="Rib count" value={walls.karbandi?.ribCount ?? DEFAULT_WALL_SYSTEM.karbandi.ribCount} min={8} max={64} step={4} onChange={(ribCount) => updateKarbandiDesign({ ribCount })} />
+                  <StepperNumberField label="Reference rib angle · degrees" value={walls.karbandi?.referenceAngle ?? DEFAULT_WALL_SYSTEM.karbandi.referenceAngle} min={1} max={359} step={1} onChange={(referenceAngle) => updateKarbandiDesign({ referenceAngle })} />
                   <SolutionNumberField
                     label="Reference move Z · m"
                     value={walls.karbandi?.referenceZ ?? DEFAULT_WALL_SYSTEM.karbandi.referenceZ}
                     min={0.001}
-                    max={Math.max(0.001, building.depth - 0.001)}
+                    max={40}
                     onChange={(referenceZ) => updateKarbandiDesign({ referenceZ })}
                     onPrevious={() => stepKarbandiReferenceZSolution(-1)}
                     onNext={() => stepKarbandiReferenceZSolution(1)}
@@ -2739,18 +3774,28 @@ function App() {
                   <StepperNumberField label="Reference rotation · degrees" value={walls.karbandi?.referenceRotation ?? DEFAULT_WALL_SYSTEM.karbandi.referenceRotation} min={-360} max={360} step={1} onChange={(referenceRotation) => updateKarbandiDesign({ referenceRotation })} />
                 </div>
                 </fieldset>
-                <fieldset data-karbandi-arch><legend><span className="fieldset-legend-label">Rib arch <HelpTooltip label="Karbandi rib arch">The red circles form the lower rib arch; the green circles continue through the tangent points to the crown.</HelpTooltip></span></legend><div className="field-grid">
+                <fieldset
+                  data-karbandi-arch
+                  onPointerDownCapture={() => {
+                    sceneRef.current?.setKarbandiReferenceEditing(true);
+                    sceneRef.current?.setKarbandiRibArchEditing(true);
+                  }}
+                  onFocusCapture={() => {
+                    sceneRef.current?.setKarbandiReferenceEditing(true);
+                    sceneRef.current?.setKarbandiRibArchEditing(true);
+                  }}
+                  onInputCapture={() => sceneRef.current?.setKarbandiRibArchEditing(true)}
+                  onChangeCapture={() => sceneRef.current?.setKarbandiRibArchEditing(true)}
+                ><legend><span className="fieldset-legend-label">Rib arch <HelpTooltip label="Karbandi rib arch">The red circles form the lower rib arch; the green circles continue through the tangent points to the crown.</HelpTooltip></span></legend><div className="field-grid">
                   <NumberField label="Reference rib span · m" value={walls.karbandi?.span ?? DEFAULT_WALL_SYSTEM.karbandi.span} min={0.2} max={40} step={0.05} onChange={(span) => updateKarbandiDesign({ span })} />
-                  <NumberField label="Spring height offset · m" value={walls.karbandi?.springHeightOffset ?? DEFAULT_WALL_SYSTEM.karbandi.springHeightOffset} min={-10} max={20} step={0.05} onChange={(springHeightOffset) => updateWallGroup('karbandi', { springHeightOffset })} />
+                  <NumberField label="Spring height offset · m" value={walls.karbandi?.springHeightOffset ?? DEFAULT_WALL_SYSTEM.karbandi.springHeightOffset} min={-10} max={20} step={0.05} onChange={(springHeightOffset) => updateKarbandiDesign({ springHeightOffset })} />
                   <NumberField label="Red point offset · m" value={walls.karbandi?.redOffset ?? DEFAULT_WALL_SYSTEM.karbandi.redOffset} min={-20} max={20} step={0.05} onChange={(redOffset) => updateWallGroup('karbandi', { redOffset })} />
                   <NumberField label="Green point offset · m" value={walls.karbandi?.greenOffset ?? DEFAULT_WALL_SYSTEM.karbandi.greenOffset} min={0.05} max={20} step={0.05} onChange={(greenOffset) => updateWallGroup('karbandi', { greenOffset })} />
                   <NumberField label="Green point height · m" value={karbandiGreenHeight} min={-40} max={40} step={0.05} onChange={(greenHeight) => updateWallGroup('karbandi', { greenHeightOffset: greenHeight - karbandiSpringHeight })} />
                 </div></fieldset>
-                <fieldset><legend><span className="fieldset-legend-label">Whole Karbandi transform <HelpTooltip label="Whole Karbandi transform">Move, rotate, or uniformly scale the complete Karbandi assembly after the reference rib and clipping have been calculated. When a plan-design input changes, Move Z automatically selects the nearest valid seating solution so wall-leg centerlines meet the interior wall faces; Move Z itself remains manually editable.</HelpTooltip></span></legend><div className="field-grid">
+                <fieldset><legend><span className="fieldset-legend-label">Whole Karbandi transform <HelpTooltip label="Whole Karbandi transform">Move, rotate, or uniformly scale the complete Karbandi assembly after the reference rib and clipping have been calculated. When a design input changes, Move Y places the shared rib-leg base centers exactly at wall-top level and Move Z selects the nearest valid interior-wall seating solution. Manual Move Y and Move Z edits remain available afterward.</HelpTooltip></span></legend><div className="field-grid">
                   <NumberField label="Move Y · m" value={walls.karbandi?.groupY ?? DEFAULT_WALL_SYSTEM.karbandi.groupY} min={-40} max={40} step={0.05} onChange={(groupY) => updateWallGroup('karbandi', { groupY })} />
                   <NumberField label="Move Z · m" value={walls.karbandi?.groupZ ?? DEFAULT_WALL_SYSTEM.karbandi.groupZ} min={-40} max={40} step={0.05} onChange={(groupZ) => updateWallGroup('karbandi', { groupZ })} />
-                  <NumberField label="Rotate Y · degrees" value={walls.karbandi?.groupRotationY ?? DEFAULT_WALL_SYSTEM.karbandi.groupRotationY} min={-360} max={360} step={1} onChange={(groupRotationY) => updateKarbandiDesign({ groupRotationY })} />
-                  <NumberField label="Uniform scale" value={walls.karbandi?.groupScale ?? DEFAULT_WALL_SYSTEM.karbandi.groupScale} min={0.05} max={20} step={0.05} onChange={(groupScale) => updateKarbandiDesign({ groupScale })} />
                 </div></fieldset>
               </div>}
             </section>
@@ -2876,10 +3921,12 @@ function App() {
           {rightTab === 'construction' && (
             <section className="inspector-section">
               <div className="section-heading"><ClipboardList size={17} /><div><strong>Construction training</strong><small>Step-by-step shell and arch assembly</small></div></div>
-              <CollapsiblePanel collapsible={false} title="Animation steps" guide="After the lower walls, Ahang builds both guide arches, the south wall beneath them, and the arch cover. Karbandi first builds the north-wall guide arch, then its clipped ribs and roof, and finally continues the north arch and upper wall brickwork. Door and window openings stay cut during construction.">
+              <CollapsiblePanel collapsible={false} title="Animation steps" guide={building.type === 'room'
+                ? 'Room construction raises all four walls with their openings, builds Karbandi ribs one by one without guide arches, covers the ribs, raises the square or octagonal transition wall, adds its checker cover, then raises the drum and lays the dome course by course before decoration.'
+                : 'After the lower walls, Ahang builds both guide arches, the south wall beneath them, and the arch cover. Karbandi first builds the north-wall guide arch, then its clipped ribs and roof, and finally continues the north arch and upper wall brickwork. Door and window openings stay cut during construction.'}>
                 <div className="field-grid">
                   <NumberField label="Animation duration Â· sec" value={constructionDuration} min={3} max={90} step={1} onChange={setConstructionDuration} />
-                  <label><span>Current step</span><select value={constructionStep} onChange={(event) => showConstructionStep(Number(event.target.value))}>{CONSTRUCTION_STEPS.map((step, index) => <option value={index} key={step.id}>{index + 1}. {step.title}</option>)}</select></label>
+                  <label><span>Current step</span><select value={constructionStep} onChange={(event) => showConstructionStep(Number(event.target.value))}>{displayedConstructionSteps.map((step, displayIndex) => <option value={step.index} key={step.id}>{displayIndex + 1}. {step.title}</option>)}</select></label>
                 </div>
                 <div className="placement-actions construction-actions">
                   <button className="primary" onClick={playConstructionSteps} disabled={constructionPlaying}><Plus size={14} /> Play animation</button>
@@ -2887,14 +3934,14 @@ function App() {
                   <button onClick={showCompleteConstruction}>Show complete model</button>
                 </div>
                 <div ref={constructionStepListRef} className="construction-step-list">
-                  {CONSTRUCTION_STEPS.map((step, index) => (
+                  {displayedConstructionSteps.map((step, displayIndex) => (
                     <button
                       key={step.id}
-                      data-construction-step={index}
-                      className={index === constructionStep ? 'active' : ''}
-                      onClick={() => showConstructionStep(index)}
+                      data-construction-step={step.index}
+                      className={step.index === constructionStep ? 'active' : ''}
+                      onClick={() => showConstructionStep(step.index)}
                     >
-                      <span>{index + 1}</span>
+                      <span>{displayIndex + 1}</span>
                       <div><strong>{step.title}</strong><small>{step.detail}</small></div>
                     </button>
                   ))}
@@ -2927,6 +3974,7 @@ function App() {
                             </span>
                             <FolderOpen size={15} />
                           </button>
+                          <button type="button" className="project-add" title={`Add ${project.name} to the stage`} disabled={libraryBusy || editingProjectInstance != null} onClick={() => addProjectToStage(project)}><Plus size={13} /> Add</button>
                           <button type="button" className="danger" title={`Delete ${project.name}`} disabled={libraryBusy} onClick={() => deleteProject(project)}><Trash2 size={13} /></button>
                         </div>
                       </div>
@@ -2952,11 +4000,26 @@ function App() {
                     </label>
                     <div className="project-version-form-actions">
                       <button type="button" disabled={!selectedProjectVersion || libraryBusy} onClick={() => openProject(activeProject, selectedProjectVersion)}><FolderOpen size={14} /> Load version</button>
+                      <button type="button" disabled={!selectedProjectVersion || libraryBusy || editingProjectInstance != null} onClick={() => addProjectToStage(activeProject, selectedProjectVersion)}><Plus size={14} /> Add</button>
                       <button type="button" className="primary" disabled={!selectedProjectVersion || selectedProjectVersion.id === activeProject.current_version_id || libraryBusy} onClick={makeProjectVersionCurrent}><Save size={14} /> Set as current</button>
                     </div>
                   </div>
                 )}
-                <div className="project-summary"><span><strong>{assemblies.length}</strong> assemblies</span><span><strong>{placements.length}</strong> placements</span><span><strong>{new Set(placements.map((item) => item.assetVersionId)).size}</strong> pinned versions</span></div>
+                {selectedProjectInstanceId && !editingProjectInstance && (() => {
+                  const instance = projectInstances.find((item) => item.id === selectedProjectInstanceId);
+                  return instance ? <div className="project-instance-selection">
+                    <span><strong>{instance.name}</strong><small>Locked group · version {instance.versionNumber || '-'}</small></span>
+                    <div>
+                      <button type="button" onClick={() => openProjectInstanceForEditing(instance.id)}><Focus size={14} /> Edit isolated</button>
+                      <button type="button" className="danger" onClick={() => {
+                        setProjectInstances((items) => items.filter((item) => item.id !== instance.id));
+                        setSelectedProjectInstanceId(null);
+                        sceneRef.current?.clearSelection();
+                      }}><Trash2 size={14} /> Delete</button>
+                    </div>
+                  </div> : null;
+                })()}
+                <div className="project-summary"><span><strong>{projectInstances.length}</strong> added projects</span><span><strong>{assemblies.length}</strong> assemblies</span><span><strong>{placements.length}</strong> placements</span><span><strong>{new Set(placements.map((item) => item.assetVersionId)).size}</strong> pinned assets</span></div>
               </CollapsiblePanel>
             </section>
           )}

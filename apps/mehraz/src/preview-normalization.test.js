@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CONSTRUCTION_STEPS, coverSystemAllowsPlacement, moduleTopExtrusionGeometry, normalizePreview, objectIsSelectable, previewWorldBounds } from './mehraz-scene.js';
+import { CONSTRUCTION_STEPS, constructionStepsForBuilding, coverSystemAllowsPlacement, moduleTopExtrusionGeometry, normalizePreview, objectIsSelectable, previewWorldBounds } from './mehraz-scene.js';
 
 test('Ahang subsection builds every lower wall, two guides, south under-arch infill, then the arch cover', () => {
   assert.deepEqual(
-    CONSTRUCTION_STEPS.filter((step) => !step.id.startsWith('karbandi-')).slice(0, 6).map((step) => step.id),
+    constructionStepsForBuilding('iwan').filter((step) => !step.id.startsWith('karbandi-')).slice(0, 6).map((step) => step.id),
     ['empty', 'lower-walls', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill'],
   );
   assert.equal(CONSTRUCTION_STEPS[1].detail, 'Raise the south, east, west, and north-side walls together to the arch spring line.');
@@ -15,7 +15,7 @@ test('Ahang subsection builds every lower wall, two guides, south under-arch inf
 
 test('Karbandi subsection follows walls with the north guide, clipped ribs, roof cover, and north wall', () => {
   assert.deepEqual(
-    CONSTRUCTION_STEPS.filter((step) => !['south-arch-guide', 'south-wall', 'arch-fill'].includes(step.id)).slice(1, 7).map((step) => step.id),
+    constructionStepsForBuilding('iwan').filter((step) => !['south-arch-guide', 'south-wall', 'arch-fill'].includes(step.id)).slice(1, 7).map((step) => step.id),
     ['lower-walls', 'north-arch-guide', 'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'north-upper-wall'],
   );
 });
