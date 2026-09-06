@@ -1,7 +1,8 @@
-import { buildingSurfaces, normalizeBuilding } from './mehraz-scene.js';
+import { buildingSurfaces, normalizeBuilding, normalizeConstructionStepOrder } from './mehraz-scene.js';
 import { DEFAULT_WALL_SYSTEM, normalizeWallSystem } from './wall-system.js';
+import { normalizeCombinationProfileStore } from './combination-profiles.js';
 
-export const MEHRAZ_PROJECT_SCHEMA_VERSION = 7;
+export const MEHRAZ_PROJECT_SCHEMA_VERSION = 9;
 
 export function projectIdentityAfterStageAddition({
   projectInstanceCount = 0,
@@ -74,6 +75,8 @@ export function createMehrazProjectPayload({
   assemblies = [],
   placements = [],
   projectInstances = [],
+  combinationProfiles = null,
+  constructionStepOrder = [],
   previewImage = '',
 } = {}) {
   const savedBuilding = normalizeBuilding(building || {});
@@ -85,6 +88,8 @@ export function createMehrazProjectPayload({
     coordinateSystem: 'right-handed-y-up',
     building: savedBuilding,
     walls: savedWalls,
+    combinationProfiles: normalizeCombinationProfileStore(combinationProfiles, savedBuilding, savedWalls),
+    constructionStepOrder: normalizeConstructionStepOrder(constructionStepOrder),
     stageRenderMode: stageRenderMode === 'flat' ? 'flat' : 'textured',
     nightLights: Array.isArray(nightLights) ? nightLights : [],
     // Architectural surfaces are derived from the saved building type. This
@@ -108,15 +113,18 @@ export function normalizeMehrazProjectPayload(payload) {
     throw new Error('This is not a valid Mehraz project.');
   }
   const building = normalizeBuilding(payload.building);
+  const walls = normalizeWallSystem(payload.walls || {
+    ...DEFAULT_WALL_SYSTEM,
+    color: building.wallColor,
+    pointedArch: { ...DEFAULT_WALL_SYSTEM.pointedArch, enabled: building.type !== 'room' },
+  }, building);
   return {
     ...payload,
     version: Number(payload.version) || 1,
     building,
-    walls: normalizeWallSystem(payload.walls || {
-      ...DEFAULT_WALL_SYSTEM,
-      color: building.wallColor,
-      pointedArch: { ...DEFAULT_WALL_SYSTEM.pointedArch, enabled: building.type !== 'room' },
-    }, building),
+    walls,
+    combinationProfiles: normalizeCombinationProfileStore(payload.combinationProfiles, building, walls),
+    constructionStepOrder: normalizeConstructionStepOrder(payload.constructionStepOrder),
     stageRenderMode: payload.stageRenderMode === 'flat' ? 'flat' : 'textured',
     nightLights: Array.isArray(payload.nightLights) ? payload.nightLights : [],
     surfaces: buildingSurfaces(building),

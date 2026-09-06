@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   bearingVectorForSupportSides,
   buildRibBandQuads,
@@ -118,6 +119,7 @@ export const DEFAULT_ROOM_PLAN_DOOR = Object.freeze({
   sillHeight: 0,
   head: 'arch',
   arch: Object.freeze({
+    archType: 'two-point',
     redOffset: -0.15,
     greenOffset: 0.55,
     greenHeight: 0.8,
@@ -135,7 +137,7 @@ export function createRoomPlanOpening(type = 'door', id = null) {
       height: 1.2,
       sillHeight: 1.1,
       head: 'lintel',
-      arch: { redOffset: -0.25, greenOffset: 0.65, greenHeight: 1.64 },
+      arch: { archType: 'two-point', redOffset: -0.25, greenOffset: 0.65, greenHeight: 1.64 },
     };
   }
   return {
@@ -147,9 +149,21 @@ export function createRoomPlanOpening(type = 'door', id = null) {
 
 export function roomPlanOpeningsWithDefaultDoor(openings = [], roomPlanShape = 'square', id = null) {
   if (Array.isArray(openings) && openings.length) return openings;
-  return roomPlanShape === 'octagon' || roomPlanShape === 'circle'
-    ? [createRoomPlanOpening('door', id)]
-    : [];
+  return [];
+}
+
+export function vestibulePlanOpeningsWithDefaultDoors(openings = [], idPrefix = 'default-vestibule') {
+  if (Array.isArray(openings) && openings.length) return openings;
+  return [
+    ['north', 0],
+    ['east', 90],
+    ['south', 180],
+    ['west', 270],
+  ].map(([side, rotation]) => ({
+    ...createRoomPlanOpening('door', `${idPrefix}-${side}-door`),
+    rotation,
+    width: 2,
+  }));
 }
 
 export const DEFAULT_WALL_SYSTEM = Object.freeze({
@@ -158,7 +172,16 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
   shadows: true,
   openSides: [],
   interiorGypsum: { enabled: false, color: '#f1eee7' },
-  stoneBase: { enabled: true, height: 1, slabWidth: 0.6, color: '#b7a68a', mortar: 0.001, mortarColor: '#9a8f7e' },
+  stoneBase: {
+    enabled: true,
+    planShape: 'follow',
+    polygonSides: 6,
+    height: 1,
+    slabWidth: 0.6,
+    color: '#b7a68a',
+    mortar: 0.001,
+    mortarColor: '#9a8f7e',
+  },
   extraHeights: { north: 0, east: 0, south: 0, west: 0 },
   sideOffsets: { north: 0, east: 0, south: 0, west: 0 },
   roomWallThicknesses: { north: 0.4, east: 0.4, south: 0.4, west: 0.4 },
@@ -166,12 +189,13 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
   edges: { enabled: false, color: '#79610c', thickness: 2 },
   southOpenings: {
     door: {
-      enabled: true,
+      enabled: false,
       width: 2,
       height: 1.6,
       position: 0,
+      sillHeight: 0,
       head: 'lintel',
-      arch: { redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 },
+      arch: { archType: 'two-point', redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 },
     },
     window: {
       enabled: false,
@@ -180,29 +204,30 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
       position: 0,
       sillHeight: 4.7,
       head: 'lintel',
-      arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 },
+      arch: { archType: 'two-point', redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 },
     },
   },
   roomWallOpenings: {
     north: {
-      door: { enabled: true, width: 2, height: 3, position: 0, head: 'arch', arch: { redOffset: -0.45, redRadius: 0.55, greenOffset: 1.05, greenHeight: 1, greenHeightOffset: -2 } },
-      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
+      door: { enabled: false, width: 2, height: 3, position: 0, sillHeight: 0, head: 'arch', arch: { archType: 'two-point', redOffset: -0.45, redRadius: 0.55, greenOffset: 1.05, greenHeight: 1, greenHeightOffset: -2 } },
+      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { archType: 'two-point', redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
     },
     east: {
-      door: { enabled: false, width: 2, height: 1.6, position: 0, head: 'lintel', arch: { redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
-      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
+      door: { enabled: false, width: 2, height: 1.6, position: 0, sillHeight: 0, head: 'lintel', arch: { archType: 'two-point', redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
+      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { archType: 'two-point', redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
     },
     south: {
-      door: { enabled: false, width: 2, height: 1.6, position: 0, head: 'lintel', arch: { redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
-      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
+      door: { enabled: false, width: 2, height: 1.6, position: 0, sillHeight: 0, head: 'lintel', arch: { archType: 'two-point', redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
+      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { archType: 'two-point', redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
     },
     west: {
-      door: { enabled: false, width: 2, height: 1.6, position: 0, head: 'lintel', arch: { redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
-      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
+      door: { enabled: false, width: 2, height: 1.6, position: 0, sillHeight: 0, head: 'lintel', arch: { archType: 'two-point', redOffset: -0.4, redRadius: 0.55, greenOffset: 1.05, greenHeight: 0.0036, greenHeightOffset: -1.5964 } },
+      window: { enabled: false, width: 1, height: 0.5, position: 0, sillHeight: 4.7, head: 'lintel', arch: { archType: 'two-point', redOffset: 0, redRadius: 0.5, greenOffset: 0.5, greenHeight: 4.7, greenHeightOffset: -0.5 } },
     },
   },
   roomPlanOpenings: [],
   pointedArch: {
+    archType: 'two-point',
     enabled: true,
     redOffset: 0,
     redRadius: null,
@@ -211,13 +236,15 @@ export const DEFAULT_WALL_SYSTEM = Object.freeze({
     greenHeightOffset: -1,
     moduleInfill: true,
   },
-  portalTransition: 'karbandi',
-  portalCover: null,
+  portalTransition: 'none',
+  portalCover: 'none',
   ahang: {
-    enabled: true,
+    enabled: false,
   },
   karbandi: {
+    archType: 'two-point',
     enabled: false,
+    wallLegMode: 'two',
     ribCount: 16,
     rotationOffset: 0,
     span: 4.1,
@@ -408,6 +435,7 @@ function normalizeSouthOpening(value, fallback, bottom = 0) {
       ? (fallback.head === 'arch' ? 'arch' : 'lintel')
       : source.head === 'arch' ? 'arch' : 'lintel',
     arch: {
+      archType: arch.archType === 'one-point' ? 'one-point' : 'two-point',
       redOffset: number(arch.redOffset, fallback.arch?.redOffset ?? 0, -20, 20),
       redRadius: arch.redRadius == null ? null : number(arch.redRadius, fallback.arch?.redRadius ?? width * 0.5, 0.05, 40),
       greenOffset: number(arch.greenOffset, defaultGreenOffset, 0.05, 20),
@@ -422,49 +450,93 @@ export function normalizeWallSystem(value = {}, building = {}) {
   const door = openings.door || {};
   const windowOpening = openings.window || {};
   const pointedArch = value.pointedArch || {};
-  const karbandi = value.karbandi || {};
+  const rawKarbandi = value.karbandi || {};
+  const hallVaultArch = building.hallArch || {};
+  const karbandi = ['hall', 'grid'].includes(building.buildingType)
+    ? {
+      ...rawKarbandi,
+      wallLegMode: rawKarbandi.wallLegMode ?? 'one',
+      archType: rawKarbandi.archType ?? hallVaultArch.archType ?? 'two-point',
+      redOffset: rawKarbandi.redOffset ?? hallVaultArch.redOffset ?? 0,
+      greenOffset: rawKarbandi.greenOffset ?? hallVaultArch.greenOffset ?? 1,
+      greenHeightOffset: rawKarbandi.greenHeightOffset ?? hallVaultArch.greenHeightOffset ?? -1,
+    }
+    : rawKarbandi;
   const karbandiEnabled = karbandi.enabled === true;
   const nonSquarePortal = (building.type === 'iwan' || building.buildingType === 'portal')
     && ['octagon', 'circle'].includes(building.portalPlanShape);
-  const normalizedKarbandiEnabled = nonSquarePortal || karbandiEnabled;
-  const legacyAhangEnabled = pointedArch.enabled !== false && !karbandiEnabled;
-  const migratedPortalCover = ['pyramid', 'cone'].includes(value.portalCover)
+  const legacyAhangEnabled = !karbandiEnabled;
+  const migratedPortalCover = value.portalCover === 'rib-vault'
+    ? 'raised-rib-vault'
+    : ['pyramid', 'cone'].includes(value.portalCover)
     ? 'dome'
     : value.portalCover;
-  const explicitPortalCover = ['none', 'ahang', 'dome'].includes(migratedPortalCover)
+  const explicitPortalCover = ['none', 'ahang', 'dome', 'raised-rib-vault'].includes(migratedPortalCover)
     ? migratedPortalCover
     : null;
-  const ahangEnabled = explicitPortalCover
+  const requestedAhangEnabled = explicitPortalCover
     ? explicitPortalCover === 'ahang'
     : value.ahang?.enabled == null
       ? legacyAhangEnabled
       : value.ahang.enabled === true;
-  const portalCover = explicitPortalCover || (ahangEnabled ? 'ahang' : 'none');
   const portalTransition = nonSquarePortal
-    ? 'karbandi'
-    : ['karbandi', 'squinch', 'muqarnas'].includes(value.portalTransition)
+    ? value.portalTransition === 'none' ? 'none' : 'karbandi'
+    : ['none', 'karbandi', 'squinch', 'muqarnas'].includes(value.portalTransition)
       ? value.portalTransition
       : karbandiEnabled
         ? 'karbandi'
         : DEFAULT_WALL_SYSTEM.portalTransition;
+  const normalizedKarbandiEnabled = portalTransition === 'karbandi' && (nonSquarePortal || karbandiEnabled);
+  const requestedPortalCover = explicitPortalCover || (requestedAhangEnabled ? 'ahang' : 'none');
+  const portalCoverRequiresNoTransition = requestedPortalCover === 'raised-rib-vault';
+  const portalCover = (requestedPortalCover === 'ahang' && portalTransition === 'karbandi')
+    || (portalCoverRequiresNoTransition && portalTransition !== 'none')
+    || (portalTransition === 'none' && requestedPortalCover === 'dome')
+    ? 'none'
+    : requestedPortalCover;
+  const ahangEnabled = portalCover === 'ahang';
   const northWall = value.northWall || {};
   const northBoundary = value.northBoundary || {};
   const edges = value.edges || value.wallEdges || {};
   const interiorGypsum = value.interiorGypsum || {};
   const stoneBase = value.stoneBase || {};
+  const independentStoneSkirtPlanAllowed = (building.buildingType === 'room'
+    || (building.buildingType == null && building.type === 'room'))
+    && (building.roomPlanShape || 'square') !== 'square';
   const bricks = value.bricks || value.brickPattern || {};
+  const hallPendentiveSharesDomeBond = ['hall', 'grid'].includes(building.buildingType)
+    && building.hallTransitionEnabled !== false
+    && (building.hallTransitionType || 'pendentive') === 'pendentive';
+  const bondSourceForSide = (side) => {
+    if (!hallPendentiveSharesDomeBond) return bricks.sideBonds?.[side];
+    if (side === 'room_dome') {
+      return bricks.sideBonds?.room_dome_transition_exterior || bricks.sideBonds?.room_dome;
+    }
+    if (side === 'room_dome_interior') {
+      return bricks.sideBonds?.room_dome_transition || bricks.sideBonds?.room_dome_interior;
+    }
+    return bricks.sideBonds?.[side];
+  };
   const defaultSill = DEFAULT_WALL_SYSTEM.southOpenings.window.sillHeight;
   const windowSill = windowOpening.sillHeight == null
     ? defaultSill
     : number(windowOpening.sillHeight, defaultSill, 0, 18);
   const normalizeOpeningSet = (source = {}, fallback = DEFAULT_WALL_SYSTEM.southOpenings) => {
+    const sourceDoor = source.door || {};
     const sourceWindow = source.window || {};
+    const fallbackDoorSill = fallback.door.sillHeight ?? 0;
+    const doorSillHeight = sourceDoor.sillHeight == null
+      ? fallbackDoorSill
+      : number(sourceDoor.sillHeight, fallbackDoorSill, 0, 18);
     const fallbackSill = fallback.window.sillHeight;
     const sillHeight = sourceWindow.sillHeight == null
       ? fallbackSill
       : number(sourceWindow.sillHeight, fallbackSill, 0, 18);
     return {
-      door: normalizeSouthOpening(source.door || {}, fallback.door, 0),
+      door: {
+        ...normalizeSouthOpening(sourceDoor, fallback.door, doorSillHeight),
+        sillHeight: doorSillHeight,
+      },
       window: {
         ...normalizeSouthOpening(sourceWindow, fallback.window, sillHeight),
         sillHeight,
@@ -488,13 +560,19 @@ export function normalizeWallSystem(value = {}, building = {}) {
       const rotation = Number.isFinite(rotationValue) ? ((rotationValue % 360) + 360) % 360 : 0;
       const width = number(opening?.width, type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.width : 1, 0.3, 12);
       const height = number(opening?.height, type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.height : 1.2, 0.3, 15);
-      const sillHeight = type === 'window' ? number(opening?.sillHeight, 1.1, 0, 18) : 0;
+      const sillHeight = number(
+        opening?.sillHeight,
+        type === 'window' ? 1.1 : DEFAULT_ROOM_PLAN_DOOR.sillHeight,
+        0,
+        18,
+      );
       const springHeight = sillHeight + height;
       const arch = opening?.arch || {};
       const defaultGreenHeight = type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.arch.greenHeight : Math.max(0, springHeight - height * 0.55);
-      const greenHeight = arch.greenHeightOffset != null
-        ? springHeight + number(arch.greenHeightOffset, defaultGreenHeight - springHeight, -40, 40)
-        : number(arch.greenHeight, defaultGreenHeight, -40, 40);
+      const greenHeightOffset = arch.greenHeightOffset != null
+        ? number(arch.greenHeightOffset, defaultGreenHeight - springHeight, -40, 40)
+        : number(arch.greenHeight, defaultGreenHeight, -40, 40) - springHeight;
+      const greenHeight = springHeight + greenHeightOffset;
       return {
         id: String(opening?.id || `room-opening-${index + 1}`).slice(0, 120),
         type,
@@ -506,10 +584,11 @@ export function normalizeWallSystem(value = {}, building = {}) {
           ? (type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.head : 'lintel')
           : opening.head === 'arch' ? 'arch' : 'lintel',
         arch: {
+          archType: arch.archType === 'one-point' ? 'one-point' : 'two-point',
           redOffset: number(arch.redOffset, type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.arch.redOffset : -0.25, -20, 20),
           greenOffset: number(arch.greenOffset, type === 'door' ? DEFAULT_ROOM_PLAN_DOOR.arch.greenOffset : Math.max(0.5, width * 0.65), 0.05, 20),
           greenHeight,
-          greenHeightOffset: greenHeight - springHeight,
+          greenHeightOffset,
         },
       };
     });
@@ -591,6 +670,11 @@ export function normalizeWallSystem(value = {}, building = {}) {
     },
     stoneBase: {
       enabled: stoneBase.enabled == null ? DEFAULT_WALL_SYSTEM.stoneBase.enabled : stoneBase.enabled === true,
+      planShape: independentStoneSkirtPlanAllowed
+        && ['follow', 'circle', 'octagon', 'polygon'].includes(stoneBase.planShape)
+        ? stoneBase.planShape
+        : DEFAULT_WALL_SYSTEM.stoneBase.planShape,
+      polygonSides: Math.round(number(stoneBase.polygonSides, DEFAULT_WALL_SYSTEM.stoneBase.polygonSides, 3, 32)),
       height: number(stoneBase.height, DEFAULT_WALL_SYSTEM.stoneBase.height, 0, 10),
       slabWidth: number(stoneBase.slabWidth, DEFAULT_WALL_SYSTEM.stoneBase.slabWidth, 0.1, 5),
       color: color(stoneBase.color, DEFAULT_WALL_SYSTEM.stoneBase.color),
@@ -610,7 +694,8 @@ export function normalizeWallSystem(value = {}, building = {}) {
     roomWallOpenings,
     roomPlanOpenings,
     pointedArch: {
-      enabled: pointedArch.enabled !== false,
+      archType: pointedArch.archType === 'one-point' ? 'one-point' : 'two-point',
+      enabled: true,
       redOffset: number(pointedArch.redOffset, DEFAULT_WALL_SYSTEM.pointedArch.redOffset, -20, 20),
       redRadius: pointedArch.redRadius == null ? null : number(pointedArch.redRadius, 1, 0.05, 40),
       greenOffset: number(pointedArch.greenOffset, DEFAULT_WALL_SYSTEM.pointedArch.greenOffset, 0.05, 20),
@@ -624,14 +709,18 @@ export function normalizeWallSystem(value = {}, building = {}) {
       enabled: ahangEnabled,
     },
     karbandi: {
+      archType: karbandi.archType === 'one-point' ? 'one-point' : 'two-point',
       enabled: normalizedKarbandiEnabled,
+      wallLegMode: building.buildingType === 'vestibule'
+        ? 'two'
+        : karbandi.wallLegMode === 'one' ? 'one' : 'two',
       ribCount: normalizedKarbandiRibCount,
       rotationOffset: number(value.karbandi?.rotationOffset, DEFAULT_WALL_SYSTEM.karbandi.rotationOffset, -360, 360),
       span: number(value.karbandi?.span, DEFAULT_WALL_SYSTEM.karbandi.span, 0.2, 40),
       springHeightOffset: normalizedKarbandiSpringOffset,
-      redOffset: number(value.karbandi?.redOffset, DEFAULT_WALL_SYSTEM.karbandi.redOffset, -20, 20),
-      greenOffset: number(value.karbandi?.greenOffset, DEFAULT_WALL_SYSTEM.karbandi.greenOffset, 0.05, 20),
-      greenHeightOffset: number(value.karbandi?.greenHeightOffset, DEFAULT_WALL_SYSTEM.karbandi.greenHeightOffset, -10, 20),
+      redOffset: number(karbandi.redOffset, DEFAULT_WALL_SYSTEM.karbandi.redOffset, -20, 20),
+      greenOffset: number(karbandi.greenOffset, DEFAULT_WALL_SYSTEM.karbandi.greenOffset, 0.05, 20),
+      greenHeightOffset: number(karbandi.greenHeightOffset, DEFAULT_WALL_SYSTEM.karbandi.greenHeightOffset, -10, 20),
       ribWidth: number(value.karbandi?.ribWidth ?? value.karbandi?.ribThickness, DEFAULT_WALL_SYSTEM.karbandi.ribWidth, 0.01, 2),
       ribDepth: number(value.karbandi?.ribDepth ?? value.karbandi?.ribThickness, DEFAULT_WALL_SYSTEM.karbandi.ribDepth, 0.01, 2),
       referenceAngle: number(value.karbandi?.referenceAngle, DEFAULT_WALL_SYSTEM.karbandi.referenceAngle, 1, 359),
@@ -692,7 +781,7 @@ export function normalizeWallSystem(value = {}, building = {}) {
         ...Object.fromEntries(BRICK_BOND_SIDES.map((side) => [
           side,
           normalizeSideBond(
-            bricks.sideBonds?.[side]
+            bondSourceForSide(side)
               || (side.startsWith('north_') ? bricks.sideBonds?.north : null)
               || (side === 'room_plan_interior' ? bricks.sideBonds?.north : null)
               || (side === 'room_plan_exterior' ? bricks.sideBonds?.north_exterior : null)
@@ -706,19 +795,13 @@ export function normalizeWallSystem(value = {}, building = {}) {
 }
 
 export function portalDefaultWallSystem(value = DEFAULT_WALL_SYSTEM, building = {}) {
-  let walls = normalizeWallSystem({
+  return normalizeWallSystem({
     ...value,
-    portalTransition: 'karbandi',
+    portalTransition: 'none',
     portalCover: 'none',
     ahang: { ...value.ahang, enabled: false },
-    karbandi: { ...value.karbandi, enabled: true },
+    karbandi: { ...value.karbandi, enabled: false },
   }, building);
-  const seating = solveKarbandiWallSeating(walls.karbandi, building, walls);
-  walls = normalizeWallSystem({
-    ...walls,
-    karbandi: { ...walls.karbandi, ...seating, enabled: true },
-  }, building);
-  return walls;
 }
 
 function wallsWithDefaultBond(walls, side) {
@@ -748,6 +831,7 @@ function wallMaterial(walls, side = null, width = 1, height = 1, worldUv = false
     const baseWalls = [
       'room_dome', 'room_dome_interior', 'room_inner_dome_exterior', 'room_inner_dome_interior', 'room_dome_extra_leg', 'room_dome_extra_leg_interior', 'room_dome_drum', 'room_dome_drum_interior',
       'room_dome_transition', 'room_dome_transition_exterior',
+      'room_plan_interior', 'room_plan_exterior',
     ].includes(side)
       ? walls
       : wallsWithDefaultBond(walls, side);
@@ -910,9 +994,20 @@ function configureConvergingCoverBond(material, centerX, centerZ, facetCount = 0
   return material;
 }
 
-export function configureStoneBaseMaterial(material, walls, { clipPattern = false } = {}) {
+export function configureStoneBaseMaterial(material, walls, { clipPattern = false, independent = false } = {}) {
   if (!material || walls?.stoneBase?.enabled !== true || !(Number(walls.stoneBase.height) > 0)) return material;
   const height = Number(walls.stoneBase.height);
+  if ((walls.stoneBase.planShape || 'follow') !== 'follow' && !independent) {
+    material.clippingPlanes = [
+      ...(Array.isArray(material.clippingPlanes) ? material.clippingPlanes : []),
+      new THREE.Plane(new THREE.Vector3(0, 1, 0), -height),
+    ];
+    material.clipIntersection = false;
+    material.clipShadows = true;
+    material.userData.stoneSkirtMainBuildingCutHeight = height;
+    material.userData.stoneSkirtMainBuildingCutRule = 'main-building-masonry-starts-at-independent-skirt-top';
+    return material;
+  }
   const slabWidth = number(walls.stoneBase.slabWidth, DEFAULT_WALL_SYSTEM.stoneBase.slabWidth, 0.1, 5);
   const stoneColor = color(walls.stoneBase.color, DEFAULT_WALL_SYSTEM.stoneBase.color);
   const mortar = number(walls.stoneBase.mortar, DEFAULT_WALL_SYSTEM.stoneBase.mortar, 0.001, 0.1);
@@ -1447,7 +1542,7 @@ function clippedOpeningHead(opening, outerArchPoints, inset = 0.0001) {
   ];
 }
 
-function archCapShape(left, right, baseline, archPoints, holes = [], openings = []) {
+function archCapShape(left, right, baseline, archPoints, holes = [], openings = [], openingHeadClearance = 0.0001) {
   if (!archPoints?.length) return null;
   const first = archPoints[0];
   const last = archPoints[archPoints.length - 1];
@@ -1469,7 +1564,7 @@ function archCapShape(left, right, baseline, archPoints, holes = [], openings = 
   if (right > last.x) shape.lineTo(right, baseY);
   baselineOpenings.forEach((opening) => {
     if (opening.right - opening.left <= 0.0001) return;
-    const head = clippedOpeningHead(opening, archPoints);
+    const head = clippedOpeningHead(opening, archPoints, openingHeadClearance);
     if (!head.length || Math.max(...head.map((point) => point.y)) <= baseY + 0.0001) return;
     shape.lineTo(opening.right, baseY);
     shape.lineTo(opening.right, Math.max(baseY, head.at(-1).y));
@@ -1482,7 +1577,7 @@ function archCapShape(left, right, baseline, archPoints, holes = [], openings = 
   capOpenings
     .filter((opening) => opening.bottom > baseY + 0.0001)
     .forEach((opening) => {
-      const head = clippedOpeningHead(opening, archPoints);
+      const head = clippedOpeningHead(opening, archPoints, openingHeadClearance);
       if (!head.length || Math.max(...head.map((point) => point.y)) <= opening.bottom + 0.0001) return;
       const hole = new THREE.Path();
       hole.moveTo(opening.left, opening.bottom);
@@ -1506,8 +1601,32 @@ function sampleCircularArc(center, radius, startAngle, endAngle, segments) {
 }
 
 export function pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options = {}) {
+  const archType = options.archType === 'one-point' ? 'one-point' : 'two-point';
   const redOffset = Number(options.redOffset) || 0;
   const sidePoint = new THREE.Vector2(centerX + halfSpan, sideHeight);
+  const greenCenter = new THREE.Vector2(centerX - greenOffset, greenHeight);
+  if (archType === 'one-point') {
+    const greenRadius = greenCenter.distanceTo(sidePoint);
+    if (!Number.isFinite(greenRadius) || greenRadius <= 0.00001) return null;
+    const apexPoint = new THREE.Vector2(
+      centerX,
+      greenHeight + Math.sqrt(Math.max(0, greenRadius * greenRadius - greenOffset * greenOffset)),
+    );
+    return {
+      archType,
+      centerX,
+      sidePoint,
+      redCenter: null,
+      greenCenter,
+      redOffset,
+      greenOffset,
+      greenHeight,
+      redRadius: 0,
+      greenRadius,
+      tangentPoint: sidePoint.clone(),
+      apexPoint,
+    };
+  }
   const redCenterX = centerX - redOffset;
   const springDistanceX = Math.max(0.00001, Math.abs(sidePoint.x - redCenterX));
   const requestedRedRadius = Number(options.redRadius);
@@ -1516,7 +1635,6 @@ export function pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffs
     : springDistanceX;
   const redHeight = sideHeight - Math.sqrt(Math.max(0, redRadius * redRadius - springDistanceX * springDistanceX));
   const redCenter = new THREE.Vector2(redCenterX, redHeight);
-  const greenCenter = new THREE.Vector2(centerX - greenOffset, greenHeight);
   const centersDistance = redCenter.distanceTo(greenCenter);
   if (!Number.isFinite(redRadius) || redRadius <= 0.00001 || centersDistance <= 0.00001) return null;
   const greenRadius = redRadius + centersDistance;
@@ -1529,6 +1647,7 @@ export function pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffs
     greenHeight + Math.sqrt(Math.max(0, greenRadius * greenRadius - greenOffset * greenOffset)),
   );
   return {
+    archType,
     centerX,
     sidePoint,
     redCenter,
@@ -1553,7 +1672,7 @@ export function archCurve(centerX, halfSpan, sideHeight, redHeight, greenOffset,
   const construction = pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options);
   if (!construction) return [];
   const { redCenter, greenCenter, redRadius, greenRadius, sidePoint, tangentPoint, apexPoint } = construction;
-  const redArc = sampleCircularArc(
+  const redArc = construction.archType === 'one-point' ? [] : sampleCircularArc(
     redCenter,
     redRadius,
     Math.atan2(sidePoint.y - redCenter.y, sidePoint.x - redCenter.x),
@@ -1567,7 +1686,9 @@ export function archCurve(centerX, halfSpan, sideHeight, redHeight, greenOffset,
     Math.atan2(apexPoint.y - greenCenter.y, apexPoint.x - greenCenter.x),
     count,
   );
-  const rightHalf = [...redArc, ...greenArc.slice(1)];
+  const rightHalf = construction.archType === 'one-point'
+    ? greenArc
+    : [...redArc, ...greenArc.slice(1)];
   const leftHalf = rightHalf.map((point) => new THREE.Vector2(centerX * 2 - point.x, point.y));
   return [...leftHalf, ...[...rightHalf].reverse().slice(1)];
 }
@@ -1951,10 +2072,117 @@ export function solveKarbandiWallSeating(karbandi = {}, building = {}, walls = {
   return solved;
 }
 
+/** Solve a true folded one-leg Room layout with one rib base at each corner. */
+export function solveKarbandiOneLegCornerSeating(karbandi = {}, building = {}, walls = {}, options = {}) {
+  const squareRoom = building.type === 'room'
+    && building.buildingType !== 'vestibule'
+    && (building.roomPlanShape || 'square') === 'square';
+  if (!squareRoom) return solveKarbandiWallSeating({ ...karbandi, wallLegMode: 'one' }, building, walls);
+
+  const preferredAngle = THREE.MathUtils.clamp(
+    Math.round(Number(karbandi.referenceAngle) || 179),
+    1,
+    179,
+  );
+  const candidateAngles = Array.from({ length: 179 }, (_, index) => index + 1)
+    .sort((left, right) => Math.abs(left - preferredAngle) - Math.abs(right - preferredAngle) || right - left);
+  const ribCount = Math.max(4, Math.min(64, Math.round(Number(karbandi.ribCount) || 16)));
+  const evaluate = (referenceAngle) => {
+    const solved = solveKarbandiWallSeating({
+      ...karbandi,
+      wallLegMode: 'one',
+      referenceAngle,
+      referenceRotation: 0,
+      groupRotationY: 0,
+      groupX: 0,
+      groupZ: 0,
+    }, building, walls);
+    Object.assign(solved, {
+      wallLegMode: 'one',
+      referenceAngle,
+      referenceRotation: 0,
+      groupRotationY: 0,
+      groupX: 0,
+      groupZ: 0,
+    });
+    const endpoints = [];
+    for (let ribIndex = 0; ribIndex < ribCount; ribIndex += 1) {
+      const rotated = karbandiReferenceLegCenters({
+        ...solved,
+        rotationOffset: (Number(solved.rotationOffset) || 0) + 360 * ribIndex / ribCount,
+      }, building, walls);
+      rotated.points.forEach((point) => endpoints.push({ ...point, ribIndex }));
+    }
+    const { bounds } = karbandiReferenceLegCenters(solved, building, walls);
+    const corners = [
+      { x: bounds.westX, z: bounds.northZ },
+      { x: bounds.eastX, z: bounds.northZ },
+      { x: bounds.eastX, z: bounds.southZ },
+      { x: bounds.westX, z: bounds.southZ },
+    ];
+    const tolerance = Math.max(0.035, Math.min(
+      0.12,
+      Math.max(Number(solved.ribWidth) || 0.1, Number(solved.ribDepth) || 0.1)
+        * (Number(solved.groupScale) || DEFAULT_WALL_SYSTEM.karbandi.groupScale) * 0.42,
+    ));
+    const distances = corners.map((corner) => endpoints
+      .map((point) => Math.hypot(point.x - corner.x, point.z - corner.z))
+      .sort((left, right) => left - right));
+    const nearest = distances.map((values) => values[0] ?? Infinity);
+    const cornersReached = nearest.filter((distance) => distance <= tolerance).length;
+    return {
+      solved,
+      valid: cornersReached === 4,
+      score: Math.max(...nearest) + Math.abs(referenceAngle - preferredAngle) * 0.000001,
+      nearCornerLegCount: cornersReached,
+      tolerance,
+    };
+  };
+
+  let best = null;
+  const stepDirection = Math.sign(Number(options.stepDirection) || 0);
+  if (stepDirection) {
+    const candidates = Array.from({ length: 179 }, (_, index) => evaluate(index + 1));
+    const validCandidates = candidates.filter((candidate) => candidate.valid);
+    if (validCandidates.length) {
+      const currentAngle = Number(karbandi.referenceAngle) || preferredAngle;
+      best = stepDirection > 0
+        ? validCandidates.find((candidate) => candidate.solved.referenceAngle > currentAngle + 0.000001)
+          || validCandidates[0]
+        : [...validCandidates].reverse().find((candidate) => candidate.solved.referenceAngle < currentAngle - 0.000001)
+          || validCandidates.at(-1);
+    } else {
+      best = candidates.reduce((closest, candidate) => (
+        !closest || candidate.score < closest.score ? candidate : closest
+      ), null);
+    }
+  } else {
+    for (const angle of candidateAngles) {
+      const candidate = evaluate(angle);
+      if (candidate.valid) {
+        best = candidate;
+        break;
+      }
+      if (!best || candidate.score < best.score) best = candidate;
+    }
+  }
+  return {
+    ...best.solved,
+    wallLegMode: 'one',
+    oneLegSnappedReferenceAngle: best.solved.referenceAngle,
+    oneLegCornerLegCount: best.nearCornerLegCount,
+    oneLegCornerSnapTolerance: best.tolerance,
+    oneLegCornerSolutionValid: best.valid,
+  };
+}
+
 function pointedArchBrickMapping(centerX, halfSpan, sideHeight, redHeight, greenOffset, greenHeight, bandWidth, straightTopY, straightBottomY, straightOuterHalfWidth, options = {}) {
   const construction = pointedArchConstruction(centerX, halfSpan, sideHeight, greenOffset, greenHeight, options);
   if (!construction) return null;
-  const { redCenter, redOffset, redRadius, greenRadius, sidePoint, tangentPoint, apexPoint } = construction;
+  const { greenRadius, sidePoint, tangentPoint, apexPoint } = construction;
+  const redCenter = construction.redCenter || construction.greenCenter;
+  const redOffset = construction.archType === 'one-point' ? greenOffset : construction.redOffset;
+  const redRadius = construction.archType === 'one-point' ? greenRadius : construction.redRadius;
   return {
     enabled: true,
     centerX,
@@ -2082,6 +2310,116 @@ function extrudedShape(shape, depth, z, material, side, mirrorCenterX = null, ex
   mesh.receiveShadow = true;
   mesh.userData.wallSide = side;
   return mesh;
+}
+
+function removeOpeningBoundaryShelves(geometry, boundaryY, openings = []) {
+  const crossingOpenings = openings.filter((opening) => (
+    opening
+    && opening.top >= boundaryY - 0.0001
+    && opening.bottom < boundaryY - 0.0001
+    && opening.right > opening.left + 0.0001
+  ));
+  if (!crossingOpenings.length) return geometry;
+  const positions = geometry.getAttribute('position');
+  const sourceIndex = geometry.getIndex();
+  const triangleCount = (sourceIndex ? sourceIndex.count : positions.count) / 3;
+  const originalGroups = geometry.groups.map((group) => ({ ...group }));
+  const keptIndices = [];
+  const keptMaterials = [];
+  const materialAt = (offset) => originalGroups.find((group) => (
+    offset >= group.start && offset < group.start + group.count
+  ))?.materialIndex ?? 0;
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const vertexIndices = [0, 1, 2].map((corner) => (
+      sourceIndex ? sourceIndex.getX(triangle * 3 + corner) : triangle * 3 + corner
+    ));
+    const liesOnBoundary = vertexIndices.every((vertex) => (
+      Math.abs(positions.getY(vertex) - boundaryY) <= 0.0001
+    ));
+    // ExtrudeGeometry triangulates the complete top return with large triangles
+    // which can bridge a top-reaching notch. Remove that triangulation here;
+    // exact masonry strips are reconstructed below around only the openings.
+    const closesOpening = liesOnBoundary;
+    if (closesOpening) continue;
+    keptIndices.push(...vertexIndices);
+    keptMaterials.push(materialAt(triangle * 3));
+  }
+  geometry.setIndex(keptIndices);
+  geometry.clearGroups();
+  keptMaterials.forEach((materialIndex, triangle) => {
+    geometry.addGroup(triangle * 3, 3, materialIndex);
+  });
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const openingIntervalAtBoundary = (opening) => {
+    if (!opening.archPoints?.length || boundaryY <= Number(opening.springTop) + 0.0001) {
+      return [opening.left, opening.right];
+    }
+    const intersections = [];
+    for (let index = 0; index < opening.archPoints.length - 1; index += 1) {
+      const start = opening.archPoints[index];
+      const end = opening.archPoints[index + 1];
+      if (boundaryY < Math.min(start.y, end.y) - 0.0001
+        || boundaryY > Math.max(start.y, end.y) + 0.0001) continue;
+      const deltaY = end.y - start.y;
+      const amount = Math.abs(deltaY) > 0.000001
+        ? THREE.MathUtils.clamp((boundaryY - start.y) / deltaY, 0, 1)
+        : 0;
+      intersections.push(THREE.MathUtils.lerp(start.x, end.x, amount));
+    }
+    return intersections.length >= 2
+      ? [Math.min(...intersections), Math.max(...intersections)]
+      : [opening.left, opening.right];
+  };
+  const blocked = crossingOpenings
+    .map(openingIntervalAtBoundary)
+    .map(([left, right]) => [Math.max(box.min.x, left), Math.min(box.max.x, right)])
+    .filter(([left, right]) => right > left + 0.0001)
+    .sort((first, second) => first[0] - second[0]);
+  const mergedBlocked = [];
+  blocked.forEach(([left, right]) => {
+    const previous = mergedBlocked.at(-1);
+    if (previous && left <= previous[1] + 0.0001) previous[1] = Math.max(previous[1], right);
+    else mergedBlocked.push([left, right]);
+  });
+  const capIntervals = [];
+  let cursor = box.min.x;
+  mergedBlocked.forEach(([left, right]) => {
+    if (left > cursor + 0.0001) capIntervals.push([cursor, left]);
+    cursor = Math.max(cursor, right);
+  });
+  if (cursor < box.max.x - 0.0001) capIntervals.push([cursor, box.max.x]);
+  const oldPositions = geometry.getAttribute('position');
+  const oldUvs = geometry.getAttribute('uv');
+  const oldNormals = geometry.getAttribute('normal');
+  const rebuiltPositions = Array.from(oldPositions.array);
+  const rebuiltUvs = oldUvs ? Array.from(oldUvs.array) : [];
+  const rebuiltNormals = oldNormals ? Array.from(oldNormals.array) : [];
+  const capIndices = [];
+  capIntervals.forEach(([left, right]) => {
+    const base = rebuiltPositions.length / 3;
+    rebuiltPositions.push(
+      left, boundaryY, box.min.z,
+      right, boundaryY, box.min.z,
+      right, boundaryY, box.max.z,
+      left, boundaryY, box.max.z,
+    );
+    if (oldUvs) rebuiltUvs.push(left, box.min.z, right, box.min.z, right, box.max.z, left, box.max.z);
+    if (oldNormals) rebuiltNormals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
+    capIndices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  });
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(rebuiltPositions, 3));
+  if (oldUvs) geometry.setAttribute('uv', new THREE.Float32BufferAttribute(rebuiltUvs, 2));
+  if (oldNormals) geometry.setAttribute('normal', new THREE.Float32BufferAttribute(rebuiltNormals, 3));
+  geometry.setIndex([...keptIndices, ...capIndices]);
+  if (capIndices.length) geometry.addGroup(keptIndices.length, capIndices.length, 2);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  geometry.userData.openingBoundaryShelfRemoved = true;
+  geometry.userData.openingBoundaryShelfY = boundaryY;
+  geometry.userData.openingBoundaryShelfRule = 'closed-top-cap-retriangulated-around-only-continuing-openings';
+  geometry.userData.roomWallTopCapClosedAroundOpenings = true;
+  return geometry;
 }
 
 function bondData(sideBond) {
@@ -2472,13 +2810,19 @@ function squareTopBrickMaterial(walls) {
 
 function materialWithCircularPlanVoid(sourceMaterial, centerX, centerZ, radius) {
   const material = sourceMaterial.clone();
+  const previousCompile = sourceMaterial.onBeforeCompile;
+  const previousCacheKey = sourceMaterial.customProgramCacheKey?.bind(sourceMaterial);
   material.userData = {
     ...sourceMaterial.userData,
     roomCircularVoid: true,
     roomCircularVoidCenter: [centerX, centerZ],
     roomCircularVoidRadius: radius,
   };
-  material.onBeforeCompile = (shader) => {
+  material.onBeforeCompile = (shader, renderer) => {
+    // Compose with opening/profile clips already installed on wall-adjacent
+    // Karbandi masonry. Replacing this callback used to silently restore solid
+    // wall pixels whenever the later circular drum void was applied.
+    previousCompile?.(shader, renderer);
     shader.uniforms.roomVoidCenter = { value: new THREE.Vector2(centerX, centerZ) };
     shader.uniforms.roomVoidRadius = { value: radius };
     shader.vertexShader = shader.vertexShader
@@ -2488,7 +2832,7 @@ function materialWithCircularPlanVoid(sourceMaterial, centerX, centerZ, radius) 
       .replace('#include <common>', '#include <common>\nvarying vec3 vRoomVoidWorldPosition;\nuniform vec2 roomVoidCenter;\nuniform float roomVoidRadius;')
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (distance(vRoomVoidWorldPosition.xz, roomVoidCenter) < roomVoidRadius) discard;');
   };
-  material.customProgramCacheKey = () => `room-circular-void:${centerX}:${centerZ}:${radius}`;
+  material.customProgramCacheKey = () => `${previousCacheKey?.() || 'standard'}|room-circular-void:${centerX}:${centerZ}:${radius}`;
   material.needsUpdate = true;
   return material;
 }
@@ -2627,8 +2971,35 @@ function addDefaultBrickFace(group, shape, side, width, height, planePosition, r
 
 function addEdges(group, mesh, walls) {
   if (!walls.edges.enabled || !mesh.geometry || mesh.userData?.excludeWallEdges === true) return;
+  let edgeGeometry = new THREE.EdgesGeometry(mesh.geometry, 24);
+  const excludedHorizontalYs = Array.isArray(mesh.userData?.wallEdgeExcludedHorizontalY)
+    ? mesh.userData.wallEdgeExcludedHorizontalY.filter((value) => Number.isFinite(Number(value))).map(Number)
+    : [];
+  if (excludedHorizontalYs.length) {
+    const sourcePositions = edgeGeometry.getAttribute('position');
+    const retainedPositions = [];
+    const tolerance = 0.002;
+    for (let vertex = 0; vertex + 1 < sourcePositions.count; vertex += 2) {
+      const firstY = sourcePositions.getY(vertex);
+      const secondY = sourcePositions.getY(vertex + 1);
+      const excluded = excludedHorizontalYs.some((targetY) => (
+        Math.abs(firstY - targetY) <= tolerance
+        && Math.abs(secondY - targetY) <= tolerance
+      ));
+      if (excluded) continue;
+      retainedPositions.push(
+        sourcePositions.getX(vertex), firstY, sourcePositions.getZ(vertex),
+        sourcePositions.getX(vertex + 1), secondY, sourcePositions.getZ(vertex + 1),
+      );
+    }
+    edgeGeometry.dispose();
+    edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(retainedPositions, 3));
+    edgeGeometry.userData.excludedHorizontalYs = [...excludedHorizontalYs];
+    edgeGeometry.userData.segmentFilterRule = 'omit-shared-horizontal-masonry-interface';
+  }
   const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry, 24),
+    edgeGeometry,
     new THREE.LineBasicMaterial({
       color: walls.edges.color,
       transparent: true,
@@ -2646,7 +3017,13 @@ function addEdges(group, mesh, walls) {
   edges.userData.karbandiRibIndex = mesh.userData.karbandiRibIndex;
   edges.userData.isKarbandiCover = mesh.userData.isKarbandiCover === true;
   edges.userData.karbandiRoofPanel = mesh.userData.karbandiRoofPanel;
+  edges.userData.isHallPerimeterWall = mesh.userData.isHallPerimeterWall === true;
+  edges.userData.isHallBoundaryVaultInfill = mesh.userData.isHallBoundaryVaultInfill === true;
+  edges.userData.isHallBarrelSpandrelInfill = mesh.userData.isHallBarrelSpandrelInfill === true;
+  edges.userData.hallVaultDirection = mesh.userData.hallVaultDirection;
+  edges.userData.hallGridEdge = mesh.userData.hallGridEdge;
   edges.userData.requestedThickness = walls.edges.thickness;
+  edges.userData.wallEdgeExcludedHorizontalY = [...excludedHorizontalYs];
   edges.renderOrder = 6;
   (mesh.parent || group).add(edges);
 }
@@ -2775,7 +3152,7 @@ function openingSoldierCutouts(openingRects, walls, gypsumBaseTop) {
   const cutouts = [];
   const addOpening = (profile, type) => {
     if (!profile) return;
-    const jambBottom = type === 'door' ? gypsumBaseTop : profile.bottom;
+    const jambBottom = type === 'door' ? Math.max(gypsumBaseTop, profile.bottom) : profile.bottom;
     if (profile.springTop > jambBottom) {
       cutouts.push(
         { kind: 'rect', minU: profile.left - inset - clearance, maxU: profile.left + clearance, minY: jambBottom - clearance, maxY: profile.springTop + clearance },
@@ -2957,7 +3334,11 @@ function addRaisedOpeningSoldierCourse(group, openingType, x, y, openingWidth, h
   // bearing must equal the complete jamb band width rather than one short brick.
   const bearing = Math.max(height, walls.bricks.brickHeight, walls.bricks.mortar * 2);
   const width = openingWidth + bearing * 2;
-  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  const projection = Math.max(
+    0.001,
+    Number(options.projectionDepth)
+      || Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03)),
+  );
   const shape = rectanglePanelShape(x - width / 2, x + width / 2, y - height / 2, y + height / 2);
   if (!shape) return;
   const panel = extrudedShape(
@@ -2972,6 +3353,8 @@ function addRaisedOpeningSoldierCourse(group, openingType, x, y, openingWidth, h
   panel.userData.isSouthOpeningSoldierCourse = options.roomWall !== true && wallSide === 'south';
   panel.userData.isRoomWallOpeningSoldierCourse = options.roomWall === true || wallSide !== 'south';
   panel.userData.wallFace = options.wallFace || 'interior';
+  panel.userData.isOpeningSoldierRevealConnector = options.wallFace === 'reveal';
+  panel.userData.openingSoldierRevealDepth = options.wallFace === 'reveal' ? projection : null;
   panel.userData.openingTrimBondSide = options.materialSide || wallSide;
   panel.userData.openingType = openingType;
   panel.userData.soldierCourseRole = courseRole;
@@ -2983,7 +3366,11 @@ function addRaisedOpeningSoldierCourse(group, openingType, x, y, openingWidth, h
 function addRaisedOpeningJambCourses(group, openingType, profile, bottom, width, z, walls, wallSide = 'south', options = {}) {
   const top = profile?.springTop;
   if (!walls.bricks.enabled || !Number.isFinite(top) || top - bottom <= 0.02 || width <= 0.02) return;
-  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  const projection = Math.max(
+    0.001,
+    Number(options.projectionDepth)
+      || Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03)),
+  );
   [
     ['left', profile.left - width / 2],
     ['right', profile.right + width / 2],
@@ -3002,6 +3389,8 @@ function addRaisedOpeningJambCourses(group, openingType, profile, bottom, width,
     panel.userData.isSouthOpeningSoldierCourse = options.roomWall !== true && wallSide === 'south';
     panel.userData.isRoomWallOpeningSoldierCourse = options.roomWall === true || wallSide !== 'south';
     panel.userData.wallFace = options.wallFace || 'interior';
+    panel.userData.isOpeningSoldierRevealConnector = options.wallFace === 'reveal';
+    panel.userData.openingSoldierRevealDepth = options.wallFace === 'reveal' ? projection : null;
     panel.userData.openingTrimBondSide = options.materialSide || wallSide;
     panel.userData.openingType = openingType;
     panel.userData.soldierCourseRole = 'jamb';
@@ -3293,7 +3682,11 @@ function addRaisedOpeningArchCourse(group, openingType, profile, opening, inset,
   outerPoints.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
   [...profile.archPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
   shape.closePath();
-  const projection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
+  const projection = Math.max(
+    0.001,
+    Number(options.projectionDepth)
+      || Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03)),
+  );
   const archMapping = pointedArchBrickMapping(
     profile.center,
     profile.width / 2,
@@ -3305,7 +3698,7 @@ function addRaisedOpeningArchCourse(group, openingType, profile, opening, inset,
     1e6,
     -1e6,
     1e6,
-    { redOffset: opening.arch?.redOffset, redRadius: opening.arch?.redRadius },
+    { archType: opening.arch?.archType, redOffset: opening.arch?.redOffset, redRadius: opening.arch?.redRadius },
   );
   const panel = extrudedShape(
     shape,
@@ -3319,6 +3712,8 @@ function addRaisedOpeningArchCourse(group, openingType, profile, opening, inset,
   panel.userData.isSouthOpeningArchCourse = options.roomWall !== true && wallSide === 'south';
   panel.userData.isRoomWallOpeningArchCourse = options.roomWall === true || wallSide !== 'south';
   panel.userData.wallFace = options.wallFace || 'interior';
+  panel.userData.isOpeningSoldierRevealConnector = options.wallFace === 'reveal';
+  panel.userData.openingSoldierRevealDepth = options.wallFace === 'reveal' ? projection : null;
   panel.userData.openingTrimBondSide = options.materialSide || wallSide;
   panel.userData.openingType = openingType;
   panel.userData.soldierCourseRole = 'arch-head';
@@ -3341,7 +3736,7 @@ export function southOpeningProfile(opening, center, wallWidth, wallHeight, bott
     Number(arch.greenOffset) || profile.width / 2,
     greenHeight,
     36,
-    { redOffset: arch.redOffset, redRadius: arch.redRadius },
+    { archType: arch.archType, redOffset: arch.redOffset, redRadius: arch.redRadius },
   );
   if (!points.length) {
     profile.head = 'lintel';
@@ -3375,15 +3770,195 @@ function setShadow(group, enabled) {
     child.castShadow = enabled;
     const continuousRoomWallFace = child.userData?.isRoomWallBody === true
       || child.userData?.roomDomePart === 'exterior-aligned-octagon-wall';
+    const continuousHallPendentiveDome = child.userData?.isHallFourVaultPendentive === true
+      || (child.userData?.roomDomePart === 'dome-shell'
+        && (Array.isArray(child.userData?.hallBay) || child.userData?.gridElementType === 'dome'));
     // Lower Room walls and their transition continuation are one masonry
     // façade. Receiving the roof/rib shadow on only the upper mesh creates a
     // false dark band at their shared joint even when the planes and material
     // are identical. They still cast shadows as a single structural mass.
-    child.receiveShadow = continuousRoomWallFace ? false : enabled;
+    child.receiveShadow = continuousRoomWallFace || continuousHallPendentiveDome ? false : enabled;
     if (continuousRoomWallFace) {
       child.userData.roomContinuousWallShadowRule = 'shared-no-self-shadow-reception';
     }
+    if (continuousHallPendentiveDome) {
+      child.userData.hallPendentiveDomeShadowRule = 'shared-soft-light-without-joint-self-shadow';
+    }
   });
+}
+
+function portalKarbandiArchToRibSideCoverGeometry(wallProfile, ribProfile, options = {}) {
+  if ((wallProfile?.length || 0) < 2 || (ribProfile?.length || 0) < 2) return null;
+  const thickness = Math.max(0.01, Number(options.thickness) || 0.075);
+  const maximumRibOverlap = Math.max(0, Number(options.ribOverlap) || 0);
+  const outwardX = options.side === 'west' ? -1 : 1;
+  const orderedProfile = (profile) => {
+    const points = profile.map((point) => point.clone());
+    if (points[0].y > points.at(-1).y) points.reverse();
+    return points;
+  };
+  const wallCurve = orderedProfile(wallProfile);
+  const ribCurve = orderedProfile(ribProfile);
+  const heightLevels = [...new Set([
+    ...wallCurve.map((point) => Number(point.y.toFixed(7))),
+    ...ribCurve.map((point) => Number(point.y.toFixed(7))),
+  ])].sort((left, right) => left - right);
+  const pointAtHeight = (profile, y) => {
+    if (y <= profile[0].y + 0.0000001) return profile[0].clone().setY(y);
+    if (y >= profile.at(-1).y - 0.0000001) return profile.at(-1).clone().setY(y);
+    for (let index = 0; index < profile.length - 1; index += 1) {
+      const start = profile[index];
+      const end = profile[index + 1];
+      if (y < start.y - 0.0000001 || y > end.y + 0.0000001) continue;
+      const span = end.y - start.y;
+      return Math.abs(span) < 0.0000001
+        ? start.clone().setY(y)
+        : start.clone().lerp(end, (y - start.y) / span).setY(y);
+    }
+    return profile.at(-1).clone().setY(y);
+  };
+  const innerRows = [];
+  heightLevels.forEach((y, index) => {
+    const wall = pointAtHeight(wallCurve, y);
+    const rib = pointAtHeight(ribCurve, y);
+    // At the spring, use the jamb-aligned wall seat for the cover boundary.
+    // The physical rib is wider than this small correction and the overlap
+    // below extends the shell behind it, so no cover edge or background gap is
+    // exposed beside the visible leg.
+    if (index === 0 && Math.abs(rib.x - wall.x) <= thickness) rib.x = wall.x;
+    const across = rib.clone().sub(wall);
+    const acrossLength = across.length();
+    if (acrossLength > 0.000001 && maximumRibOverlap > 0) {
+      rib.addScaledVector(across, Math.min(acrossLength * 0.22, maximumRibOverlap) / acrossLength);
+    }
+    innerRows.push({ wall, rib });
+  });
+  const count = innerRows.length;
+  const rowNormals = innerRows.map((row, index) => {
+    const previous = innerRows[Math.max(0, index - 1)];
+    const next = innerRows[Math.min(innerRows.length - 1, index + 1)];
+    const previousCenter = previous.wall.clone().add(previous.rib).multiplyScalar(0.5);
+    const nextCenter = next.wall.clone().add(next.rib).multiplyScalar(0.5);
+    const tangent = nextCenter.sub(previousCenter);
+    const across = row.rib.clone().sub(row.wall);
+    const normal = across.cross(tangent);
+    if (normal.lengthSq() < 0.000000000001) normal.set(outwardX, 0, 0);
+    else normal.normalize();
+    if (normal.x * outwardX < 0) normal.multiplyScalar(-1);
+    return normal;
+  });
+  const outerRows = innerRows.map((row, index) => ({
+    // Keep the complete arch seat flush with the north opening. Offsetting this
+    // edge along the sloping cover normal moves it sideways and creates the
+    // visible step at the east/west jamb. Bury the shell thickness directly
+    // into the north wall instead; its clipping plane then leaves one exact,
+    // clean opening edge while the opposite edge remains hidden by the rib.
+    wall: row.wall.clone().add(new THREE.Vector3(0, 0, -thickness)),
+    rib: row.rib.clone().addScaledVector(rowNormals[index], thickness),
+  }));
+  const positions = [];
+  const uvs = [];
+  const uOffset = Number(options.uOffset) || 0;
+  const appendSurface = (rows) => rows.forEach((row) => {
+    const acrossLength = row.wall.distanceTo(row.rib);
+    positions.push(
+      row.wall.x, row.wall.y, row.wall.z,
+      row.rib.x, row.rib.y, row.rib.z,
+    );
+    uvs.push(uOffset, row.wall.y, uOffset + acrossLength, row.rib.y);
+  });
+  appendSurface(outerRows);
+  appendSurface(innerRows);
+  const surfaceVertexCount = count * 2;
+  const indices = [];
+  const point = (index) => new THREE.Vector3().fromArray(positions, index * 3);
+  const addTriangle = (a, b, c) => {
+    const pa = point(a);
+    const pb = point(b);
+    const pc = point(c);
+    if (pb.sub(pa).cross(pc.sub(pa)).lengthSq() > 0.000000000001) indices.push(a, b, c);
+  };
+  const outerWall = (row) => row * 2;
+  const outerRib = (row) => row * 2 + 1;
+  const innerWall = (row) => surfaceVertexCount + row * 2;
+  const innerRib = (row) => surfaceVertexCount + row * 2 + 1;
+  for (let row = 0; row < count - 1; row += 1) {
+    const next = row + 1;
+    addTriangle(outerWall(row), outerRib(row), outerRib(next));
+    addTriangle(outerWall(row), outerRib(next), outerWall(next));
+    addTriangle(innerWall(row), innerRib(next), innerRib(row));
+    addTriangle(innerWall(row), innerWall(next), innerRib(next));
+    addTriangle(innerWall(row), outerWall(row), outerWall(next));
+    addTriangle(innerWall(row), outerWall(next), innerWall(next));
+    addTriangle(innerRib(row), innerRib(next), outerRib(next));
+    addTriangle(innerRib(row), outerRib(next), outerRib(row));
+  }
+  const closeRow = (row, reverse = false) => {
+    if (reverse) {
+      addTriangle(innerWall(row), outerRib(row), outerWall(row));
+      addTriangle(innerWall(row), innerRib(row), outerRib(row));
+    } else {
+      addTriangle(innerWall(row), outerWall(row), outerRib(row));
+      addTriangle(innerWall(row), outerRib(row), innerRib(row));
+    }
+  };
+  closeRow(0);
+  closeRow(count - 1, true);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.userData.portalKarbandiSideCoverConstruction = 'shared-clean-arch-to-rib-half-brick-shell';
+  geometry.userData.portalKarbandiSideCoverSurfaceVertexCount = surfaceVertexCount;
+  geometry.userData.portalKarbandiSideCoverClosedReturns = ['north-wall-arch', 'rib', 'spring', 'crown'];
+  geometry.userData.portalKarbandiSideCoverThicknessDirection = 'north-edge-buried-in-wall-rib-edge-surface-normal';
+  geometry.userData.portalKarbandiSideCoverWallSeat = 'north-opening-plane-no-lateral-offset';
+  geometry.userData.portalKarbandiSideCoverCourseRows = 'shared-world-height-resampled-wall-and-rib-profiles';
+  geometry.userData.portalKarbandiSideCoverSpringJoint = 'jamb-aligned-and-overlapped-behind-visible-rib';
+  geometry.userData.portalKarbandiSideCoverWallProfile = innerRows.map(({ wall }) => wall.toArray());
+  geometry.userData.portalKarbandiSideCoverRibProfile = innerRows.map(({ rib }) => rib.toArray());
+  return geometry;
+}
+
+function hallPerimeterCoordinate(side, along, width, depth) {
+  if (side === 'north') return along + width / 2;
+  if (side === 'east') return width + along + depth / 2;
+  if (side === 'south') return width + depth + width / 2 - along;
+  return width * 2 + depth + depth / 2 - along;
+}
+
+function applyHallPerimeterBrickUvs(
+  geometry,
+  side,
+  width,
+  depth,
+  { alongOffset = 0, verticalOffset = 0, extruded = false } = {},
+) {
+  const positions = geometry.getAttribute('position');
+  const normals = geometry.getAttribute('normal');
+  const uvs = geometry.getAttribute('uv');
+  if (!positions || !normals || !uvs) return geometry;
+  for (let index = 0; index < positions.count; index += 1) {
+    const normalX = Math.abs(normals.getX(index));
+    const normalZ = Math.abs(normals.getZ(index));
+    const isLongFace = extruded
+      ? normalZ > 0.9
+      : ['north', 'south'].includes(side) ? normalZ > 0.9 : normalX > 0.9;
+    if (!isLongFace) continue;
+    const along = alongOffset + (extruded
+      ? positions.getX(index)
+      : ['north', 'south'].includes(side) ? positions.getX(index) : positions.getZ(index));
+    uvs.setXY(
+      index,
+      hallPerimeterCoordinate(side, along, width, depth),
+      positions.getY(index) + verticalOffset,
+    );
+  }
+  uvs.needsUpdate = true;
+  geometry.userData.hallPerimeterBondUvMapping = 'one-developed-clockwise-loop-shared-by-each-face';
+  geometry.userData.hallPerimeterBondCycleLength = (width + depth) * 2;
+  return geometry;
 }
 
 function addKarbandiVault(group, layout, walls) {
@@ -3418,6 +3993,13 @@ function addKarbandiVault(group, layout, walls) {
     : northExteriorZ;
   const roomMode = layout.roomMode === true;
   const vestibuleMode = roomMode && layout.vestibuleMode === true;
+  const requestedWallLegMode = walls.karbandi.wallLegMode === 'one' ? 'one' : 'two';
+  // Vestibule walls are themselves derived from the eight-foot bearing plan,
+  // so their square reference solve must retain paired feet. Square Rooms and
+  // Portals can explicitly choose one cyclic wall bearing or the paired default.
+  const wallLegMode = vestibuleMode ? 'two' : requestedWallLegMode;
+  group.userData.karbandiWallLegMode = wallLegMode;
+  group.userData.karbandiRequestedWallLegMode = requestedWallLegMode;
   group.userData.karbandiRoomPerimeterRule = roomMode
     ? 'all-four-walls-use-south-wall-support-and-auto-clipping'
     : 'iwan-north-portal-with-south-east-west-support';
@@ -3458,50 +4040,77 @@ function addKarbandiVault(group, layout, walls) {
     return ['door', 'window'].map((openingType) => {
       const opening = settings?.[openingType];
       if (!opening?.enabled) return null;
-      const bottom = openingType === 'window' ? Math.max(0, Number(opening.sillHeight) || 0) : 0;
+      const bottom = Math.max(0, Number(opening.sillHeight) || 0);
       const profile = southOpeningProfile(opening, 0, wallSpan, 1000, bottom);
       if (profile.top <= wallHeight + 0.000001) return null;
       const localMinimum = Math.min(profile.left, profile.right);
       const localMaximum = Math.max(profile.left, profile.right);
       const coverDepth = Math.max(ribWidth, ribDepth) * groupScale + 0.03;
       if (side === 'north') return {
-        side, openingType,
+        side, openingType, profile,
         minX: centerX - localMaximum, maxX: centerX - localMinimum,
         minY: Math.max(wallHeight, profile.bottom), maxY: profile.top,
         minZ: northExteriorZ - 0.03, maxZ: northZ + coverDepth,
       };
       if (side === 'south') return {
-        side, openingType,
+        side, openingType, profile,
         minX: centerX + localMinimum, maxX: centerX + localMaximum,
         minY: Math.max(wallHeight, profile.bottom), maxY: profile.top,
         minZ: southZ - coverDepth, maxZ: southExteriorZ + 0.03,
       };
       if (side === 'east') return {
-        side, openingType,
+        side, openingType, profile,
         minX: eastX - coverDepth, maxX: eastExteriorX + 0.03,
         minY: Math.max(wallHeight, profile.bottom), maxY: profile.top,
         minZ: centerZ - localMaximum, maxZ: centerZ - localMinimum,
       };
       return {
-        side, openingType,
+        side, openingType, profile,
         minX: westExteriorX - 0.03, maxX: westX + coverDepth,
         minY: Math.max(wallHeight, profile.bottom), maxY: profile.top,
         minZ: centerZ + localMinimum, maxZ: centerZ + localMaximum,
       };
     }).filter(Boolean);
   }) : [];
-  const configureRoomOpeningRibClip = (material) => {
+  const configureRoomTransitionOpeningClip = (material) => {
     if (!roomOpeningRibClipRegions.length) return;
     const previousCompile = material.onBeforeCompile;
     const previousCacheKey = material.customProgramCacheKey?.bind(material);
-    const clipConditions = roomOpeningRibClipRegions.map((region) => (
-      `(vKarbandiOpeningWorldPosition.x >= ${region.minX.toFixed(9)} && `
-      + `vKarbandiOpeningWorldPosition.x <= ${region.maxX.toFixed(9)} && `
-      + `vKarbandiOpeningWorldPosition.y >= ${region.minY.toFixed(9)} && `
-      + `vKarbandiOpeningWorldPosition.y <= ${region.maxY.toFixed(9)} && `
-      + `vKarbandiOpeningWorldPosition.z >= ${region.minZ.toFixed(9)} && `
-      + `vKarbandiOpeningWorldPosition.z <= ${region.maxZ.toFixed(9)})`
-    )).join(' || ');
+    const number = (value) => Number(value).toFixed(9);
+    const clipConditions = roomOpeningRibClipRegions.map((region) => {
+      const localU = region.side === 'north'
+        ? `${number(centerX)} - vKarbandiOpeningWorldPosition.x`
+        : region.side === 'south'
+          ? `vKarbandiOpeningWorldPosition.x - ${number(centerX)}`
+          : region.side === 'east'
+            ? `${number(centerZ)} - vKarbandiOpeningWorldPosition.z`
+            : `vKarbandiOpeningWorldPosition.z - ${number(centerZ)}`;
+      const profile = region.profile;
+      const horizontalAndDepth = `(${localU} >= ${number(profile.left)} && ${localU} <= ${number(profile.right)} && `
+        + `vKarbandiOpeningWorldPosition.x >= ${number(region.minX)} && `
+        + `vKarbandiOpeningWorldPosition.x <= ${number(region.maxX)} && `
+        + `vKarbandiOpeningWorldPosition.z >= ${number(region.minZ)} && `
+        + `vKarbandiOpeningWorldPosition.z <= ${number(region.maxZ)})`;
+      let belowHead = `vKarbandiOpeningWorldPosition.y <= ${number(profile.top)}`;
+      if (profile.archPoints?.length) {
+        const segmentConditions = [];
+        for (let index = 0; index < profile.archPoints.length - 1; index += 1) {
+          const start = profile.archPoints[index];
+          const end = profile.archPoints[index + 1];
+          const deltaX = end.x - start.x;
+          if (Math.abs(deltaX) <= 0.000001) continue;
+          const minimumX = Math.min(start.x, end.x);
+          const maximumX = Math.max(start.x, end.x);
+          const slope = (end.y - start.y) / deltaX;
+          segmentConditions.push(`(${localU} >= ${number(minimumX)} && ${localU} <= ${number(maximumX)} && `
+            + `vKarbandiOpeningWorldPosition.y <= ${number(start.y)} + (${localU} - ${number(start.x)}) * ${number(slope)})`);
+        }
+        belowHead = `(vKarbandiOpeningWorldPosition.y <= ${number(profile.springTop)}${segmentConditions.length
+          ? ` || ${segmentConditions.join(' || ')}`
+          : ''})`;
+      }
+      return `(${horizontalAndDepth} && vKarbandiOpeningWorldPosition.y >= ${number(region.minY)} && ${belowHead})`;
+    }).join(' || ');
     material.onBeforeCompile = (shader, renderer) => {
       previousCompile?.(shader, renderer);
       shader.vertexShader = shader.vertexShader
@@ -3513,13 +4122,19 @@ function addKarbandiVault(group, layout, walls) {
       shader.fragmentShader = shader.fragmentShader
         .replace('void main() {', 'varying vec3 vKarbandiOpeningWorldPosition;\nvoid main() {')
         .replace(
-          '#include <output_fragment>',
-          `if (${clipConditions}) discard;\n#include <output_fragment>`,
+          '#include <opaque_fragment>',
+          `if (${clipConditions}) discard;\n#include <opaque_fragment>`,
         );
     };
-    material.customProgramCacheKey = () => `${previousCacheKey?.() || 'standard'}|room-octagon-opening-rib-clip-v1|${clipConditions}`;
-    material.userData.roomKarbandiOpeningClipRegions = roomOpeningRibClipRegions.map((region) => ({ ...region }));
-    material.userData.roomKarbandiOpeningClipRule = 'discard-rib-fragments-inside-inherited-octagon-openings';
+    material.customProgramCacheKey = () => `${previousCacheKey?.() || 'standard'}|room-karbandi-transition-opening-clip-v2|${clipConditions}`;
+    material.userData.roomKarbandiOpeningClipRegions = roomOpeningRibClipRegions.map((region) => ({
+      ...region,
+      profile: {
+        ...region.profile,
+        archPoints: region.profile.archPoints?.map((point) => point.toArray()),
+      },
+    }));
+    material.userData.roomKarbandiOpeningClipRule = 'discard-only-wall-adjacent-transition-masonry-inside-exact-inherited-opening-profile';
     material.needsUpdate = true;
   };
   const offset = THREE.MathUtils.degToRad(Number(walls.karbandi.rotationOffset) || 0);
@@ -3539,7 +4154,7 @@ function addKarbandiVault(group, layout, walls) {
     ['north', clipPlanes[2]],
     ['south', clipPlanes[3]],
   ]);
-  const ribArchOptions = { redOffset: Number(walls.karbandi.redOffset) || 0 };
+  const ribArchOptions = { archType: walls.karbandi.archType, redOffset: Number(walls.karbandi.redOffset) || 0 };
   const inner = archCurve(0, halfSpan, springY, springY, greenOffset, greenHeight, 28, ribArchOptions);
   const outer = archCurve(0, halfSpan + ribWidth, springY, springY, greenOffset, greenHeight, 28, ribArchOptions);
   if (!inner.length || !outer.length) return [];
@@ -3982,17 +4597,44 @@ function addKarbandiVault(group, layout, walls) {
   // tolerance only absorbs floating-point differences and does not admit the
   // visibly deeper diagonal feet.
   const closestWallDistanceTolerance = 0.0001;
-  const closestWallLegs = [...wallLegCandidates.values()].flatMap((candidates) => {
+  const pairedClosestWallLegs = [...wallLegCandidates.values()].flatMap((candidates) => {
     const closestDistance = Math.min(...candidates.map(({ distance }) => distance));
     return candidates.filter(({ distance }) => distance <= closestDistance + closestWallDistanceTolerance);
   });
+  const cyclicWallCoordinate = {
+    north: (point) => -point.x,
+    east: (point) => -point.z,
+    south: (point) => point.x,
+    west: (point) => point.z,
+  };
+  const closestWallLegs = wallLegMode === 'one'
+    ? [...wallLegCandidates].flatMap(([wall, candidates]) => {
+      const closestDistance = Math.min(...candidates.map(({ distance }) => distance));
+      const closest = candidates
+        .filter(({ distance }) => distance <= closestDistance + closestWallDistanceTolerance)
+        .sort((left, right) => {
+          const leftPoint = ribBaseCenters[left.ribIndex]?.[left.side];
+          const rightPoint = ribBaseCenters[right.ribIndex]?.[right.side];
+          const coordinate = cyclicWallCoordinate[wall] || (() => 0);
+          return coordinate(leftPoint) - coordinate(rightPoint)
+            || left.ribIndex - right.ribIndex
+            || left.side.localeCompare(right.side);
+        });
+      // A Portal is open at the facade and has a centred rear bearing. Its
+      // east/west feet are already a mirrored pair, while the rear wall needs
+      // both equal-distance feet to keep the right clipping frame identical
+      // to the left. Square Room/Hall plans still select one cyclic foot on
+      // every wall, producing their four-corner one-leg solution.
+      return !roomMode && wall === 'south' ? closest : closest.slice(0, 1);
+    })
+    : pairedClosestWallLegs;
   const wallSupportedRibIndexes = new Set(
     [...wallLegCandidates.values()].flatMap((candidates) => candidates.map(({ ribIndex }) => ribIndex)),
   );
   const closestWallSupportedRibIndexes = new Set(closestWallLegs.map(({ ribIndex }) => ribIndex));
   const baseTouchingWallSupportedRibIndexes = new Set();
   const baseTouchingWallSupportedLegKeys = new Set();
-  baseEdgeContacts.forEach(({ firstRibIndex, firstSide, secondRibIndex, secondSide }) => {
+  if (wallLegMode === 'two') baseEdgeContacts.forEach(({ firstRibIndex, firstSide, secondRibIndex, secondSide }) => {
     if (closestWallSupportedRibIndexes.has(firstRibIndex)
       && !closestWallSupportedRibIndexes.has(secondRibIndex)
       && legTouchesVerticalWall(secondRibIndex, secondSide)) {
@@ -4196,10 +4838,12 @@ function addKarbandiVault(group, layout, walls) {
   // Normally the first visible intersections identify the four- or eight-leg
   // plan. If clipping removes those intersections, recover the plan from the
   // actual rib count and wall-bearing feet instead of dropping the transition.
-  const inferredSideCount = [4, 8].includes(ribCount / 2) ? ribCount / 2 : 0;
-  const transitionSideCount = junctionSideCount || inferredSideCount;
+  const inferredSideCount = wallLegMode === 'one'
+    ? 4
+    : [4, 8].includes(ribCount / 2) ? ribCount / 2 : 0;
+  const transitionSideCount = wallLegMode === 'one' ? 4 : junctionSideCount || inferredSideCount;
   let roomTransitionWallFeet = [];
-  if (junctionSideCount) {
+  if (junctionSideCount === transitionSideCount) {
     roomTransitionWallFeet = mergedRoomFirstJunctionOctagon.map((junction) => (
       roomWallSupportedLegs.find((entry) => (
         entry.ribIndex === junction.ribIndex && entry.side === junction.side
@@ -4244,7 +4888,9 @@ function addKarbandiVault(group, layout, walls) {
     }))
     : [];
   group.userData.roomKarbandiWallSupportFootOctagonSource = validTransitionTopology
-    ? `${transitionSideCount}-visible-wall-supported-rib-feet-on-all-four-walls`
+    ? wallLegMode === 'one'
+      ? '4-visible-one-leg-wall-supported-rib-feet-on-all-four-walls'
+      : `${transitionSideCount}-visible-wall-supported-rib-feet-on-all-four-walls`
     : null;
   group.userData.roomKarbandiTransitionSideCount = validTransitionTopology ? transitionSideCount : 0;
   group.userData.roomKarbandiTransitionPlan = transitionSideCount === 8
@@ -4324,7 +4970,9 @@ function addKarbandiVault(group, layout, walls) {
     ]),
   );
   group.userData.karbandiAutoClipSupportFrame = walls.karbandi.autoClip
-    ? 'nearest-interior-wall-ribs'
+    ? wallLegMode === 'one'
+      ? 'one-cyclic-bearing-leg-per-wall'
+      : 'nearest-interior-wall-ribs'
     : null;
   group.userData.karbandiAllWallTouchingLegs = [...wallLegCandidates.values()]
     .flat()
@@ -4998,7 +5646,6 @@ function addKarbandiVault(group, layout, walls) {
     const geometry = makeRibGeometry(componentRange, index, angle);
     if (!geometry) return;
     const material = wallMaterial(walls, null);
-    configureRoomOpeningRibClip(material);
     const referenceRibColor = walls.karbandi.referenceRibColor.toLowerCase() === walls.karbandi.ribColor.toLowerCase()
       ? (walls.karbandi.ribColor.toLowerCase() === '#ffd400' ? '#18c7d4' : '#ffd400')
       : walls.karbandi.referenceRibColor;
@@ -6317,6 +6964,61 @@ function addKarbandiVault(group, layout, walls) {
     };
     const addVestibuleEdgeRoofPanel = (edge) => {
       if (edge.startPoints.length !== edge.endPoints.length || edge.startPoints.length < 2) return;
+      const portalHalfCutZ = Number(layout.portalHalfCutZ);
+      const portalHalfNorthArchPoints = layout.portalHalfNorthArchPoints || [];
+      const edgeCrossesPortalFacade = Boolean(
+        vestibuleMode
+        && Number.isFinite(portalHalfCutZ)
+        && portalHalfNorthArchPoints.length >= 2
+        && Math.min(edge.wallEdge[0].z, edge.wallEdge[1].z) < portalHalfCutZ - 0.000001
+        && Math.max(edge.wallEdge[0].z, edge.wallEdge[1].z) > portalHalfCutZ + 0.000001,
+      );
+      const portalArchHeightAtX = (x) => {
+        if (!edgeCrossesPortalFacade) return sideTop;
+        const first = portalHalfNorthArchPoints[0];
+        const last = portalHalfNorthArchPoints.at(-1);
+        if (x <= first.x || x >= last.x) return sideTop;
+        for (let index = 0; index < portalHalfNorthArchPoints.length - 1; index += 1) {
+          const start = portalHalfNorthArchPoints[index];
+          const end = portalHalfNorthArchPoints[index + 1];
+          if (x < Math.min(start.x, end.x) || x > Math.max(start.x, end.x)) continue;
+          const span = end.x - start.x;
+          return Math.abs(span) < 0.000001
+            ? Math.max(start.y, end.y)
+            : THREE.MathUtils.lerp(start.y, end.y, (x - start.x) / span);
+        }
+        return sideTop;
+      };
+      let panelStartPoints = edge.startPoints;
+      let panelEndPoints = edge.endPoints;
+      let panelWallEdge = edge.wallEdge;
+      let panelWallBondPhase = edge.wallBondPhase;
+      let portalWallBoundarySide = null;
+      let portalWallProfile = [];
+      let portalRibProfile = [];
+      if (edgeCrossesPortalFacade) {
+        const startIsVisible = edge.wallEdge[0].z > portalHalfCutZ;
+        const visibleProfile = (startIsVisible ? edge.startPoints : edge.endPoints).map((point) => point.clone());
+        const wallProfile = visibleProfile.map((point) => new THREE.Vector3(
+          THREE.MathUtils.clamp(point.x, roofWestX, roofEastX),
+          portalArchHeightAtX(point.x),
+          portalHalfCutZ,
+        ));
+        portalWallBoundarySide = startIsVisible ? 'end' : 'start';
+        panelStartPoints = startIsVisible ? visibleProfile : wallProfile;
+        panelEndPoints = startIsVisible ? wallProfile : visibleProfile;
+        portalWallProfile = wallProfile;
+        portalRibProfile = visibleProfile;
+        const visibleFoot = startIsVisible ? edge.wallEdge[0].clone() : edge.wallEdge[1].clone();
+        const cutFoot = visibleFoot.clone().setZ(portalHalfCutZ);
+        panelWallEdge = startIsVisible ? [visibleFoot, cutFoot] : [cutFoot, visibleFoot];
+        if (!startIsVisible) {
+          panelWallBondPhase += edge.wallEdge[0].distanceTo(cutFoot);
+        }
+      }
+      const panelThickness = edgeCrossesPortalFacade
+        ? Math.max(0.01, (Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth) / 2)
+        : coverThickness;
       const positions = [];
       const uvs = [];
       const indices = [];
@@ -6325,31 +7027,33 @@ function addKarbandiVault(group, layout, walls) {
         uvs.push(point.x, point.z);
         return positions.length / 3 - 1;
       };
-      const rows = edge.startPoints.map((startPoint, index) => {
-        const endPoint = edge.endPoints[index];
+      const rows = panelStartPoints.map((startPoint, index) => {
+        const endPoint = panelEndPoints[index];
         const across = endPoint.clone().sub(startPoint).setY(0);
         const acrossLength = across.length();
         const ribOverlapProgress = 1 - index / (edge.startPoints.length - 1);
         const ribOverlapScale = ribOverlapProgress * ribOverlapProgress;
         const hiddenRibOverlap = ribOverlapScale * Math.min(
           acrossLength * 0.32,
-          Math.max(coverThickness, ribDepth * groupScale * 2),
+          Math.max(panelThickness, ribDepth * groupScale * 2),
         );
         const startBottomPoint = startPoint.clone();
         const endBottomPoint = endPoint.clone();
-        const startTopPoint = startPoint.clone().setY(startPoint.y + coverThickness);
-        const endTopPoint = endPoint.clone().setY(endPoint.y + coverThickness);
+        const startTopPoint = startPoint.clone().setY(startPoint.y + panelThickness);
+        const endTopPoint = endPoint.clone().setY(endPoint.y + panelThickness);
         if (acrossLength > 0.000001 && hiddenRibOverlap > 0) {
           across.multiplyScalar(1 / acrossLength);
           // The soffit must also disappear beneath the ribs. Keeping only the
           // upper skin overlapped left a visible white wedge alongside each
           // curved rib even though the mathematical boundaries touched.
-          if (index > 0) {
+          if (index > 0 && portalWallBoundarySide !== 'start') {
             startBottomPoint.addScaledVector(across, -hiddenRibOverlap);
+          }
+          if (index > 0 && portalWallBoundarySide !== 'end') {
             endBottomPoint.addScaledVector(across, hiddenRibOverlap);
           }
-          startTopPoint.addScaledVector(across, -hiddenRibOverlap);
-          endTopPoint.addScaledVector(across, hiddenRibOverlap);
+          if (portalWallBoundarySide !== 'start') startTopPoint.addScaledVector(across, -hiddenRibOverlap);
+          if (portalWallBoundarySide !== 'end') endTopPoint.addScaledVector(across, hiddenRibOverlap);
         }
         return {
           startBottom: addVertex(startBottomPoint),
@@ -6390,46 +7094,59 @@ function addKarbandiVault(group, layout, walls) {
       // with a vertical thickness face produces the exposed horizontal masonry
       // strip seen across the small corner bays, so it intentionally remains
       // open and hidden behind the rib intersection.
-      const geometry = new THREE.BufferGeometry();
+      let geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
-      const wallStart = edge.wallEdge[0];
-      const wallEnd = edge.wallEdge[1];
+      if (edgeCrossesPortalFacade) {
+        geometry.dispose();
+        geometry = portalKarbandiArchToRibSideCoverGeometry(portalWallProfile, portalRibProfile, {
+          thickness: panelThickness,
+          ribOverlap: Math.max(ribWidth, ribDepth) * groupScale * 0.55,
+          side: panelWallEdge[0].x < centerX ? 'west' : 'east',
+          uOffset: panelWallBondPhase,
+        });
+        if (!geometry) return;
+      }
+      const wallStart = panelWallEdge[0];
+      const wallEnd = panelWallEdge[1];
       const wallDirectionX = wallEnd.x - wallStart.x;
       const wallDirectionZ = wallEnd.z - wallStart.z;
       const wallLength = Math.max(0.000001, Math.hypot(wallDirectionX, wallDirectionZ));
       const wallUnitX = wallDirectionX / wallLength;
       const wallUnitZ = wallDirectionZ / wallLength;
-      const geometryUvs = geometry.getAttribute('uv');
-      const geometryPositions = geometry.getAttribute('position');
-      for (let index = 0; index < geometryPositions.count; index += 1) {
-        const localWallU = (
-          (geometryPositions.getX(index) - wallStart.x) * wallUnitX
-          + (geometryPositions.getZ(index) - wallStart.z) * wallUnitZ
-        );
-        geometryUvs.setXY(index, localWallU, geometryPositions.getY(index));
+      if (!edgeCrossesPortalFacade) {
+        const geometryUvs = geometry.getAttribute('uv');
+        const geometryPositions = geometry.getAttribute('position');
+        for (let index = 0; index < geometryPositions.count; index += 1) {
+          const localWallU = (
+            (geometryPositions.getX(index) - wallStart.x) * wallUnitX
+            + (geometryPositions.getZ(index) - wallStart.z) * wallUnitZ
+          );
+          geometryUvs.setXY(index, localWallU, geometryPositions.getY(index));
+        }
+        geometryUvs.needsUpdate = true;
       }
-      geometryUvs.needsUpdate = true;
       geometry.userData.vestibuleWallBondUvMapping = 'connected-wall-local-u-and-continuous-world-y-courses';
       const coverHeight = Math.max(
         sideTop,
-        ...edge.startPoints.map((point) => point.y + coverThickness),
-        ...edge.endPoints.map((point) => point.y + coverThickness),
+        ...panelStartPoints.map((point) => point.y + panelThickness),
+        ...panelEndPoints.map((point) => point.y + panelThickness),
       );
       const material = directRoomWallFaceMaterial(
         walls,
         edge.wallBondSurface,
         edge.wallEdgeLength,
         coverHeight,
-        edge.wallBondPhase,
+        panelWallBondPhase,
         edge.wallBondCycle,
       );
       material.side = THREE.DoubleSide;
       material.polygonOffset = true;
       material.polygonOffsetFactor = 2;
       material.polygonOffsetUnits = 2;
+      configureRoomTransitionOpeningClip(material);
       const panel = new THREE.Mesh(geometry, material);
       panel.name = `Karbandi Vestibule octagonal wall-edge cover ${edge.edgeIndex + 1}`;
       panel.renderOrder = 1;
@@ -6444,7 +7161,9 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.karbandiRoofWallBay = true;
       panel.userData.webCellClassification = 'EdgePerimeterCell';
       panel.userData.webSupportSides = [edge.label];
-      panel.userData.webPatchSolver = 'single-octagonal-wall-edge-ruled-cover';
+      panel.userData.webPatchSolver = edgeCrossesPortalFacade
+        ? 'portal-north-arch-to-rib-ruled-half-brick-shell'
+        : 'single-octagonal-wall-edge-ruled-cover';
       panel.userData.roofType = 'wall-supported-roof';
       panel.userData.wallContinuationClippedByRibs = true;
       panel.userData.roofBrickMapping = 'connected-vertical-wall-continuation';
@@ -6452,7 +7171,7 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.wallContinuationPatternSide = edge.wallBondSurface;
       panel.userData.wallContinuationCourseAxis = 'world-y';
       panel.userData.wallContinuationUAxis = 'connected-octagonal-wall-edge-start-to-end';
-      panel.userData.wallContinuationBondPhase = edge.wallBondPhase;
+      panel.userData.wallContinuationBondPhase = panelWallBondPhase;
       panel.userData.wallContinuationBondCycle = edge.wallBondCycle;
       panel.userData.wallContinuationMethod = 'developed-octagonal-wall-face-pattern-projected-through-curved-cover';
       panel.userData.wallContinuationSeamlessAtWallTop = true;
@@ -6462,10 +7181,37 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.adjacentRibEdgeSourceIds = edge.adjacentRibEdgeSourceIds;
       panel.userData.cornerRoofMethod = edge.cornerRoofMethod;
       panel.userData.cornerRoofTerminalBoundary = edge.terminalBoundary.map((point) => point.toArray());
-      panel.userData.wallEdge = edge.wallEdge.map((point) => point.toArray());
+      panel.userData.wallEdge = panelWallEdge.map((point) => point.toArray());
       panel.userData.physicalWallCoverEdge = edge.physicalWallCoverEdge.map((point) => point.toArray());
-      panel.userData.roofThickness = coverThickness;
-      panel.userData.thicknessDirection = 'world-y-for-seam-continuity';
+      panel.userData.roofThickness = panelThickness;
+      panel.userData.thicknessDirection = edgeCrossesPortalFacade
+        ? 'north-edge-buried-in-wall-rib-edge-surface-normal'
+        : 'world-y-for-seam-continuity';
+      panel.userData.portalNorthArchSideCover = edgeCrossesPortalFacade;
+      panel.userData.portalNorthArchWallProfile = portalWallProfile.map((point) => point.toArray());
+      panel.userData.portalWallSupportedRibProfile = portalRibProfile.map((point) => point.toArray());
+      panel.userData.portalNorthArchBoundaryRule = edgeCrossesPortalFacade
+        ? 'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg'
+        : null;
+      panel.userData.portalSideCoverThicknessRule = edgeCrossesPortalFacade ? 'half-brick' : null;
+      panel.userData.portalSideCoverRibClip = edgeCrossesPortalFacade
+        ? 'upper-and-lower-skins-overlap-behind-visible-rib-leg-only'
+        : null;
+      panel.userData.portalSideCoverConstruction = edgeCrossesPortalFacade
+        ? 'shared-clean-arch-to-rib-half-brick-shell'
+        : null;
+      panel.userData.portalSideCoverClosedReturns = edgeCrossesPortalFacade
+        ? ['north-wall-arch', 'rib', 'spring', 'crown']
+        : [];
+      panel.userData.portalSideCoverWallSeat = edgeCrossesPortalFacade
+        ? 'north-opening-plane-no-lateral-offset'
+        : null;
+      panel.userData.portalSideCoverSpringJoint = edgeCrossesPortalFacade
+        ? 'jamb-aligned-and-overlapped-behind-visible-rib'
+        : null;
+      panel.userData.portalSideCoverCourseRows = edgeCrossesPortalFacade
+        ? 'shared-world-height-resampled-wall-and-rib-profiles'
+        : null;
       group.add(panel);
       meshes.push(panel);
     };
@@ -6531,6 +7277,7 @@ function addKarbandiVault(group, layout, walls) {
       // the portal as well as from above; otherwise the south strip appears as
       // the large white triangular void beside the bearing rib.
       material.side = THREE.DoubleSide;
+      configureRoomTransitionOpeningClip(material);
       const interiorWallClipPlane = (wall) => {
         if (wall === 'north') return new THREE.Plane(new THREE.Vector3(0, 0, 1), -roofNorthZ);
         if (wall === 'south') return new THREE.Plane(new THREE.Vector3(0, 0, -1), roofSouthZ);
@@ -6688,6 +7435,9 @@ function addKarbandiVault(group, layout, walls) {
         && northVisibleRibSourceId
         && northVisibleRibProfile?.length >= 2,
       );
+      const panelThickness = usesNorthVisibleRibExtrusion
+        ? Math.max(0.01, (Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth) / 2)
+        : coverThickness;
       const northVisibleRibSourceIds = usesNorthVisibleRibExtrusion
         ? [northVisibleRibSourceId]
         : [];
@@ -6907,13 +7657,14 @@ function addKarbandiVault(group, layout, walls) {
       let patchBoundaryCurves = centerlineRegionCurves || perimeterCenterlineCurves || boundaryCurves;
       let northVisibleRibWallProfile = null;
       if (usesNorthVisibleRibExtrusion) {
-        // Use the closest complete visible rib section as the generating
-        // profile. Project an identical section northward and terminate it on
-        // the north interior wall plane; do not reshape it to the portal arch.
+        // The wall edge follows the actual north opening curve, while the outer
+        // edge follows the closest visible wall-supported rib. This makes the
+        // side infill a smooth continuation of the masonry below and hides its
+        // terminal edge behind the rib band.
         const ribPoints = northVisibleRibProfile.map((point) => point.clone());
         const wallPoints = ribPoints.map((point) => new THREE.Vector3(
           THREE.MathUtils.clamp(point.x, roofWestX, roofEastX),
-          point.y,
+          northArchHeightAtX(point.x),
           roofNorthZ,
         ));
         northVisibleRibWallProfile = wallPoints;
@@ -7044,9 +7795,9 @@ function addKarbandiVault(group, layout, walls) {
           ? patch.regionNormal
           : patch.normals[index];
         return {
-          x: vertex.x + normal.x * coverThickness + bearing.x,
-          y: vertex.y + normal.y * coverThickness,
-          z: vertex.z + normal.z * coverThickness + bearing.z,
+          x: vertex.x + normal.x * panelThickness + bearing.x,
+          y: vertex.y + normal.y * panelThickness,
+          z: vertex.z + normal.z * panelThickness + bearing.z,
         };
       });
       topVertices.forEach((vertex) => {
@@ -7215,15 +7966,29 @@ function addKarbandiVault(group, layout, walls) {
         addTriangle(flangeStart + 2, flangeStart + 6, flangeStart + 7);
         addTriangle(flangeStart + 2, flangeStart + 7, flangeStart + 3);
       });
-      const geometry = new THREE.BufferGeometry();
+      let geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
-      if (wallContinuationSide && roomMode) {
+      if (usesNorthVisibleRibExtrusion) {
+        geometry.dispose();
+        geometry = portalKarbandiArchToRibSideCoverGeometry(
+          northVisibleRibWallProfile,
+          northVisibleRibProfile,
+          {
+            thickness: panelThickness,
+            ribOverlap: Math.max(ribWidth, ribDepth) * groupScale * 0.55,
+            side: wallSides.has('west') ? 'west' : 'east',
+            uOffset: continuationBondPhase[wallSides.has('west') ? 'west' : 'east'] || 0,
+          },
+        );
+        if (!geometry) return;
+      }
+      if (!usesNorthVisibleRibExtrusion && wallContinuationSide && roomMode) {
         applyRoomWallContinuationBrickUvs(geometry, wallContinuationSide, centerX, centerZ);
-      } else if (wallContinuationSide) applyWallContinuationBrickUvs(geometry, wallContinuationSide);
-      else applyWorldAlignedBrickUvs(geometry);
+      } else if (!usesNorthVisibleRibExtrusion && wallContinuationSide) applyWallContinuationBrickUvs(geometry, wallContinuationSide);
+      else if (!usesNorthVisibleRibExtrusion) applyWorldAlignedBrickUvs(geometry);
       if (!wallContinuationSide && patch.brickMapping === 'offset-rib-courses' && patch.masonryUvs?.length === patch.vertices.length) {
         const geometryUvs = geometry.getAttribute('uv');
         patch.masonryUvs.forEach((uv, index) => {
@@ -7289,7 +8054,10 @@ function addKarbandiVault(group, layout, walls) {
         : wallContinuationSide
           ? wallContinuationMaterial(wallContinuationSide)
           : roofMaterial;
-      const panelMaterial = wallClipSides.size ? panelBaseMaterial.clone() : panelBaseMaterial;
+      const panelMaterial = wallClipSides.size || (roomMode && wallContinuationSide)
+        ? panelBaseMaterial.clone()
+        : panelBaseMaterial;
+      if (roomMode && wallContinuationSide) configureRoomTransitionOpeningClip(panelMaterial);
       if (requiresWallSupportedRibOverlap) {
         // The two mirrored south bays expose opposite faces of their hidden
         // wall-to-rib closure strips.  Keep both visible so neither portal
@@ -7327,7 +8095,9 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.webSupportSides = topologyFace.supportSides;
       panel.userData.northWallClipped = requiresNorthWallClip;
       panel.userData.wallClippedSides = [...wallClipSides];
-      panel.userData.webPatchSolver = patch.type;
+      panel.userData.webPatchSolver = usesNorthVisibleRibExtrusion
+        ? 'portal-north-arch-to-rib-ruled-half-brick-shell'
+        : patch.type;
       panel.userData.northVisibleRibExtrusion = usesNorthVisibleRibExtrusion;
       panel.userData.northVisibleRibExtrusionAxis = usesNorthVisibleRibExtrusion ? 'visible-rib-to-north-wall:-world-z' : null;
       panel.userData.northVisibleRibSource = usesNorthVisibleRibExtrusion ? 'closest-visible-wall-supported-rib-section' : null;
@@ -7346,7 +8116,9 @@ function addKarbandiVault(group, layout, walls) {
         : [];
       panel.userData.webPatchFallbackFrom = patch.replacedPatchType ?? null;
       panel.userData.webPatchReplacedInvertedTriangleCount = patch.replacedInvertedTriangleCount ?? 0;
-      panel.userData.webPatchSurfaceVertexCount = patch.vertices.length;
+      panel.userData.webPatchSurfaceVertexCount = usesNorthVisibleRibExtrusion
+        ? geometry.userData.portalKarbandiSideCoverSurfaceVertexCount
+        : patch.vertices.length;
       panel.userData.webPatchInvertedTriangleCount = patch.invertedTriangleCount;
       panel.userData.webInwardCourseCount = fallbackFourRibCourseCount || patch.courseCount || 0;
       panel.userData.webInwardCourseWidth = fallbackFourRibCourseCount
@@ -7484,7 +8256,27 @@ function addKarbandiVault(group, layout, walls) {
           : (wallSides.size ? 'wall-leg-centerline' : null);
       panel.userData.springingAngle = webOptions.springingAngle;
       panel.userData.wallBearingDepth = webOptions.wallBearingDepth;
-      panel.userData.roofThickness = coverThickness;
+      panel.userData.roofThickness = panelThickness;
+      panel.userData.portalNorthArchBoundaryRule = usesNorthVisibleRibExtrusion
+        ? 'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg'
+        : null;
+      panel.userData.portalSideCoverThicknessRule = usesNorthVisibleRibExtrusion ? 'half-brick' : null;
+      panel.userData.portalNorthArchSideCover = usesNorthVisibleRibExtrusion;
+      panel.userData.portalSideCoverConstruction = usesNorthVisibleRibExtrusion
+        ? 'shared-clean-arch-to-rib-half-brick-shell'
+        : null;
+      panel.userData.portalSideCoverClosedReturns = usesNorthVisibleRibExtrusion
+        ? ['north-wall-arch', 'rib', 'spring', 'crown']
+        : [];
+      panel.userData.portalSideCoverWallSeat = usesNorthVisibleRibExtrusion
+        ? 'north-opening-plane-no-lateral-offset'
+        : null;
+      panel.userData.portalSideCoverSpringJoint = usesNorthVisibleRibExtrusion
+        ? 'jamb-aligned-and-overlapped-behind-visible-rib'
+        : null;
+      panel.userData.portalSideCoverCourseRows = usesNorthVisibleRibExtrusion
+        ? 'shared-world-height-resampled-wall-and-rib-profiles'
+        : null;
       panel.userData.wallEmbedTolerance = webOptions.wallEmbedTolerance;
       panel.userData.ribEmbedTolerance = webOptions.ribEmbedTolerance;
       panel.userData.ribEmbedApplied = webOptions.ribEmbedTolerance > 0;
@@ -7498,7 +8290,9 @@ function addKarbandiVault(group, layout, walls) {
       panel.userData.wallSupportedRoofClosureSidedness = requiresWallSupportedRibOverlap
         ? 'double-sided-at-wall-to-rib-seam'
         : null;
-      panel.userData.thicknessDirection = 'surface-normal';
+      panel.userData.thicknessDirection = usesNorthVisibleRibExtrusion
+        ? 'north-edge-buried-in-wall-rib-edge-surface-normal'
+        : 'surface-normal';
       panel.userData.soffitTermination = webOptions.soffitTermination;
       if (topologyFace.classification === 'EdgePerimeterCell' && topologyFace.supportEdges.length) {
         const supportEdge = topologyFace.supportEdges[0];
@@ -7581,9 +8375,13 @@ function addKarbandiVault(group, layout, walls) {
       const ribPoints = target.points;
       const wallPoints = ribPoints.map((point) => new THREE.Vector3(
         THREE.MathUtils.clamp(point.x, roofWestX, roofEastX),
-        point.y,
+        northArchHeightAtX(point.x),
         roofNorthZ,
       ));
+      const northSideCoverThickness = Math.max(
+        0.01,
+        (Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth) / 2,
+      );
       const patch = buildStructuredWebPatch([
         { kind: 'support', supportSide: 'north', supportSides: ['north'], sourceId: 'north-wall-clip', points: wallPoints },
         { kind: 'guide', sourceId: `north-rib-extrusion-end:${target.sourceId}`, points: [wallPoints.at(-1), ribPoints.at(-1)] },
@@ -7602,9 +8400,9 @@ function addKarbandiVault(group, layout, walls) {
       const topVertices = patch.vertices.map((vertex, index) => {
         const normal = patch.normals[index];
         return new THREE.Vector3(
-          vertex.x + normal.x * coverThickness,
-          vertex.y + normal.y * coverThickness,
-          vertex.z + normal.z * coverThickness,
+          vertex.x + normal.x * northSideCoverThickness,
+          vertex.y + normal.y * northSideCoverThickness,
+          vertex.z + normal.z * northSideCoverThickness,
         );
       });
       [...topVertices, ...patch.vertices].forEach((vertex) => {
@@ -7622,15 +8420,22 @@ function addKarbandiVault(group, layout, walls) {
         addTriangle(a, b, a + bottomOffset);
         addTriangle(b, b + bottomOffset, a + bottomOffset);
       });
-      const geometry = new THREE.BufferGeometry();
+      let geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
       geometry.setIndex(indices);
       geometry.computeVertexNormals();
-      if (roomMode) applyRoomWallContinuationBrickUvs(geometry, side, centerX, centerZ);
-      else applyWallContinuationBrickUvs(geometry, side);
+      geometry.dispose();
+      geometry = portalKarbandiArchToRibSideCoverGeometry(wallPoints, ribPoints, {
+        thickness: northSideCoverThickness,
+        ribOverlap: Math.max(ribWidth, ribDepth) * groupScale * 0.55,
+        side,
+        uOffset: continuationBondPhase[side] || 0,
+      });
+      if (!geometry) return;
       const material = wallContinuationMaterial(side).clone();
       material.side = THREE.DoubleSide;
+      configureRoomTransitionOpeningClip(material);
       material.clippingPlanes = [
         new THREE.Plane(new THREE.Vector3(0, 0, 1), -roofNorthZ),
         side === 'west'
@@ -7659,7 +8464,7 @@ function addKarbandiVault(group, layout, walls) {
         webSupportSides: ['north', side],
         northWallClipped: true,
         wallClippedSides: ['north', side],
-        webPatchSolver: patch.type,
+        webPatchSolver: 'portal-north-arch-to-rib-ruled-half-brick-shell',
         northVisibleRibExtrusion: true,
         northVisibleRibExtrusionAxis: 'visible-rib-to-north-wall:-world-z',
         northVisibleRibSource: 'closest-visible-wall-supported-rib-section',
@@ -7668,7 +8473,7 @@ function addKarbandiVault(group, layout, walls) {
         northVisibleRibProfile: ribPoints.map((point) => point.toArray()),
         northVisibleRibProfileExtent: 'closest-visible-wall-connected-section-after-topology-merge',
         northVisibleRibWallProfile: wallPoints.map((point) => point.toArray()),
-        webPatchSurfaceVertexCount: patch.vertices.length,
+        webPatchSurfaceVertexCount: geometry.userData.portalKarbandiSideCoverSurfaceVertexCount,
         webPatchInvertedTriangleCount: patch.invertedTriangleCount,
         webFourRibRegion: false,
         webFourRibInfillRegion: false,
@@ -7683,8 +8488,17 @@ function addKarbandiVault(group, layout, walls) {
         wallContinuationFollowsCornerGuide: false,
         wallContinuationMethod: 'closest-visible-rib-profile-extruded-north-and-clipped-by-north-wall',
         wallRoofGuide: 'north-wall-clip-plane',
-        roofThickness: coverThickness,
-        thicknessDirection: 'surface-normal',
+        roofThickness: northSideCoverThickness,
+        thicknessDirection: 'north-edge-buried-in-wall-rib-edge-surface-normal',
+        portalNorthArchBoundaryRule: 'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg',
+        portalSideCoverThicknessRule: 'half-brick',
+        portalSideCoverRibClip: 'upper-and-lower-skins-overlap-behind-visible-rib-leg-only',
+        portalNorthArchSideCover: true,
+        portalSideCoverConstruction: 'shared-clean-arch-to-rib-half-brick-shell',
+        portalSideCoverClosedReturns: ['north-wall-arch', 'rib', 'spring', 'crown'],
+        portalSideCoverWallSeat: 'north-opening-plane-no-lateral-offset',
+        portalSideCoverSpringJoint: 'jamb-aligned-and-overlapped-behind-visible-rib',
+        portalSideCoverCourseRows: 'shared-world-height-resampled-wall-and-rib-profiles',
       };
       group.add(panel);
       meshes.push(panel);
@@ -7888,6 +8702,7 @@ function squinchArchBandGeometry({
     designGreenHeight,
     32,
     {
+      archType: settings.archType,
       redOffset: Number.isFinite(Number(settings.redOffset)) ? Number(settings.redOffset) : -0.45,
     },
   );
@@ -8066,23 +8881,116 @@ function squinchCornerFanGeometry({
   return geometry;
 }
 
-function squinchWallArchInfillGeometry({ profile, wallTop, ribWidth, depth }) {
+function squinchWallArchInfillGeometry({
+  profile,
+  wallTop,
+  ribWidth,
+  depth,
+  openings = [],
+  minimumOpeningSpandrel = 0.0001,
+  intervalMode = 'all',
+}) {
   const usableProfile = profile.map((point) => new THREE.Vector2(
     point.x,
     Math.max(wallTop, point.y - ribWidth / 2),
   ));
-  const shape = new THREE.Shape();
-  shape.moveTo(usableProfile[0].x, wallTop);
-  usableProfile.forEach((point) => shape.lineTo(point.x, point.y));
-  shape.lineTo(usableProfile.at(-1).x, wallTop);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: Math.max(0.01, depth),
-    bevelEnabled: false,
-    curveSegments: 1,
-    steps: 1,
+  const solidShape = () => {
+        const solidShape = new THREE.Shape();
+        solidShape.moveTo(usableProfile[0].x, wallTop);
+        usableProfile.forEach((point) => solidShape.lineTo(point.x, point.y));
+        solidShape.lineTo(usableProfile.at(-1).x, wallTop);
+        solidShape.closePath();
+        return solidShape;
+      };
+  const profilePointsInRange = (points, startX, endX) => {
+    const yAt = (x) => archHeightAtX(points, x);
+    return [
+      new THREE.Vector2(startX, yAt(startX)),
+      ...points.filter((point) => point.x > startX + 0.000001 && point.x < endX - 0.000001),
+      new THREE.Vector2(endX, yAt(endX)),
+    ];
+  };
+  const stripShapes = [];
+  if (openings.length) {
+    const left = usableProfile[0].x;
+    const right = usableProfile.at(-1).x;
+    const breakpoints = [...new Set([
+      left,
+      right,
+      ...openings.flatMap((opening) => [
+        THREE.MathUtils.clamp(opening.left, left, right),
+        THREE.MathUtils.clamp(opening.right, left, right),
+      ]),
+    ].map((value) => Number(value.toFixed(9))))].sort((a, b) => a - b);
+    const solidJoinOverlap = Math.max(0.0015, Math.min(0.006, depth * 0.012));
+    for (let interval = 0; interval < breakpoints.length - 1; interval += 1) {
+      const nominalStartX = breakpoints[interval];
+      const nominalEndX = breakpoints[interval + 1];
+      const startX = interval === 0
+        ? nominalStartX
+        : Math.max(left, nominalStartX - solidJoinOverlap);
+      const endX = interval === breakpoints.length - 2
+        ? nominalEndX
+        : Math.min(right, nominalEndX + solidJoinOverlap);
+      if (endX - startX <= 0.000001) continue;
+      const midpointX = (nominalStartX + nominalEndX) / 2;
+      const activeOpening = openings.find((opening) => (
+        midpointX > opening.left - 0.000001 && midpointX < opening.right + 0.000001
+      ));
+      if (intervalMode === 'sides' && activeOpening) continue;
+      if (intervalMode === 'spandrel' && !activeOpening) continue;
+      const topPoints = profilePointsInRange(usableProfile, startX, endX);
+      const bottomSource = activeOpening?.archPoints?.length
+        ? activeOpening.archPoints
+        : activeOpening
+          ? [
+              new THREE.Vector2(activeOpening.left, activeOpening.top),
+              new THREE.Vector2(activeOpening.right, activeOpening.top),
+            ]
+          : null;
+      const sampleXs = [...new Set([
+        startX,
+        endX,
+        ...topPoints.map((point) => point.x),
+        ...(bottomSource || []).filter((point) => point.x > startX && point.x < endX).map((point) => point.x),
+      ].map((value) => Number(value.toFixed(9))))].sort((a, b) => a - b);
+      const top = sampleXs.map((x) => new THREE.Vector2(x, archHeightAtX(usableProfile, x)));
+      const bottom = sampleXs.map((x) => {
+        const requestedY = bottomSource ? archHeightAtX(bottomSource, x) : wallTop;
+        return new THREE.Vector2(
+          x,
+          Math.max(wallTop, Math.min(requestedY, archHeightAtX(usableProfile, x) - minimumOpeningSpandrel)),
+        );
+      });
+      if (!top.some((point, index) => point.y - bottom[index].y > 0.000001)) continue;
+      const strip = new THREE.Shape();
+      strip.moveTo(bottom[0].x, bottom[0].y);
+      bottom.slice(1).forEach((point) => strip.lineTo(point.x, point.y));
+      [...top].reverse().forEach((point) => strip.lineTo(point.x, point.y));
+      strip.closePath();
+      stripShapes.push(strip);
+    }
+  }
+  const extrusionDepth = Math.max(0.01, depth);
+  const geometries = (stripShapes.length ? stripShapes : [solidShape()]).map((shape) => {
+    const part = new THREE.ExtrudeGeometry(shape, {
+      depth: extrusionDepth,
+      bevelEnabled: false,
+      curveSegments: 1,
+      steps: 1,
+    });
+    part.translate(0, 0, -extrusionDepth / 2);
+    return part;
   });
-  geometry.translate(0, 0, -Math.max(0.01, depth) / 2);
+  const mergedGeometry = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries, false);
+  geometries.forEach((part) => {
+    if (part !== mergedGeometry) part.dispose();
+  });
+  // Each cap, reveal, and return keeps an independent normal. Sharing indexed
+  // vertices across the sealed strip joins averaged opposing faces and rendered
+  // the solid masonry as black triangular cavities at oblique camera angles.
+  const geometry = mergedGeometry.index ? mergedGeometry.toNonIndexed() : mergedGeometry;
+  if (geometry !== mergedGeometry) mergedGeometry.dispose();
   geometry.computeVertexNormals();
   applyWorldAlignedBrickUvs(geometry);
   const index = geometry.getIndex();
@@ -8107,6 +9015,15 @@ function squinchWallArchInfillGeometry({ profile, wallTop, ribWidth, depth }) {
   geometry.userData.roomWallExteriorMaterialIndex = 1;
   geometry.userData.roomWallReturnMaterialIndex = 2;
   geometry.userData.roomSquinchWallFaceBondMapping = 'exact-connected-room-wall-interior-and-exterior';
+  geometry.userData.roomSquinchMinimumOpeningSpandrel = minimumOpeningSpandrel;
+  geometry.userData.roomSquinchOpeningSpandrelConstruction = openings.length
+    ? 'solid-curve-to-curve-strips-extruded-through-full-wall-depth'
+    : 'solid-arch-cap-without-openings';
+  geometry.userData.roomSquinchOpeningSpandrelStripCount = stripShapes.length;
+  geometry.userData.roomSquinchOpeningSpandrelIntervalMode = intervalMode;
+  geometry.userData.roomSquinchOpeningSpandrelJoin = openings.length
+    ? 'overlapped-solid-strip-joints-with-flat-independent-face-normals'
+    : null;
   return geometry;
 }
 
@@ -8167,6 +9084,29 @@ function squinchVerticalArchSpandrelGeometry({ profile, fullHalfSpan, wallTop, t
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   geometry.computeVertexNormals();
+  const geometryIndex = geometry.getIndex();
+  const normals = geometry.getAttribute('normal');
+  const triangleCount = (geometryIndex ? geometryIndex.count : normals.count) / 3;
+  geometry.clearGroups();
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    let normalZ = 0;
+    for (let corner = 0; corner < 3; corner += 1) {
+      const vertexIndex = geometryIndex
+        ? geometryIndex.getX(triangle * 3 + corner)
+        : triangle * 3 + corner;
+      normalZ += normals.getZ(vertexIndex);
+    }
+    normalZ /= 3;
+    // These panels use the arch-plane rotation (opposite the structural
+    // wall-body rotation). The positive-Z cap therefore faces the Room and
+    // the negative-Z cap faces outside; all cut and joint faces are returns.
+    const materialIndex = normalZ > 0.5 ? 0 : normalZ < -0.5 ? 1 : 2;
+    geometry.addGroup(triangle * 3, 3, materialIndex);
+  }
+  geometry.userData.directRoomWallFaceMaterials = true;
+  geometry.userData.roomWallInteriorMaterialIndex = 0;
+  geometry.userData.roomWallExteriorMaterialIndex = 1;
+  geometry.userData.roomWallReturnMaterialIndex = 2;
   geometry.userData.roomSquinchVerticalSpandrelProfile = orderedProfile.map((point) => point.toArray());
   geometry.userData.roomSquinchVerticalSpandrelTopY = topY;
   geometry.userData.roomSquinchVerticalSpandrelBottomBoundary = 'actual-rib-outer-profile-with-spring-top-joint-extensions';
@@ -8938,17 +9878,31 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     karbandiFirstJunctionOctagon = [],
     wallHeights = {},
     wallThicknesses = {},
+    squinchWallFaceSources = {},
     usesSharedKarbandi = false,
+    exteriorCoverBoundaryRadius = null,
+    coverInteriorBoundaryRadius = null,
+    coverSpringYAtAngle = null,
+    coverShellThickness = null,
+    coverSpringTangents = null,
+    coverPlanSegments = 64,
+    skipTransitionDetails = false,
   } = context;
+  const roomInteriorCenterX = centerX;
+  const roomInteriorCenterZ = centerZ;
   const roomInteriorWidth = width;
   const roomInteriorDepth = depth;
+  const westWallThickness = Math.max(0.05, Number(wallThicknesses.west) || thickness);
+  const eastWallThickness = Math.max(0.05, Number(wallThicknesses.east) || thickness);
+  const northWallThickness = Math.max(0.05, Number(wallThicknesses.north) || thickness);
+  const southWallThickness = Math.max(0.05, Number(wallThicknesses.south) || thickness);
   const roomPlanShape = ['square', 'octagon', 'circle', 'polygon'].includes(building.roomPlanShape)
     ? building.roomPlanShape
     : 'square';
   const directBearing = roomPlanShape !== 'square' && building.buildingType !== 'vestibule';
   const transitionType = directBearing
     ? 'direct'
-    : ['karbandi', 'squinch', 'pendentive', 'muqarnas'].includes(building.domeTransition)
+    : ['none', 'karbandi', 'squinch', 'pendentive', 'muqarnas'].includes(building.domeTransition)
       ? building.domeTransition
       : 'karbandi';
   const configuredTransitionHeight = Math.max(0.2, Number(building.domeTransitionHeight) || 1.2);
@@ -8960,14 +9914,10 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     }
     : building.domeTransitionSettings?.[transitionType] || {};
   if (transitionType === 'squinch') {
-    const westThickness = Math.max(0.05, Number(wallThicknesses.west) || thickness);
-    const eastThickness = Math.max(0.05, Number(wallThicknesses.east) || thickness);
-    const northThickness = Math.max(0.05, Number(wallThicknesses.north) || thickness);
-    const southThickness = Math.max(0.05, Number(wallThicknesses.south) || thickness);
-    const westWallCenterX = centerX - width / 2 - westThickness / 2;
-    const eastWallCenterX = centerX + width / 2 + eastThickness / 2;
-    const northWallCenterZ = centerZ - depth / 2 - northThickness / 2;
-    const southWallCenterZ = centerZ + depth / 2 + southThickness / 2;
+    const westWallCenterX = centerX - width / 2 - westWallThickness / 2;
+    const eastWallCenterX = centerX + width / 2 + eastWallThickness / 2;
+    const northWallCenterZ = centerZ - depth / 2 - northWallThickness / 2;
+    const southWallCenterZ = centerZ + depth / 2 + southWallThickness / 2;
     centerX = (westWallCenterX + eastWallCenterX) / 2;
     centerZ = (northWallCenterZ + southWallCenterZ) / 2;
     width = eastWallCenterX - westWallCenterX;
@@ -8995,7 +9945,8 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     Math.min(width, depth) / 2,
   );
   const squinchOuterApothem = squinchFootprintApothem + squinchCoverThickness / 2;
-  const domeCoverType = ['dome', 'cone', 'pyramid'].includes(building.domeCoverType)
+  const upperCoverEnabled = ['dome', 'cone', 'pyramid'].includes(building.domeCoverType);
+  const domeCoverType = upperCoverEnabled
     ? building.domeCoverType
     : 'dome';
   const planSideCount = roomPlanShape === 'octagon'
@@ -9003,9 +9954,12 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     : roomPlanShape === 'polygon'
       ? Math.round(THREE.MathUtils.clamp(Number(building.roomPolygonSides) || 6, 3, 32))
       : domeCoverType === 'pyramid' ? 8 : 64;
+  const explicitCoverShellThickness = Number(coverShellThickness);
   const masonryShellThickness = Math.max(
     0.01,
-    Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth,
+    Number.isFinite(explicitCoverShellThickness) && explicitCoverShellThickness > 0
+      ? explicitCoverShellThickness
+      : Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth,
   );
   const domeCoverHeight = Math.max(0.2, Number(building.domeCoverHeight) || 5);
   const directInteriorBearingRadius = Math.max(
@@ -9013,10 +9967,38 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     Math.min(width, depth) / 2 * (roomPlanShape === 'circle' ? 1 : Math.cos(Math.PI / planSideCount)),
   );
   const directOuterBearingRadius = directInteriorBearingRadius + masonryShellThickness;
+  const squareInteriorFaceBearingRadius = Math.max(0.25, Math.min(
+    centerX - (roomInteriorCenterX - roomInteriorWidth / 2),
+    roomInteriorCenterX + roomInteriorWidth / 2 - centerX,
+    centerZ - (roomInteriorCenterZ - roomInteriorDepth / 2),
+    roomInteriorCenterZ + roomInteriorDepth / 2 - centerZ,
+  ));
+  const squareExteriorFaceBearingRadius = Math.max(0.25, Math.min(
+    centerX - (roomInteriorCenterX - roomInteriorWidth / 2 - westWallThickness),
+    roomInteriorCenterX + roomInteriorWidth / 2 + eastWallThickness - centerX,
+    centerZ - (roomInteriorCenterZ - roomInteriorDepth / 2 - northWallThickness),
+    roomInteriorCenterZ + roomInteriorDepth / 2 + southWallThickness - centerZ,
+  ));
+  const verticalWallInteriorFaceBearingRadius = directBearing
+    ? directInteriorBearingRadius
+    : squareInteriorFaceBearingRadius;
+  const verticalWallExteriorFaceBearingRadius = directBearing
+    ? directInteriorBearingRadius + Math.max(0.05, Number(thickness) || 0.35)
+    : squareExteriorFaceBearingRadius;
+  const explicitExteriorCoverBoundaryRadius = Number(exteriorCoverBoundaryRadius);
+  const exteriorCoverBoundaryFlush = Number.isFinite(explicitExteriorCoverBoundaryRadius)
+    && explicitExteriorCoverBoundaryRadius > 0.05;
+  const nonKarbandiDualShellWallFlush = transitionType !== 'karbandi'
+    && building.innerDomeEnabled === true;
   const transitionBearingRadius = transitionType === 'karbandi'
     && usesSharedKarbandi
+    && karbandiCrownRadius != null
     && Number.isFinite(Number(karbandiCrownRadius))
     ? Math.max(0.05, Number(karbandiCrownRadius))
+    : exteriorCoverBoundaryFlush
+      ? explicitExteriorCoverBoundaryRadius
+    : nonKarbandiDualShellWallFlush
+      ? verticalWallExteriorFaceBearingRadius
     : transitionType === 'squinch'
       ? squinchOuterApothem
       : directBearing
@@ -9063,7 +10045,9 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       : roomPlanShape === 'polygon'
         ? Math.min(64, Math.max(6, planSideCount * 2))
         : transitionType === 'squinch' ? 16 : 64;
-  const drumFootprintApothem = transitionType === 'squinch' ? squinchOuterApothem : domeRadius;
+  const drumFootprintApothem = nonKarbandiDualShellWallFlush
+    ? domeRadius
+    : transitionType === 'squinch' ? squinchOuterApothem : domeRadius;
   const drumOuterRadius = drumSideCount < 64
     ? drumFootprintApothem / Math.cos(Math.PI / drumSideCount)
     : domeRadius;
@@ -9088,7 +10072,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       referenceSpringY + (Number.isFinite(Number(transitionSettings.greenHeightOffset))
         ? Number(transitionSettings.greenHeightOffset)
         : -0.65),
-      { redOffset: Number.isFinite(Number(transitionSettings.redOffset)) ? Number(transitionSettings.redOffset) : -0.1 },
+      { archType: transitionSettings.archType, redOffset: Number.isFinite(Number(transitionSettings.redOffset)) ? Number(transitionSettings.redOffset) : -0.1 },
     );
     transitionTopY = Math.max(
       wallTop + 0.05,
@@ -9100,7 +10084,9 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     ? transitionTopY + squinchRibWidth / 2
     : transitionTopY;
   const drumTopY = drumBaseY + drumHeight;
-  const domePlanSegments = domeCoverType === 'pyramid' ? planSideCount : 64;
+  const domePlanSegments = domeCoverType === 'pyramid'
+    ? planSideCount
+    : Math.round(THREE.MathUtils.clamp(Number(coverPlanSegments) || 64, 16, 64));
   // domeRadius is the transition footprint apothem. An octagonal pyramid
   // therefore needs a larger vertex radius so all eight base faces land on
   // the same footprint line as the drum/transition below it.
@@ -9116,17 +10102,24 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     springY = Number(context.portalDomeGreenCircle.startY);
   }
   const redOffset = Number.isFinite(Number(domeArch.redOffset)) ? Number(domeArch.redOffset) : 0.45;
-  const redRadius = domeArch.redRadius == null ? null : Math.max(0.05, Number(domeArch.redRadius) || 1);
+  const redRadius = domeArch.redRadius == null
+    ? null
+    : Math.max(
+      ['hall', 'grid'].includes(building.buildingType) ? 0.0001 : 0.05,
+      Number(domeArch.redRadius) || 1,
+    );
   const greenOffset = Math.max(0.05, Number(domeArch.greenOffset) || 0.8);
   const greenHeight = springY + (Number.isFinite(Number(domeArch.greenHeightOffset)) ? Number(domeArch.greenHeightOffset) : 0);
   let domeConstruction = domeCoverType === 'dome'
     ? pointedArchConstruction(0, domeRadius, springY, greenOffset, greenHeight, {
+      archType: domeArch.archType,
       redOffset,
       redRadius,
     })
     : null;
   let domeArchProfile = domeCoverType === 'dome'
     ? archCurve(0, domeRadius, springY, springY, greenOffset, greenHeight, 32, {
+      archType: domeArch.archType,
       redOffset,
       redRadius,
     }).filter((point) => point.x >= -0.000001)
@@ -9134,6 +10127,70 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       new THREE.Vector2(0, springY + domeCoverHeight),
       new THREE.Vector2(domeGeometryBaseRadius, springY),
     ];
+  const tangentDevelopedCircularProfile = (baseRadius, tangent, segments = 64) => {
+    const direction = new THREE.Vector2(Number(tangent?.[0]), Number(tangent?.[1]));
+    if (!Number.isFinite(direction.x) || !Number.isFinite(direction.y)
+      || direction.lengthSq() < 0.00000001) return null;
+    direction.normalize();
+    // The Pendentive is sampled from its lower vault edge toward the dome.
+    // Continue that same direction into the dome: inward in radius and upward
+    // in elevation. A circular meridian whose centre lies on the dome axis is
+    // the unique round arch with this spring tangent and a level apex tangent.
+    if (direction.x > 0) direction.x *= -1;
+    if (direction.y < 0) direction.y *= -1;
+    if (direction.x > -0.00001 || direction.y < 0.00001) return null;
+    const radius = baseRadius / direction.y;
+    const center = new THREE.Vector2(
+      0,
+      springY - radius * -direction.x,
+    );
+    const sidePoint = new THREE.Vector2(baseRadius, springY);
+    const apexPoint = new THREE.Vector2(0, center.y + radius);
+    const sideAngle = Math.atan2(sidePoint.y - center.y, sidePoint.x - center.x);
+    return {
+      profile: sampleCircularArc(center, radius, Math.PI / 2, sideAngle, segments),
+      tangent: direction,
+      center,
+      radius,
+      sidePoint,
+      apexPoint,
+    };
+  };
+  const tangentDevelopedOuterDome = domeCoverType === 'dome'
+    ? tangentDevelopedCircularProfile(domeRadius, coverSpringTangents?.outer)
+    : null;
+  const tangentDevelopedInnerDome = domeCoverType === 'dome'
+    ? tangentDevelopedCircularProfile(
+      Math.max(0.05, domeRadius - masonryShellThickness),
+      coverSpringTangents?.inner,
+    )
+    : null;
+  if (tangentDevelopedOuterDome && tangentDevelopedInnerDome) {
+    domeArchProfile = tangentDevelopedOuterDome.profile;
+    const starterRadius = Math.max(0.0001, Number(redRadius) || 0.0001);
+    const starterNormal = new THREE.Vector2(
+      tangentDevelopedOuterDome.tangent.y,
+      -tangentDevelopedOuterDome.tangent.x,
+    );
+    const redCenter = tangentDevelopedOuterDome.sidePoint.clone()
+      .addScaledVector(starterNormal, -starterRadius);
+    domeConstruction = {
+      archType: domeArch.archType === 'one-point' ? 'one-point' : 'two-point',
+      centerX: 0,
+      sidePoint: tangentDevelopedOuterDome.sidePoint.clone(),
+      redCenter,
+      greenCenter: tangentDevelopedOuterDome.center.clone(),
+      redOffset: -redCenter.x,
+      greenOffset: 0,
+      greenHeight: tangentDevelopedOuterDome.center.y,
+      redRadius: starterRadius,
+      greenRadius: tangentDevelopedOuterDome.radius,
+      tangentPoint: tangentDevelopedOuterDome.sidePoint.clone(),
+      apexPoint: tangentDevelopedOuterDome.apexPoint.clone(),
+      springTangent: tangentDevelopedOuterDome.tangent.clone(),
+      profileRule: 'circular-dome-developed-directly-from-pendentive-crown-tangent',
+    };
+  }
   let portalInnerDomeArchProfile = null;
   let portalDomeGreenCircleConstruction = null;
   let portalKarbandiCrownCoverRadius = null;
@@ -9297,14 +10354,20 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     domeProfileDistances[index] += domeProfileDistances[index - 1];
   }
   const domeMeridianLength = Math.max(0.01, domeProfileDistances.at(-1) || 0);
-  const drumShellThickness = transitionType === 'squinch'
-    ? squinchCoverThickness
-    : masonryShellThickness;
+  const drumShellThickness = nonKarbandiDualShellWallFlush
+    ? Math.max(0.01, verticalWallExteriorFaceBearingRadius - verticalWallInteriorFaceBearingRadius)
+    : transitionType === 'squinch'
+      ? squinchCoverThickness
+      : masonryShellThickness;
   const domePatternCoverage = THREE.MathUtils.clamp(
     Number.isFinite(Number(building.domePatternCoverage)) ? Number(building.domePatternCoverage) : 85,
     0,
     100,
   );
+  const domeCenterOpeningEnabled = domeCoverType === 'dome'
+    && building.domeCenterOpeningEnabled === true
+    && domePatternCoverage < 100;
+  const domePatternCoverageForMaterial = domeCenterOpeningEnabled ? 100 : domePatternCoverage;
   const innerDomePatternCoverage = THREE.MathUtils.clamp(
     Number.isFinite(Number(building.innerDomePatternCoverage)) ? Number(building.innerDomePatternCoverage) : 85,
     0,
@@ -9346,7 +10409,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     Math.max(0.5, domePlanPerimeter),
     domeMeridianLength,
     false,
-  ), domePatternCoverage, domeColor, springY, domeRise);
+  ), domePatternCoverageForMaterial, domeColor, springY, domeRise);
   domeMaterial.side = THREE.DoubleSide;
   const domeInteriorMaterial = wallMaterial(
     domeWalls,
@@ -9380,15 +10443,6 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     false,
   );
   transitionMaterial.side = THREE.DoubleSide;
-  const transitionCoverExteriorMaterial = wallMaterial(
-    walls,
-    'room_dome_transition_exterior',
-    Math.max(0.5, Math.PI * 2 * domeRadius),
-    Math.max(0.5, transitionHeight),
-    true,
-  );
-  transitionCoverExteriorMaterial.side = THREE.DoubleSide;
-  transitionCoverExteriorMaterial.userData.roomSquinchCoverExteriorFinish = 'one-shared-exterior-bond-for-all-transition-covers';
   if (transitionType === 'karbandi' && usesSharedKarbandi && building.domeTransitionCoverEnabled === true) {
     const openingRadius = Math.max(0.001, domeRadius - masonryShellThickness);
     group.traverse((child) => {
@@ -9436,9 +10490,15 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     const squareRoomBodies = Object.fromEntries(['north', 'east', 'south', 'west'].map((side) => {
       const lowerWall = group.getObjectByName(`Room ${side} south-style wall`);
       const body = lowerWall?.children.find((child) => child.userData?.isRoomWallBody === true) || null;
-      if (squareTransition && body) {
+      // Only remove the lower wall's horizontal interface when a visible
+      // masonry continuation actually replaces it. The four-corner one-leg
+      // Karbandi currently leaves those upper transition walls hidden, so the
+      // original Room wall-top cap must remain closed beneath the ribs.
+      if (squareTransition && octagonWallsVisible && body) {
         body.geometry = removeRoomWallTopInterfaceGeometry(body.geometry);
         body.userData.roomWallContinuesIntoSquareTransition = true;
+      } else if (squareTransition && body) {
+        body.userData.roomWallTopCapRetainedBelowKarbandi = true;
       }
       return [side, body];
     }));
@@ -9702,7 +10762,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       const profiles = ['door', 'window'].map((openingType) => {
         const opening = settings?.[openingType];
         if (!opening?.enabled) return null;
-        const sourceBottom = openingType === 'window' ? Math.max(0, Number(opening.sillHeight) || 0) : 0;
+        const sourceBottom = Math.max(0, Number(opening.sillHeight) || 0);
         if (!roomKarbandiOpeningMovesAboveWall(opening, wallSpan, sourceWallHeight, sourceBottom)) return null;
         const unconstrainedProfile = southOpeningProfile(
           opening,
@@ -10401,9 +11461,20 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     }
   }
 
-  const innerDomeArchProfile = portalInnerDomeArchProfile || domeArchProfile.map((point, index) => {
-    const previous = domeArchProfile[Math.max(0, index - 1)];
-    const next = domeArchProfile[Math.min(domeArchProfile.length - 1, index + 1)];
+  let innerDomeArchProfile = portalInnerDomeArchProfile
+    || tangentDevelopedInnerDome?.profile
+    || domeArchProfile.map((point, index) => {
+    let previousIndex = Math.max(0, index - 1);
+    let nextIndex = Math.min(domeArchProfile.length - 1, index + 1);
+    // A zero-length red starter arc can intentionally repeat the spring point.
+    // Search past those duplicates so the shell normal still represents the
+    // real dome tangent and the interior base keeps its masonry offset.
+    while (previousIndex > 0
+      && domeArchProfile[previousIndex].distanceToSquared(point) < 0.0000000001) previousIndex -= 1;
+    while (nextIndex < domeArchProfile.length - 1
+      && domeArchProfile[nextIndex].distanceToSquared(point) < 0.0000000001) nextIndex += 1;
+    const previous = domeArchProfile[previousIndex];
+    const next = domeArchProfile[nextIndex];
     const tangent = next.clone().sub(previous).normalize();
     const normalA = new THREE.Vector2(-tangent.y, tangent.x);
     const normalB = normalA.clone().multiplyScalar(-1);
@@ -10418,6 +11489,22 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     }
     return offset;
   });
+  const explicitCoverInteriorBoundaryRadius = Number(coverInteriorBoundaryRadius);
+  if (Number.isFinite(explicitCoverInteriorBoundaryRadius)
+    && explicitCoverInteriorBoundaryRadius > 0.05
+    && innerDomeArchProfile.length > 1) {
+    const baseRadiusCorrection = explicitCoverInteriorBoundaryRadius - innerDomeArchProfile.at(-1).x;
+    const baseHeightCorrection = springY - innerDomeArchProfile.at(-1).y;
+    innerDomeArchProfile = innerDomeArchProfile.map((point, index) => {
+      const baseProgress = index / (innerDomeArchProfile.length - 1);
+      const jointBlend = THREE.MathUtils.smoothstep(baseProgress, 0.65, 1);
+      return new THREE.Vector2(
+        point.x + baseRadiusCorrection * jointBlend,
+        point.y + baseHeightCorrection * jointBlend,
+      );
+    });
+    innerDomeArchProfile.at(-1).set(explicitCoverInteriorBoundaryRadius, springY);
+  }
   const innerDomeProfile = innerDomeArchProfile;
   const innerCoverBaseProfileRadius = innerDomeProfile.at(-1)?.x ?? 0;
   const portalGreenCircleBearingRadius = Number(
@@ -10428,21 +11515,73 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     : domeCoverType === 'pyramid'
     ? innerCoverBaseProfileRadius * Math.cos(Math.PI / domePlanSegments)
     : innerCoverBaseProfileRadius;
+  const openingMaximumRadius = Math.max(
+    0,
+    Math.min(domeProfile.at(-1)?.x || 0, innerDomeProfile.at(-1)?.x || 0) * 0.995,
+  );
+  const domeCenterOpeningRadius = domeCenterOpeningEnabled
+    ? openingMaximumRadius * (100 - domePatternCoverage) / 100
+    : 0;
+  const trimProfileAtRadius = (profile, targetRadius) => {
+    if (targetRadius <= 0.000001 || profile.length < 2) return profile.map((point) => point.clone());
+    const crossingIndex = profile.findIndex((point) => point.x >= targetRadius);
+    if (crossingIndex <= 0) return profile.map((point) => point.clone());
+    const before = profile[crossingIndex - 1];
+    const after = profile[crossingIndex];
+    const span = after.x - before.x;
+    const amount = Math.abs(span) > 0.000001
+      ? THREE.MathUtils.clamp((targetRadius - before.x) / span, 0, 1)
+      : 0;
+    return [
+      before.clone().lerp(after, amount),
+      ...profile.slice(crossingIndex).map((point) => point.clone()),
+    ];
+  };
+  const renderedDomeProfile = trimProfileAtRadius(domeProfile, domeCenterOpeningRadius);
+  const renderedInnerDomeProfile = trimProfileAtRadius(innerDomeProfile, domeCenterOpeningRadius);
   const domeShellProfile = [
-    ...domeProfile,
-    ...[...innerDomeProfile].reverse(),
-    domeProfile[0].clone(),
+    ...renderedDomeProfile,
+    ...[...renderedInnerDomeProfile].reverse(),
+    renderedDomeProfile[0].clone(),
   ];
   const domeGeometry = new THREE.LatheGeometry(domeShellProfile, domePlanSegments);
   const domeUv = domeGeometry.getAttribute('uv');
+  const domePhaseAtRadius = (radius) => {
+    if (radius <= domeProfile[0].x) return 0;
+    for (let index = 1; index < domeProfile.length; index += 1) {
+      if (radius > domeProfile[index].x) continue;
+      const previous = domeProfile[index - 1];
+      const current = domeProfile[index];
+      const span = current.x - previous.x;
+      const amount = Math.abs(span) > 0.000001
+        ? THREE.MathUtils.clamp((radius - previous.x) / span, 0, 1)
+        : 0;
+      return THREE.MathUtils.lerp(
+        domeProfileDistances[index - 1],
+        domeProfileDistances[index],
+        amount,
+      ) / domeMeridianLength;
+    }
+    return 1;
+  };
+  const openingShellPhases = domeCenterOpeningRadius > 0.000001
+    ? [
+      ...renderedDomeProfile.map((point) => domePhaseAtRadius(point.x)),
+      ...[...renderedInnerDomeProfile].reverse().map((point) => domePhaseAtRadius(point.x)),
+      domePhaseAtRadius(renderedDomeProfile[0].x),
+    ]
+    : null;
   for (let vertex = 0; vertex < domeUv.count; vertex += 1) {
     const shellIndex = vertex % domeShellProfile.length;
-    const outerIndex = shellIndex < domeProfile.length
-      ? shellIndex
-      : shellIndex < domeProfile.length * 2
-        ? domeProfile.length - 1 - (shellIndex - domeProfile.length)
-        : 0;
-    domeUv.setY(vertex, domeProfileDistances[outerIndex] / domeMeridianLength);
+    if (openingShellPhases) domeUv.setY(vertex, openingShellPhases[shellIndex]);
+    else {
+      const outerIndex = shellIndex < domeProfile.length
+        ? shellIndex
+        : shellIndex < domeProfile.length * 2
+          ? domeProfile.length - 1 - (shellIndex - domeProfile.length)
+          : 0;
+      domeUv.setY(vertex, domeProfileDistances[outerIndex] / domeMeridianLength);
+    }
   }
   domeUv.needsUpdate = true;
   domeGeometry.userData.domeUvMapping = 'seamless-circumference-and-meridian-arc-length';
@@ -10454,8 +11593,47 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       : 'continuous-angular-distance-around-revolved-shell';
   domeGeometry.userData.domeMeridianLength = domeMeridianLength;
   domeGeometry.userData.domeShellThickness = masonryShellThickness;
-  domeGeometry.userData.domeShellOuterProfile = domeProfile.map((point) => point.toArray());
-  domeGeometry.userData.domeShellInnerProfile = innerDomeProfile.map((point) => point.toArray());
+  domeGeometry.userData.domeShellProfileLength = domeShellProfile.length;
+  domeGeometry.userData.domeShellOuterProfileLength = renderedDomeProfile.length;
+  domeGeometry.userData.domeShellInnerProfileLength = renderedInnerDomeProfile.length;
+  domeGeometry.userData.domeShellOuterProfile = renderedDomeProfile.map((point) => point.toArray());
+  domeGeometry.userData.domeShellInnerProfile = renderedInnerDomeProfile.map((point) => point.toArray());
+  domeGeometry.userData.domeCenterOpeningEnabled = domeCenterOpeningRadius > 0.000001;
+  domeGeometry.userData.domeCenterOpeningRadius = domeCenterOpeningRadius;
+  domeGeometry.userData.domeCenterOpeningPercent = domeCenterOpeningRadius > 0.000001
+    ? 100 - domePatternCoverage
+    : 0;
+  domeGeometry.userData.domeRetainedCoveragePercent = domePatternCoverage;
+  domeGeometry.userData.domeCenterOpeningRule = domeCenterOpeningRadius > 0.000001
+    ? 'vertical-circular-oculus-through-exterior-return-and-interior-shell'
+    : null;
+  domeGeometry.userData.domeInteriorBaseBearingRule = Number.isFinite(explicitCoverInteriorBoundaryRadius)
+    ? 'radius-and-height-pinned-to-vault-extrados-crown'
+    : null;
+  domeGeometry.userData.domeSpringTangentRule = tangentDevelopedOuterDome && tangentDevelopedInnerDome
+    ? 'interior-and-exterior-meridians-developed-from-corresponding-pendentive-crown-tangents'
+    : null;
+  domeGeometry.userData.domeSpringOuterTangent = tangentDevelopedOuterDome?.tangent.toArray() || null;
+  domeGeometry.userData.domeSpringInnerTangent = tangentDevelopedInnerDome?.tangent.toArray() || null;
+  if (typeof coverSpringYAtAngle === 'function') {
+    const position = domeGeometry.getAttribute('position');
+    const fadeHeight = Math.max(0.1, domeRise * 0.45);
+    for (let vertex = 0; vertex < position.count; vertex += 1) {
+      const x = position.getX(vertex);
+      const z = position.getZ(vertex);
+      let angle = Math.atan2(x, z);
+      if (angle < 0) angle += Math.PI * 2;
+      const heightAboveSpring = Math.max(0, position.getY(vertex) - springY);
+      const progress = THREE.MathUtils.clamp(heightAboveSpring / fadeHeight, 0, 1);
+      const fade = 1 - progress * progress * (3 - 2 * progress);
+      const curvedSpringY = Number(coverSpringYAtAngle(angle));
+      if (Number.isFinite(curvedSpringY)) {
+        position.setY(vertex, position.getY(vertex) + (curvedSpringY - springY) * fade);
+      }
+    }
+    position.needsUpdate = true;
+    domeGeometry.userData.domeSpringBoundaryRule = 'vault-extrados-curve-with-smooth-meridian-fade';
+  }
   if (domeCoverType === 'pyramid') domeGeometry.rotateY(-Math.PI / domePlanSegments);
   domeGeometry.translate(centerX, 0, centerZ);
   domeGeometry.computeVertexNormals();
@@ -10485,12 +11663,32 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
   dome.userData.roomDomeCenter = [centerX, centerZ];
   dome.userData.roomDomeDiameterSource = transitionType === 'karbandi' && usesSharedKarbandi
     ? 'retained-karbandi-rib-crown-centerline-ring'
+    : exteriorCoverBoundaryFlush
+      ? 'stone-skirt-outer-boundary'
+    : nonKarbandiDualShellWallFlush
+      ? 'vertical-wall-exterior-face'
     : directBearing
       ? roomPlanShape === 'circle' ? 'inscribed-room-circle' : 'regular-room-plan-apothem'
       : 'smaller-room-clear-span';
+  dome.userData.roomDomeDualShellWallFlush = nonKarbandiDualShellWallFlush;
+  dome.userData.roomDomeBaseExteriorFaceTargetRadius = exteriorCoverBoundaryFlush
+    ? explicitExteriorCoverBoundaryRadius
+    : nonKarbandiDualShellWallFlush
+      ? verticalWallExteriorFaceBearingRadius
+    : null;
+  dome.userData.roomDomeBaseExteriorFaceAlignment = exteriorCoverBoundaryFlush
+    ? 'outer-cover-base-flush-with-stone-skirt-outer-surface'
+    : nonKarbandiDualShellWallFlush
+      ? 'outer-cover-base-flush-with-vertical-wall-exterior-face'
+    : null;
   dome.userData.roomDomeRise = domeRise;
   dome.userData.roomDomeShellThickness = masonryShellThickness;
-  dome.userData.roomDomeShellThicknessSource = 'one-normal-brick-length';
+  dome.userData.roomDomeShellThicknessSource = ['hall', 'grid'].includes(building.buildingType)
+    ? 'one-normal-brick-length'
+    : Number.isFinite(explicitCoverShellThickness)
+    && explicitCoverShellThickness > 0
+    ? 'explicit-cover-shell-thickness'
+    : 'one-normal-brick-length';
   dome.userData.portalCoverInteriorFaceFlush = portalInteriorFaceFlush;
   dome.userData.portalCoverInteriorBearingTargetRadius = portalInteriorFaceFlush
     ? Math.max(
@@ -10501,6 +11699,12 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     )
     : null;
   dome.userData.portalCoverInteriorBaseRadius = innerCoverBaseBearingRadius;
+  dome.userData.roomDomeInteriorBaseTargetRadius = Number.isFinite(explicitCoverInteriorBoundaryRadius)
+    ? explicitCoverInteriorBoundaryRadius
+    : null;
+  dome.userData.roomDomeInteriorBaseJointRule = Number.isFinite(explicitCoverInteriorBoundaryRadius)
+    ? 'radius-and-height-pinned-to-vault-interior-green-point-at-extrados-crown'
+    : null;
   dome.userData.portalCoverExteriorRadiusAdjustment = portalInteriorFaceFlush
     ? domeRadius - transitionBearingRadius
     : 0;
@@ -10508,8 +11712,14 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
   dome.userData.roomDomeInteriorMaterialIndex = 0;
   dome.userData.roomDomeReturnMaterialIndex = 2;
   dome.userData.roomDomeBrickColor = domeColor;
-  dome.userData.roomDomePatternCoverage = domePatternCoverage;
-  dome.userData.roomDomePatternCutoffY = springY + domeRise * domePatternCoverage / 100;
+  dome.userData.roomDomePatternCoverage = domePatternCoverageForMaterial;
+  dome.userData.roomDomePatternCutoffY = springY + domeRise * domePatternCoverageForMaterial / 100;
+  dome.userData.roomDomeCenterOpeningEnabled = domeCenterOpeningRadius > 0.000001;
+  dome.userData.roomDomeCenterOpeningRadius = domeCenterOpeningRadius;
+  dome.userData.roomDomeCenterOpeningPercent = domeCenterOpeningRadius > 0.000001
+    ? 100 - domePatternCoverage
+    : 0;
+  dome.userData.roomDomeRetainedCoveragePercent = domePatternCoverage;
   dome.userData.roomDomeSpringY = springY;
   dome.userData.roomDomeFootY = springY;
   dome.userData.roomDomeLegExtension = outerDomeLegExtension;
@@ -10520,7 +11730,8 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       ? 'straight-cone-profile-revolved'
       : 'straight-octagonal-pyramid-profile';
   dome.userData.roomDomeArchConstruction = domeConstruction ? {
-    redCenter: domeConstruction.redCenter.toArray(),
+    archType: domeConstruction.archType,
+    redCenter: domeConstruction.redCenter?.toArray() || null,
     redRadius: domeConstruction.redRadius,
     greenCenter: domeConstruction.greenCenter.toArray(),
     greenRadius: domeConstruction.greenRadius,
@@ -10542,10 +11753,12 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     : null;
   dome.castShadow = true;
   dome.receiveShadow = true;
-  group.add(dome);
-  meshes.push(dome);
+  if (upperCoverEnabled) {
+    group.add(dome);
+    meshes.push(dome);
+  }
 
-  if (building.innerDomeEnabled === true) {
+  if (upperCoverEnabled && building.innerDomeEnabled === true) {
     // The inner dome is an independent masonry shell, not the underside of the
     // exterior dome. Its springing edge meets the drum's inner face, while its
     // independently designed four-centre profile leaves a real cavity above.
@@ -10555,7 +11768,9 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     // outward by one normal brick length.
     const innerDomeRadius = Math.max(
       0.08,
-      transitionType === 'squinch'
+      nonKarbandiDualShellWallFlush
+        ? verticalWallInteriorFaceBearingRadius
+        : transitionType === 'squinch'
         ? squinchOuterApothem - drumShellThickness
         : domeRadius - masonryShellThickness,
     );
@@ -10573,7 +11788,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       innerSpringY,
       innerGreenOffset,
       innerGreenHeight,
-      { redOffset: innerRedOffset, redRadius: innerRedRadius },
+      { archType: innerArch.archType, redOffset: innerRedOffset, redRadius: innerRedRadius },
     );
     let roomFacingProfile = archCurve(
       0,
@@ -10583,7 +11798,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       innerGreenOffset,
       innerGreenHeight,
       32,
-      { redOffset: innerRedOffset, redRadius: innerRedRadius },
+      { archType: innerArch.archType, redOffset: innerRedOffset, redRadius: innerRedRadius },
     ).filter((point) => point.x >= -0.000001);
     const innerDomeRise = innerConstruction
       ? innerConstruction.apexPoint.y - innerSpringY
@@ -10686,7 +11901,13 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     innerDome.userData.isRoomInnerDome = true;
     innerDome.userData.roomDomeRadius = innerDomeRadius;
     innerDome.userData.roomDomeSpringInteriorRadius = innerDomeRadius;
-    innerDome.userData.roomDomeSpringAlignment = transitionType === 'squinch'
+    innerDome.userData.roomDomeBaseInteriorFaceTargetRadius = nonKarbandiDualShellWallFlush
+      ? verticalWallInteriorFaceBearingRadius
+      : null;
+    innerDome.userData.roomDomeDualShellWallFlush = nonKarbandiDualShellWallFlush;
+    innerDome.userData.roomDomeSpringAlignment = nonKarbandiDualShellWallFlush
+      ? 'room-facing-shell-flush-with-vertical-wall-interior-face'
+      : transitionType === 'squinch'
       ? drumSideCount === 16
         ? 'room-facing-shell-flush-with-sixteen-sided-drum-inner-face-apothem'
         : 'room-facing-shell-flush-with-eight-sided-drum-inner-face-apothem'
@@ -10705,7 +11926,8 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     innerDome.userData.roomDomePatternCutoffY = innerSpringY + innerDomeRise * innerDomePatternCoverage / 100;
     innerDome.userData.roomDomeProfileSystem = 'independent-four-centre-red-green-circle-arch-revolved';
     innerDome.userData.roomDomeArchConstruction = innerConstruction ? {
-      redCenter: innerConstruction.redCenter.toArray(),
+      archType: innerConstruction.archType,
+      redCenter: innerConstruction.redCenter?.toArray() || null,
       redRadius: innerConstruction.redRadius,
       greenCenter: innerConstruction.greenCenter.toArray(),
       greenRadius: innerConstruction.greenRadius,
@@ -10799,7 +12021,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     }
   }
 
-  if (drumHeight > 0.0001) {
+  if (upperCoverEnabled && drumHeight > 0.0001) {
     const drumPlanPerimeter = drumSideCount < 64
       ? drumSideCount * 2 * drumOuterRadius * Math.sin(Math.PI / drumSideCount)
       : Math.PI * 2 * drumOuterRadius;
@@ -10819,12 +12041,16 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       false,
     );
     drumInteriorMaterial.side = THREE.DoubleSide;
+    const drumOuterApothem = drumSideCount < 64
+      ? drumOuterRadius * Math.cos(Math.PI / drumSideCount)
+      : drumOuterRadius;
+    const drumInteriorFaceTargetApothem = directBearing || exteriorCoverBoundaryFlush
+      ? verticalWallInteriorFaceBearingRadius
+      : Math.max(0.001, drumFootprintApothem - drumShellThickness);
     const drumInnerRadius = drumSideCount < 64
-      ? Math.max(
-        0.001,
-        (drumFootprintApothem - drumShellThickness) / Math.cos(Math.PI / drumSideCount),
-      )
-      : Math.max(0.001, drumOuterRadius - drumShellThickness);
+      ? Math.max(0.001, drumInteriorFaceTargetApothem / Math.cos(Math.PI / drumSideCount))
+      : Math.max(0.001, drumInteriorFaceTargetApothem);
+    const actualDrumRadialThickness = Math.max(0.001, drumOuterApothem - drumInteriorFaceTargetApothem);
     const drumProfile = [
       new THREE.Vector2(drumOuterRadius, -drumHeight / 2),
       new THREE.Vector2(drumOuterRadius, drumHeight / 2),
@@ -10841,13 +12067,11 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     drumUv.needsUpdate = true;
     drumGeometry.userData.roomDomeDrumOuterRadius = drumOuterRadius;
     drumGeometry.userData.roomDomeDrumInnerRadius = drumInnerRadius;
-    drumGeometry.userData.roomDomeDrumOuterApothem = drumSideCount < 64
-      ? drumOuterRadius * Math.cos(Math.PI / drumSideCount)
-      : drumOuterRadius;
+    drumGeometry.userData.roomDomeDrumOuterApothem = drumOuterApothem;
     drumGeometry.userData.roomDomeDrumInnerApothem = drumSideCount < 64
       ? drumInnerRadius * Math.cos(Math.PI / drumSideCount)
       : drumInnerRadius;
-    drumGeometry.userData.roomDomeDrumThickness = drumShellThickness;
+    drumGeometry.userData.roomDomeDrumThickness = actualDrumRadialThickness;
     drumGeometry.userData.roomDomeDrumCircumradiusThickness = drumOuterRadius - drumInnerRadius;
     assignRadialShellMaterialGroups(drumGeometry);
     const drum = new THREE.Mesh(drumGeometry, [drumMaterial, drumInteriorMaterial, drumMaterial]);
@@ -10871,11 +12095,13 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     drum.userData.roomDomeDrumBaseSource = transitionType === 'squinch'
       ? 'actual-squinch-rib-outer-crown-top'
       : 'transition-crown';
-    drum.userData.roomDomeDrumThickness = drumShellThickness;
+    drum.userData.roomDomeDrumThickness = actualDrumRadialThickness;
     drum.userData.roomDomeDrumExteriorMaterialIndex = 0;
     drum.userData.roomDomeDrumInteriorMaterialIndex = 1;
     drum.userData.roomDomeDrumReturnMaterialIndex = 2;
-    drum.userData.roomDomeDrumThicknessSource = transitionType === 'squinch'
+    drum.userData.roomDomeDrumThicknessSource = exteriorCoverBoundaryFlush
+      ? 'from-skirt-exterior-to-vertical-wall-interior-face'
+      : transitionType === 'squinch'
       ? 'nominal-vertical-room-wall-thickness'
       : 'one-normal-brick-length';
     drum.userData.roomDomeDrumBrickColor = drumColor;
@@ -10896,10 +12122,10 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       ? 'squinch-arch-crown-centerline'
       : null;
     drum.userData.roomDomeBaseRadius = domeRadius;
-    drum.userData.roomDomeDrumInteriorBearingRadius = directBearing
-      ? directInteriorBearingRadius
+    drum.userData.roomDomeDrumInteriorBearingRadius = directBearing || exteriorCoverBoundaryFlush
+      ? verticalWallInteriorFaceBearingRadius
       : null;
-    drum.userData.roomDomeDrumInteriorAlignment = directBearing
+    drum.userData.roomDomeDrumInteriorAlignment = directBearing || exteriorCoverBoundaryFlush
       ? 'flush-with-room-wall-interior-face'
       : null;
     drum.userData.roomDomeDrumPlan = domeCoverType === 'pyramid'
@@ -10918,7 +12144,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
     meshes.push(drum);
   }
 
-  if (outerDomeLegExtension > 0.0001) {
+  if (upperCoverEnabled && outerDomeLegExtension > 0.0001) {
     const extraLegInnerRadius = Math.max(0.01, domeGeometryBaseRadius - masonryShellThickness);
     const extraLegInteriorPerimeter = domeCoverType === 'pyramid'
       ? domePlanSegments * 2 * extraLegInnerRadius * Math.sin(Math.PI / domePlanSegments)
@@ -11002,45 +12228,45 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
   const ringTube = Math.max(0.025, Math.min(0.09, thickness * 0.16));
   // Pyramid rings follow the faceted base but retain a circular moulding
   // cross-section. Dome and Cone rings remain circular toruses.
-  const polygonRing = domeCoverType === 'pyramid';
-  const ringGeometry = polygonRing
-    ? polygonTubeSpringRingGeometry(domeRadius, ringTube, domePlanSegments)
-    : new THREE.TorusGeometry(domeRadius, ringTube, 10, 64);
-  if (!polygonRing) {
-    ringGeometry.userData.roomDomeRingFootprint = 'circle';
-    ringGeometry.userData.roomDomeRingSideCount = 64;
-    ringGeometry.userData.roomDomeRingCenterlineRadius = domeRadius;
-    ringGeometry.userData.roomDomeRingProfile = 'circle';
-    ringGeometry.userData.roomDomeRingProfileSegments = 10;
-    ringGeometry.userData.roomDomeRingTubeRadius = ringTube;
-    ringGeometry.userData.roomDomeRingAlignment = 'circular-springing-profile';
+  if (upperCoverEnabled && !skipTransitionDetails) {
+    const polygonRing = domeCoverType === 'pyramid';
+    const ringGeometry = polygonRing
+      ? polygonTubeSpringRingGeometry(domeRadius, ringTube, domePlanSegments)
+      : new THREE.TorusGeometry(domeRadius, ringTube, 10, 64);
+    if (!polygonRing) {
+      ringGeometry.userData.roomDomeRingFootprint = 'circle';
+      ringGeometry.userData.roomDomeRingSideCount = 64;
+      ringGeometry.userData.roomDomeRingCenterlineRadius = domeRadius;
+      ringGeometry.userData.roomDomeRingProfile = 'circle';
+      ringGeometry.userData.roomDomeRingProfileSegments = 10;
+      ringGeometry.userData.roomDomeRingTubeRadius = ringTube;
+      ringGeometry.userData.roomDomeRingAlignment = 'circular-springing-profile';
+    }
+    const springRing = new THREE.Mesh(ringGeometry, ringMaterial);
+    springRing.name = 'Room dome springing ring';
+    if (!polygonRing) springRing.rotation.x = Math.PI / 2;
+    springRing.position.set(centerX, springY, centerZ);
+    springRing.userData.wallSide = 'room_dome_ring';
+    springRing.userData.roomDomePart = 'springing-ring';
+    springRing.userData.isRoomDomeTransitionDetail = true;
+    springRing.userData.roomDomeTransitionType = transitionType;
+    springRing.userData.roomDomeRingColor = domeRingColor;
+    springRing.userData.roomDomeRingFinish = 'independent-solid-color-no-brick-bond-or-texture';
+    springRing.userData.roomDomeRingY = springY;
+    springRing.userData.roomDomeRingAnchor = 'between-independent-extra-leg-and-outer-cover';
+    springRing.visible = building.domeOuterRingEnabledByCoverType?.[domeCoverType] !== false;
+    springRing.userData.roomDomeRingCoverType = domeCoverType;
+    springRing.userData.roomDomeRingFootprint = polygonRing ? 'polygon' : 'circle';
+    springRing.userData.roomDomeRingSideCount = polygonRing ? domePlanSegments : 64;
+    springRing.userData.roomDomeRingProfile = 'circle';
+    springRing.userData.roomDomeRingFootprintSource = 'selected-outer-cover-base';
+    springRing.userData.roomDomeRingVisibleForCoverType = springRing.visible;
+    group.add(springRing);
+    meshes.push(springRing);
   }
-  const springRing = new THREE.Mesh(
-    ringGeometry,
-    ringMaterial,
-  );
-  springRing.name = 'Room dome springing ring';
-  if (!polygonRing) springRing.rotation.x = Math.PI / 2;
-  springRing.position.set(centerX, springY, centerZ);
-  springRing.userData.wallSide = 'room_dome_ring';
-  springRing.userData.roomDomePart = 'springing-ring';
-  springRing.userData.isRoomDomeTransitionDetail = true;
-  springRing.userData.roomDomeTransitionType = transitionType;
-  springRing.userData.roomDomeRingColor = domeRingColor;
-  springRing.userData.roomDomeRingFinish = 'independent-solid-color-no-brick-bond-or-texture';
-  springRing.userData.roomDomeRingY = springY;
-  springRing.userData.roomDomeRingAnchor = 'between-independent-extra-leg-and-outer-cover';
-  springRing.visible = building.domeOuterRingEnabledByCoverType?.[domeCoverType] !== false;
-  springRing.userData.roomDomeRingCoverType = domeCoverType;
-  springRing.userData.roomDomeRingFootprint = polygonRing ? 'polygon' : 'circle';
-  springRing.userData.roomDomeRingSideCount = polygonRing ? domePlanSegments : 64;
-  springRing.userData.roomDomeRingProfile = 'circle';
-  springRing.userData.roomDomeRingFootprintSource = 'selected-outer-cover-base';
-  springRing.userData.roomDomeRingVisibleForCoverType = springRing.visible;
-  group.add(springRing);
-  meshes.push(springRing);
 
   const addTransitionRibs = ({ count, tube, type, material, crownBias = 0.72 }) => {
+    if (skipTransitionDetails) return;
     const displayType = `${type.charAt(0).toUpperCase()}${type.slice(1)}`;
     for (let index = 0; index < count; index += 1) {
       const angle = (index / count) * Math.PI * 2;
@@ -11336,7 +12562,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
         completeArchCoverHalfSpan,
       });
     }
-    if (building.domeTransitionCoverEnabled === true) {
+    {
       const assembly = new THREE.Group();
       assembly.name = 'Room squinch square-to-circle transition cover';
       assembly.userData.wallSide = 'room_dome_transition';
@@ -11346,6 +12572,10 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       assembly.userData.roomDomeTransitionType = 'squinch';
       assembly.userData.roomDomeTransitionSettings = { ...transitionSettings };
       assembly.userData.roomDomeSpringY = transitionTopY;
+      const wallExtensionAssembly = new THREE.Group();
+      wallExtensionAssembly.name = 'Room Squinch vertical walls clipped below arches';
+      wallExtensionAssembly.userData.isRoomSquinchVerticalWallExtensionAssembly = true;
+      wallExtensionAssembly.userData.roomSquinchWallBoundary = 'all-masonry-below-rib-belongs-to-adjoining-vertical-wall';
       const northThickness = Math.max(0.05, Number(wallThicknesses.north) || thickness);
       const eastThickness = Math.max(0.05, Number(wallThicknesses.east) || thickness);
       const southThickness = Math.max(0.05, Number(wallThicknesses.south) || thickness);
@@ -11380,6 +12610,68 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
         north: roomInteriorWidth + roomInteriorDepth + roomInteriorWidth / 2,
         west: roomInteriorWidth * 2 + roomInteriorDepth + roomInteriorDepth / 2,
       };
+      const connectedWallFaceMaterials = (side, fallbackSpan) => {
+        const connectedWall = group.getObjectByName(`Room ${side} south-style wall`);
+        const connectedBody = connectedWall?.children.find((child) => child.userData?.isRoomWallBody === true);
+        const suppliedSource = squinchWallFaceSources?.[side];
+        const sourceMaterials = Array.isArray(suppliedSource?.materials)
+          ? suppliedSource.materials
+          : Array.isArray(connectedBody?.material) ? connectedBody.material : [];
+        const material = (materialIndex, fallbackSide, phase = 0, perimeter = null) => (
+          sourceMaterials[materialIndex] || directRoomWallFaceMaterial(
+            walls,
+            fallbackSide,
+            Math.max(0.5, fallbackSpan),
+            Math.max(0.5, transitionHeight),
+            phase,
+            perimeter,
+          )
+        );
+        return {
+          connectedWall,
+          connectedBody,
+          materials: [
+            material(
+              connectedBody?.userData?.roomWallInteriorMaterialIndex ?? 0,
+              side,
+              roomInteriorBondPhase[side],
+              roomInteriorPerimeter,
+            ),
+            material(connectedBody?.userData?.roomWallExteriorMaterialIndex ?? 1, `${side}_exterior`),
+            sourceMaterials[connectedBody?.userData?.roomWallReturnMaterialIndex ?? 2]
+              || wallMaterial(walls, side, Math.max(0.5, fallbackSpan), Math.max(0.5, transitionHeight), true),
+          ],
+          uvMapping: suppliedSource?.uvMapping || (side === 'north'
+            ? { axis: 'x', origin: roomInteriorCenterX, sign: -1 }
+            : side === 'south'
+              ? { axis: 'x', origin: roomInteriorCenterX, sign: 1 }
+              : side === 'east'
+                ? { axis: 'z', origin: roomInteriorCenterZ, sign: -1 }
+                : { axis: 'z', origin: roomInteriorCenterZ, sign: 1 }),
+        };
+      };
+      const applyConnectedWallCourseUvs = (panel, uvMapping) => {
+        const positions = panel.geometry.getAttribute('position');
+        const uvs = panel.geometry.getAttribute('uv');
+        if (!positions || !uvs || !uvMapping) return;
+        panel.updateMatrix();
+        const point = new THREE.Vector3();
+        for (let vertex = 0; vertex < positions.count; vertex += 1) {
+          point.fromBufferAttribute(positions, vertex).applyMatrix4(panel.matrix);
+          uvs.setXY(
+            vertex,
+            ((uvMapping.axis === 'z' ? point.z : point.x) - uvMapping.origin) * uvMapping.sign,
+            point.y,
+          );
+        }
+        uvs.needsUpdate = true;
+        panel.geometry.userData.roomSquinchWallCourseUvMapping = {
+          ...uvMapping,
+          vertical: 'assembly-y',
+          source: 'exact-adjoining-vertical-wall-coordinate-system',
+        };
+      };
+      let squinchWallInfillPanelCount = 0;
       archEntries.forEach((entry) => {
         if (entry.index % 2 === 1) {
           // Clip the rib curve at the vertical-wall top. The corner cover must
@@ -11484,16 +12776,10 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
             return { ...fan, innerMeetingProfile, outerMeetingProfile };
           });
           fanHalves.forEach((fan, fanIndex) => {
-            const panelMaterial = directRoomWallFaceMaterial(
-              walls,
-              fan.side,
-              fan.innerProfile.reduce((sum, point, profileIndex) => (
-                profileIndex === 0 ? 0 : sum + point.distanceTo(fan.innerProfile[profileIndex - 1])
-              ), 0),
-              Math.max(0.5, transitionHeight),
-              roomInteriorBondPhase[fan.side],
-              roomInteriorPerimeter,
-            );
+            const fanSpan = fan.innerProfile.reduce((sum, point, profileIndex) => (
+              profileIndex === 0 ? 0 : sum + point.distanceTo(fan.innerProfile[profileIndex - 1])
+            ), 0);
+            const { materials: panelMaterials, uvMapping } = connectedWallFaceMaterials(fan.side, fanSpan);
             const panel = new THREE.Mesh(squinchCornerFanGeometry({
               innerMeetingProfile: fan.innerMeetingProfile,
               innerProfile: fan.innerProfile,
@@ -11506,11 +12792,12 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
                 0.008,
                 Math.min(0.03, (Number(walls.bricks?.brickHeight) || 0.065) * 0.2),
               ),
-            }), [panelMaterial, transitionCoverExteriorMaterial, panelMaterial]);
+            }), panelMaterials);
             panel.name = `Room Squinch corner roof at arch ${entry.index + 1} ${fan.side} half`;
             panel.userData.wallSide = fan.side;
-            panel.userData.roomDomePart = 'squinch-transition-cover';
-            panel.userData.isRoomDomeTransitionCover = true;
+            panel.userData.roomDomePart = null;
+            panel.userData.isRoomDomeTransitionCover = false;
+            panel.userData.isRoomSquinchVerticalWallExtension = true;
             panel.userData.roomSquinchRoofPanelType = 'corner';
             panel.userData.roomSquinchCornerArchIndex = entry.index;
             panel.userData.roomSquinchCornerFanHalf = fanIndex;
@@ -11534,65 +12821,140 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
             panel.userData.roomSquinchRoofThicknessSource = 'nominal-vertical-room-wall-thickness';
             panel.userData.roomSquinchRoofThicknessDirection = 'horizontal-plan-to-vertical-wall-exterior-faces';
             panel.userData.roomSquinchInteriorBondSource = `connected-${fan.side}-vertical-wall-interior-face`;
-            panel.userData.roomSquinchExteriorBondSide = 'room_dome_transition_exterior';
-            panel.userData.roomSquinchExteriorBondAssembly = 'all-transition-covers-one-object';
+            panel.userData.roomSquinchExteriorBondSide = `${fan.side}_exterior`;
+            panel.userData.roomSquinchExteriorBondAssembly = 'connected-vertical-wall-exterior-face';
+            panel.userData.roomSquinchWallBondSource = 'shared-connected-room-wall-face-materials-and-world-y-uv-origin';
+            applyConnectedWallCourseUvs(panel, uvMapping);
             panel.castShadow = true;
             panel.receiveShadow = true;
-            assembly.add(panel);
+            wallExtensionAssembly.add(panel);
             meshes.push(panel);
 
           });
           return;
         }
-        if (transitionSettings.openWallArchBays === true) return;
         const side = wallSideByArchIndex[entry.index];
         const wallDepth = Math.max(0.05, Number(wallThicknesses[side]) || thickness);
-        const connectedWall = group.getObjectByName(`Room ${side} south-style wall`);
-        const connectedBody = connectedWall?.children.find((child) => child.userData?.isRoomWallBody === true);
-        const connectedMaterials = Array.isArray(connectedBody?.material) ? connectedBody.material : [];
-        const cloneConnectedMaterial = (materialIndex, fallbackSide) => {
-          const source = connectedMaterials[materialIndex];
-          return source?.clone?.() || wallMaterial(
-            walls,
-            fallbackSide,
+        const wallOpeningSettings = walls.roomWallOpenings?.[side]
+          || DEFAULT_WALL_SYSTEM.roomWallOpenings[side];
+        const transitionOpeningProfiles = ['door', 'window'].flatMap((openingType) => {
+          const opening = wallOpeningSettings?.[openingType];
+          if (!opening?.enabled) return [];
+          const sill = Math.max(0, Number(opening.sillHeight) || 0);
+          // Use the same height constraint as the lower wall. Reconstructing
+          // this with an artificial unbounded height produced a second, taller
+          // arch that did not match the visible soldier course and could rise
+          // above the Squinch rib.
+          const sourceWallHeight = Math.max(0.05, Number(wallHeights?.[side]) || wallTop);
+          const openingProfile = southOpeningProfile(
+            opening,
+            0,
             entry.halfSpan * 2,
-            Math.max(0.5, transitionHeight),
-            true,
+            opening.head === 'arch'
+              ? sourceWallHeight
+              : Math.max(sourceWallHeight + 100, sill + Math.max(0, Number(opening.height) || 0) + 100),
+            sill,
           );
-        };
-        const panelMaterials = [
-          cloneConnectedMaterial(connectedBody?.userData?.roomWallInteriorMaterialIndex ?? 0, side),
-          transitionCoverExteriorMaterial,
-          cloneConnectedMaterial(connectedBody?.userData?.roomWallReturnMaterialIndex ?? 2, side),
-        ];
+          return openingProfile.top > wallTop + 0.0001
+            ? [{ ...openingProfile, openingType }]
+            : [];
+        });
+        // An explicitly open Squinch bay may remain empty only when no lower
+        // door or window reaches this transition. If an opening crosses the
+        // wall top, retain the surrounding masonry panel and cut the exact
+        // opening profile from it. This preserves the brick spandrel between
+        // the opening head and the Squinch arch instead of deleting the whole
+        // bay above the door/window.
+        if (transitionSettings.openWallArchBays === true && !transitionOpeningProfiles.length) return;
+        const { connectedWall, materials: panelMaterials, uvMapping } = connectedWallFaceMaterials(side, entry.halfSpan * 2);
+        const minimumOpeningSpandrel = 0.0001;
         const panel = new THREE.Mesh(squinchWallArchInfillGeometry({
           profile: entry.profile,
           wallTop,
           ribWidth,
           depth: wallDepth,
+          openings: transitionOpeningProfiles,
+          minimumOpeningSpandrel,
+          intervalMode: transitionOpeningProfiles.length ? 'sides' : 'all',
         }), panelMaterials);
         panel.name = `Room Squinch ${side} wall extension clipped under arch`;
         panel.rotation.y = connectedWall?.rotation.y ?? entry.angle + Math.PI;
         panel.position.copy(entry.worldMidpoint);
         panel.userData.wallSide = side;
-        panel.userData.roomDomePart = 'squinch-transition-cover';
-        panel.userData.isRoomDomeTransitionCover = true;
+        panel.userData.roomDomePart = null;
+        panel.userData.isRoomDomeTransitionCover = false;
+        panel.userData.isRoomSquinchVerticalWallExtension = true;
         panel.userData.roomSquinchRoofPanelType = 'wall';
         panel.userData.roomSquinchWallArchIndex = entry.index;
         panel.userData.roomSquinchWallExtensionSide = side;
+        panel.userData.roomSquinchOpeningTypes = transitionOpeningProfiles.map((opening) => opening.openingType);
+        panel.userData.roomSquinchOpeningContinuation = 'same-world-height-cut-from-connected-lower-wall';
+        panel.userData.roomSquinchMinimumOpeningSpandrel = minimumOpeningSpandrel;
+        panel.userData.roomSquinchOpeningSpandrelRule = 'retain-at-least-one-brick-course-between-opening-head-and-squinch-soffit';
         panel.userData.roomSquinchWallExtensionClip = 'vertical-room-wall-bricks-clipped-to-arch-underside';
         panel.userData.roomSquinchWallFaceAlignment = 'exact-connected-room-wall-interior-and-exterior-planes';
-        panel.userData.roomSquinchWallBondSource = 'exact-connected-room-wall-face-materials-and-uv-axes';
+        panel.userData.roomSquinchWallBondSource = 'shared-connected-room-wall-face-materials-and-world-y-uv-origin';
         panel.userData.roomSquinchWallInteriorMaterialIndex = 0;
         panel.userData.roomSquinchWallExteriorMaterialIndex = 1;
         panel.userData.roomSquinchInteriorBondSource = `connected-${side}-vertical-wall-interior-face`;
-        panel.userData.roomSquinchExteriorBondSide = 'room_dome_transition_exterior';
-        panel.userData.roomSquinchExteriorBondAssembly = 'all-transition-covers-one-object';
+        panel.userData.roomSquinchExteriorBondSide = `${side}_exterior`;
+        panel.userData.roomSquinchExteriorBondAssembly = 'connected-vertical-wall-exterior-face';
+        panel.userData.roomSquinchBrickCourseMapping = 'continuous-from-adjoining-vertical-wall-world-y-courses';
+        applyConnectedWallCourseUvs(panel, uvMapping);
         panel.castShadow = true;
         panel.receiveShadow = true;
-        assembly.add(panel);
+        wallExtensionAssembly.add(panel);
         meshes.push(panel);
+        squinchWallInfillPanelCount += 1;
+        transitionOpeningProfiles.forEach((openingProfile) => {
+          const spandrelMaterials = panelMaterials.map((sourceMaterial) => {
+            const spandrelMaterial = sourceMaterial.clone();
+            spandrelMaterial.side = THREE.DoubleSide;
+            spandrelMaterial.polygonOffset = true;
+            spandrelMaterial.polygonOffsetFactor = -1;
+            spandrelMaterial.polygonOffsetUnits = -1;
+            spandrelMaterial.userData = {
+              ...sourceMaterial.userData,
+              roomSquinchDedicatedOpeningSpandrel: true,
+            };
+            return spandrelMaterial;
+          });
+          const spandrel = new THREE.Mesh(squinchWallArchInfillGeometry({
+            profile: entry.profile,
+            wallTop,
+            ribWidth,
+            depth: wallDepth,
+            openings: [openingProfile],
+            minimumOpeningSpandrel,
+            intervalMode: 'spandrel',
+          }), spandrelMaterials);
+          spandrel.name = `Room Squinch ${side} ${openingProfile.openingType} full opening-head spandrel`;
+          spandrel.rotation.copy(panel.rotation);
+          spandrel.position.copy(panel.position);
+          spandrel.renderOrder = 1;
+          spandrel.castShadow = true;
+          spandrel.receiveShadow = true;
+          spandrel.userData.wallSide = side;
+          spandrel.userData.roomDomePart = null;
+          spandrel.userData.isRoomSquinchVerticalWallExtension = true;
+          spandrel.userData.roomSquinchRoofPanelType = 'opening-head-spandrel';
+          spandrel.userData.roomSquinchOpeningType = openingProfile.openingType;
+          spandrel.userData.roomSquinchOpeningHeadSpandrel = true;
+          spandrel.userData.roomSquinchOpeningHeadSpandrelRule = 'complete-solid-wall-between-soldier-head-and-squinch-soffit';
+          spandrel.userData.roomSquinchOpeningHeadProfileSource = 'exact-lower-wall-visible-soldier-profile';
+          spandrel.userData.roomSquinchOpeningHeadProfile = openingProfile.archPoints?.map((point) => point.toArray()) || [
+            [openingProfile.left, openingProfile.top],
+            [openingProfile.right, openingProfile.top],
+          ];
+          spandrel.userData.roomSquinchWallInteriorMaterialIndex = 0;
+          spandrel.userData.roomSquinchWallExteriorMaterialIndex = 1;
+          spandrel.userData.roomSquinchWallReturnMaterialIndex = 2;
+          applyConnectedWallCourseUvs(spandrel, uvMapping);
+          wallExtensionAssembly.add(spandrel);
+          meshes.push(spandrel);
+        });
       });
+      if (building.domeTransitionCoverEnabled === true) {
       const skirt = new THREE.Group();
       skirt.name = 'Room Squinch vertical drum brick extension clipped above arches';
       skirt.userData.wallSide = 'room_dome_transition';
@@ -11602,7 +12964,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       skirt.userData.roomSquinchDrumSkirtSideCount = 8;
       skirt.userData.roomSquinchDrumSkirtClip = 'drum-wall-starts-immediately-above-actual-rib-outer-edges';
       skirt.userData.roomSquinchDrumSkirtExtrusion = 'constant-arch-plane-xz-with-no-inward-sixteen-face-bends';
-      skirt.userData.roomSquinchBrickCourseMapping = 'one-continuous-unequal-octagon-perimeter-running-course-aligned-to-drum-foot';
+      skirt.userData.roomSquinchBrickCourseMapping = 'independent-transition-cover-interior-and-exterior-perimeter-courses';
       skirt.userData.roomSquinchDrumSkirtBottomY = wallTop;
       skirt.userData.roomSquinchDrumSkirtTopY = drumBaseY;
       const spandrelPerimeter = archEntries.reduce(
@@ -11612,7 +12974,7 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       let spandrelPhase = 0;
       archEntries.forEach((entry) => {
         const fullSpan = entry.spandrelHalfSpan * 2;
-        const panelMaterial = wallMaterial(
+        const transitionInteriorMaterial = wallMaterial(
           walls,
           'room_dome_transition',
           Math.max(0.5, fullSpan),
@@ -11622,17 +12984,33 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
           false,
           spandrelPerimeter,
         );
-        if (panelMaterial.map) {
-          panelMaterial.map.offset.y -= transitionTopY * panelMaterial.map.repeat.y;
-          panelMaterial.map.needsUpdate = true;
-        }
+        const transitionExteriorMaterial = wallMaterial(
+          walls,
+          'room_dome_transition_exterior',
+          Math.max(0.5, fullSpan),
+          Math.max(0.5, transitionHeight),
+          true,
+          spandrelPhase + entry.spandrelHalfSpan,
+          false,
+          spandrelPerimeter,
+        );
+        [transitionInteriorMaterial, transitionExteriorMaterial].forEach((material) => {
+          if (!material.map) return;
+          material.map.offset.y -= transitionTopY * material.map.repeat.y;
+          material.map.needsUpdate = true;
+        });
+        const panelMaterials = [
+          transitionInteriorMaterial,
+          transitionExteriorMaterial,
+          transitionInteriorMaterial,
+        ];
         const panel = new THREE.Mesh(squinchVerticalArchSpandrelGeometry({
           profile: entry.coverProfile,
           fullHalfSpan: entry.spandrelHalfSpan,
           wallTop,
           topY: drumBaseY,
           depth: squinchCoverThickness,
-        }), panelMaterial);
+        }), panelMaterials);
         panel.name = `Room Squinch vertical drum extension above arch ${entry.index + 1}`;
         panel.rotation.y = entry.angle;
         panel.position.copy(entry.worldMidpoint);
@@ -11643,9 +13021,13 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
         panel.userData.roomSquinchArchIndex = entry.index;
         panel.userData.roomSquinchVerticalExtrusion = true;
         panel.userData.roomSquinchFinishSide = 'room_dome_transition';
-        panel.userData.roomSquinchFinishIndependence = 'lower-octagon-independent-from-sixteen-sided-drum';
+        panel.userData.roomSquinchFinishIndependence = 'transition-cover-independent-from-vertical-walls-and-drum';
         panel.userData.roomSquinchDrumWallBottomBoundary = 'actual-arch-upper-edge-no-below-spring-wedges';
         panel.userData.roomSquinchBrickCourseMapping = 'one-continuous-unequal-octagon-perimeter-running-course-aligned-to-drum-foot';
+        panel.userData.roomSquinchWallBondSource = 'independent-transition-cover-interior-and-exterior';
+        panel.userData.roomSquinchInteriorBondSide = 'room_dome_transition';
+        panel.userData.roomSquinchExteriorBondSide = 'room_dome_transition_exterior';
+        panel.userData.roomSquinchExteriorBondAssembly = 'transition-cover-exterior';
         panel.userData.roomSquinchSpandrelPhase = spandrelPhase;
         panel.userData.roomSquinchSpandrelSpan = fullSpan;
         panel.userData.roomSquinchSpandrelArchCoverHalfSpan = entry.completeArchCoverHalfSpan;
@@ -11668,25 +13050,28 @@ function addRoomDomeCover(group, meshes, building, walls, context) {
       skirt.userData.roomSquinchSpandrelPerimeter = spandrelPerimeter;
       skirt.userData.roomSquinchSpandrelJoint = 'four-widened-corner-faces-overlap-four-straight-faces-with-continuous-bond-phase';
       assembly.add(skirt);
+      }
+      if (wallExtensionAssembly.children.length) group.add(wallExtensionAssembly);
       assembly.userData.roomSquinchRoofAssembly = {
         construction: 'arch-derived-three-part-cover',
         cornerArchCount: 4,
         cornerPanelCount: 8,
         wallArchCount: 4,
-        wallPanelCount: transitionSettings.openWallArchBays === true ? 0 : 4,
+        wallPanelCount: squinchWallInfillPanelCount,
         openWallArchBays: transitionSettings.openWallArchBays === true,
         drumSkirtSideCount: 8,
         cornerRule: 'each-corner-arch-fans-from-both-legs-to-room-corner-and-meets-at-apex-seam',
         wallRule: 'vertical-room-wall-continues-upward-and-is-clipped-under-wall-arch',
         drumRule: 'eight-vertical-arch-plane-spandrels-continue-drum-brickwork-down-without-inward-bends',
       };
-      group.add(assembly);
+      if (building.domeTransitionCoverEnabled === true) group.add(assembly);
     }
     squinchRibMaterial.dispose();
   } else if (transitionType === 'pendentive') {
     const curvature = THREE.MathUtils.clamp(Number(transitionSettings.curvature) || 1.45, 0.35, 3);
     addTransitionRibs({ count: 4, tube: ringTube * 0.62, type: 'pendentive', material: ringMaterial, crownBias: THREE.MathUtils.clamp(0.35 + curvature * 0.2, 0.42, 0.88) });
   }
+  if (skipTransitionDetails) ringMaterial.dispose();
 }
 
 function addPortalHalfSquinch(group, meshes, building, walls, context) {
@@ -11706,7 +13091,7 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
   const includesSquinchTransition = walls.portalTransition === 'squinch';
   let portalSquinchUpperDrumHeight = includesSquinchTransition
     && portalUpperCoverType === 'dome'
-    ? Math.max(0.05, Number(building.domeDrumHeight) || 0.5)
+    ? Math.max(0.05, Number(building.domeDrumHeightByTransition?.squinch) || 0.5)
     : 0;
   const portalNorthArchCurveStartY = Number.isFinite(Number(context.northArchCurveStartY))
     ? Number(context.northArchCurveStartY)
@@ -11737,7 +13122,7 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
       referenceSpringY + (Number.isFinite(Number(settings.greenHeightOffset))
         ? Number(settings.greenHeightOffset)
         : -0.65),
-      { redOffset: Number.isFinite(Number(settings.redOffset)) ? Number(settings.redOffset) : -0.1 },
+      { archType: settings.archType, redOffset: Number.isFinite(Number(settings.redOffset)) ? Number(settings.redOffset) : -0.1 },
     );
     const crownAboveWallTop = Math.max(
       0.05,
@@ -11782,23 +13167,6 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
     },
     innerDomeEnabled: false,
   };
-  if (portalUpperCoverType === 'dome') {
-    const portalReferenceSpringY = Math.max(
-      Number(context.wallTop) || 0,
-      ...Object.values(context.wallHeights || {}).map((height) => Number(height) || 0),
-    );
-    const configuredGreenHeight = portalReferenceSpringY
-      + (Number.isFinite(Number(building.domeArch?.greenHeightOffset))
-        ? Number(building.domeArch.greenHeightOffset)
-        : 0);
-    const coverSpringY = walls.portalTransition === 'karbandi'
-      && Number.isFinite(Number(context.karbandiCrownY))
-      ? Number(context.karbandiCrownY)
-      : includesSquinchTransition
-        ? portalNorthArchCurveStartY + portalSquinchUpperDrumHeight
-        : sourceWallTop + (Number(building.domeTransitionHeight) || 1.2);
-    sourceBuilding.domeArch.greenHeightOffset = configuredGreenHeight - coverSpringY;
-  }
   let portalCoverSpringY = walls.portalTransition === 'karbandi'
     && Number.isFinite(Number(context.karbandiCrownY))
     ? Number(context.karbandiCrownY)
@@ -11871,7 +13239,16 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
   const portalCoverInteriorTargetRadius = Number.isFinite(sampledNorthArchFaceRadius)
     ? Math.max(0.05, sampledNorthArchFaceRadius - portalCoverNorthArchSetback)
     : null;
-  addRoomDomeCover(sourceGroup, sourceMeshes, sourceBuilding, walls, {
+  const sourceWalls = walls.southOpenings
+    ? {
+        ...walls,
+        roomWallOpenings: {
+          ...(walls.roomWallOpenings || DEFAULT_WALL_SYSTEM.roomWallOpenings),
+          south: walls.southOpenings,
+        },
+      }
+    : walls;
+  addRoomDomeCover(sourceGroup, sourceMeshes, sourceBuilding, sourceWalls, {
     ...context,
     centerX: fullRoomCenterX,
     centerZ: fullRoomCenterZ,
@@ -12051,11 +13428,13 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
     const isCoverAssembly = includesSquinchTransition
       && child.userData?.isRoomDomeTransitionCover === true
       && child.userData?.roomDomeTransitionType === 'squinch';
+    const isVerticalWallExtensionAssembly = includesSquinchTransition
+      && child.userData?.isRoomSquinchVerticalWallExtensionAssembly === true;
     const isUpperDomeAssembly = portalUpperCoverType != null && [
       'dome-shell',
       'dome-drum',
     ].includes(child.userData?.roomDomePart);
-    if (!isRetainedRib && !isCoverAssembly && !isUpperDomeAssembly) return;
+    if (!isRetainedRib && !isCoverAssembly && !isVerticalWallExtensionAssembly && !isUpperDomeAssembly) return;
     if (isCoverAssembly) {
       pruneCoverAssembly(child);
       child.name = 'Portal Squinch half-square transition cover';
@@ -12069,6 +13448,11 @@ function addPortalHalfSquinch(group, meshes, building, walls, context) {
         drumSkirtSideCount: 8,
         upperDrumSideCount: portalSquinchUpperDrumHeight > 0 ? 16 : 0,
       };
+    } else if (isVerticalWallExtensionAssembly) {
+      pruneCoverAssembly(child);
+      child.name = 'Portal Squinch vertical walls clipped below arches';
+      child.userData.portalSquinchHalfSquareRoom = true;
+      child.userData.portalSquinchRetainedArchIndexes = [...retainedArchIndexes];
     } else {
       child.name = child.name.replace(/^Room /, 'Portal ');
     }
@@ -12230,7 +13614,84 @@ function addPortalHalfVestibuleKarbandi(group, meshes, building, walls, context)
     rotationCenterZ: fullPlanCenterZ,
     roomMode: true,
     vestibuleMode: true,
+    portalHalfCutZ: fullPlanCenterZ,
+    portalHalfNorthArchPoints: context.northArchPoints || [],
   }, sourceWalls);
+
+  // A full Vestibule closes its centre with one flat polygon. Cutting that
+  // polygon in half for a Portal exposes a large, dark horizontal surface at
+  // the facade and still leaves the north crown open. The square Portal already
+  // has the correct architectural solution there: a sliced crown whose lower
+  // boundary follows the ribs and whose north edge terminates at the wall arch.
+  // Keep the octagonal Vestibule construction for ribs and wall-edge covers,
+  // but replace only its centre cap with that square-Portal crown.
+  const cutPlaneCenterCaps = generated.filter((object) => (
+    object.isMesh
+    && object.userData?.isKarbandiCover === true
+    && object.userData?.webCellClassification === 'InteriorCell'
+    && object.userData?.webPatchSolver === 'boundary-constrained-polygon'
+    && (object.userData?.webRegionCorners?.length || 0) >= Math.max(8, Math.round(sourceWalls.karbandi.ribCount || 16))
+  ));
+  cutPlaneCenterCaps.forEach((cap) => {
+    cap.removeFromParent();
+    cap.geometry?.dispose?.();
+  });
+
+  const squarePortalBuilding = { ...building, portalPlanShape: 'square' };
+  const squarePortalCrownWalls = {
+    ...walls,
+    karbandi: {
+      ...solveKarbandiWallSeating(
+        { ...walls.karbandi, enabled: true, autoClip: true },
+        squarePortalBuilding,
+        walls,
+      ),
+      enabled: true,
+      autoClip: true,
+      coverEnabled: walls.karbandi.coverEnabled === true,
+      guideVisible: false,
+    },
+  };
+  const crownSourceGroup = new THREE.Group();
+  const squarePortalGenerated = addKarbandiVault(crownSourceGroup, {
+    westX: context.westX,
+    westExteriorX: context.westExteriorX,
+    eastX: context.eastX,
+    eastExteriorX: context.eastExteriorX,
+    northZ: context.northZ,
+    northExteriorZ: context.northZ - context.thickness,
+    southZ: context.southZ,
+    southExteriorZ: context.southZ + context.thickness,
+    sideTop: context.sideTop,
+    wallThickness: context.thickness,
+    wallHeights: context.wallHeights,
+    northArchPoints: context.northArchPoints || [],
+    northWallLeft: context.northWallLeft,
+    northWallRight: context.northWallRight,
+    northWallHeight: context.northWallHeight,
+    northOpeningLeft: context.northOpeningLeft,
+    northOpeningRight: context.northOpeningRight,
+  }, squarePortalCrownWalls);
+  const squarePortalCrownPanels = squarePortalGenerated.filter((object) => (
+    object.isMesh
+    && object.userData?.isKarbandiCover === true
+    && object.userData?.roofType === 'crown'
+    && object.userData?.webPatchSolver === 'north-crown-sliced-inward-courses'
+  ));
+  const retainedCrownObjects = new Set(squarePortalCrownPanels);
+  squarePortalCrownPanels.forEach((panel, index) => {
+    panel.removeFromParent();
+    panel.name = `Portal half-Vestibule square crown cover ${index + 1}`;
+    panel.userData.portalHalfVestibuleKarbandi = true;
+    panel.userData.portalOctagonCrownConstruction = 'square-portal-north-crown-only';
+    panel.userData.portalOctagonCrownReplacesFlatCenterCap = true;
+  });
+  crownSourceGroup.traverse((object) => {
+    if (!object.isMesh || retainedCrownObjects.has(object)) return;
+    object.geometry?.dispose?.();
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.filter(Boolean).forEach((material) => material.dispose?.());
+  });
 
   const halfPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -fullPlanCenterZ);
   [...sourceGroup.children].forEach((child) => {
@@ -12261,11 +13722,20 @@ function addPortalHalfVestibuleKarbandi(group, meshes, building, walls, context)
   Object.entries(sourceGroup.userData).forEach(([key, value]) => {
     if (/karbandi/i.test(key)) group.userData[key] = value;
   });
+  squarePortalCrownPanels.forEach((panel) => {
+    group.add(panel);
+    meshes.push(panel);
+  });
   group.userData.portalHalfVestibuleKarbandi = true;
   group.userData.portalKarbandiHalfPlaneZ = fullPlanCenterZ;
   group.userData.portalKarbandiBearingPlan = 'south-half-of-vestibule-wall-foot-octagon';
   group.userData.portalKarbandiSolvedSettings = solvedKarbandi;
-  return generated;
+  group.userData.portalOctagonKarbandiCrownConstruction = 'square-portal-north-crown-only';
+  group.userData.portalOctagonRemovedFlatCenterCapCount = cutPlaneCenterCaps.length;
+  return [
+    ...generated.filter((object) => !cutPlaneCenterCaps.includes(object)),
+    ...squarePortalCrownPanels,
+  ];
 }
 
 function meshYRangeAtZ(mesh, sectionZ, epsilon = 0.00001) {
@@ -12376,16 +13846,3463 @@ function portalKarbandiNorthWallShift(ribs, northWallFaceZ, archPoints, clearanc
   };
 }
 
-export function buildWallSystem(building, value = {}, zones = []) {
-  const walls = normalizeWallSystem(value, building);
+function buildHallWallSystem(building, walls) {
+  const group = new THREE.Group();
+  group.name = 'Mehraz Hall wall and vaulted dome grid';
+  group.userData.wallSystem = walls;
+  group.userData.buildingType = 'hall';
+  if (!walls.enabled) return group;
+
+  const gridX = Math.max(1, Math.round(Number(building.hallGridX) || 3));
+  const gridY = Math.max(1, Math.round(Number(building.hallGridY) || 3));
+  const bayWidth = Math.max(2, Number(building.hallBayWidth) || 4);
+  const bayDepth = Math.max(2, Number(building.hallBayDepth) || 4);
+  const width = gridX * bayWidth;
+  const depth = gridY * bayDepth;
+  const wallTop = Math.max(0.5, Number(building.height) || 6);
+  const thickness = Math.max(0.1, Number(building.wallThickness) || 0.35);
+  const hallPerimeter = (width + depth) * 2;
+  const columnDimension = THREE.MathUtils.clamp(
+    Number(building.hallColumnDimension) || (Number(building.hallColumnRadius) || 0.22) * 2,
+    0.1,
+    2,
+  );
+  const columnRadius = columnDimension / 2;
+  const columnProfile = building.hallColumnProfile === 'circle' ? 'circle' : 'square';
+  const ribWidth = THREE.MathUtils.clamp(Number(building.hallArchRibWidth) || thickness, 0.03, 0.8);
+  const ribHeight = THREE.MathUtils.clamp(Number(building.hallArchRibHeight) || ribWidth, 0.03, 0.8);
+  const archSettings = building.hallArch || {};
+  const archPointsForSpan = (span) => archCurve(
+    0, span / 2, wallTop, wallTop,
+    Math.max(0.05, Number(archSettings.greenOffset) || 1),
+    wallTop + (Number.isFinite(Number(archSettings.greenHeightOffset)) ? Number(archSettings.greenHeightOffset) : -1),
+    28,
+    { archType: archSettings.archType, redOffset: Number(archSettings.redOffset) || 0, redRadius: archSettings.redRadius },
+  );
+  const vaultBearingShift = Math.max(0, (ribWidth - ribHeight) / 2);
+  const xVaultSpan = Math.max(0.2, bayWidth - vaultBearingShift * 2);
+  const yVaultSpan = Math.max(0.2, bayDepth - vaultBearingShift * 2);
+  const hallCoverType = ['none', 'dome', 'barrel', 'rib-vault', 'raised-rib-vault'].includes(building.hallCoverType)
+    ? building.hallCoverType
+    : 'dome';
+  const hallUsesBarrel = hallCoverType === 'barrel';
+  const hallBarrelAxis = building.hallBarrelAxis === 'y' ? 'y' : 'x';
+  const hallUsesRaisedRibVault = hallCoverType === 'raised-rib-vault';
+  const hallUsesRibVault = hallCoverType === 'rib-vault' || hallUsesRaisedRibVault;
+  const hallUsesDirectVaultCover = hallUsesBarrel || hallUsesRibVault;
+  const hallTransitionType = ['none', 'pendentive', 'karbandi'].includes(building.hallTransitionType)
+    ? building.hallTransitionType
+    : 'pendentive';
+  const hallTransitionEnabled = hallTransitionType !== 'none'
+    && !hallUsesDirectVaultCover
+    && building.hallTransitionEnabled !== false;
+  const hallBarrelPerpendicularVaultShift = (() => {
+    if (!hallUsesBarrel) return 0;
+    const perpendicularSpan = hallBarrelAxis === 'x' ? yVaultSpan : xVaultSpan;
+    const profile = archPointsForSpan(perpendicularSpan);
+    const extradosCrownY = Math.max(wallTop, ...profile.map((point) => point.y)) + ribHeight / 2;
+    return wallTop - 0.001 - extradosCrownY;
+  })();
+  const hallInteriorColumnTop = hallUsesBarrel
+    ? Math.max(0.1, wallTop + hallBarrelPerpendicularVaultShift)
+    : wallTop;
+  const hallColumnTop = hallInteriorColumnTop;
+  const hallBarrelGeneratingProfile = hallUsesBarrel
+    ? archPointsForSpan(hallBarrelAxis === 'x' ? xVaultSpan : yVaultSpan)
+    : [];
+  const hallBarrelGeneratingArcLength = hallBarrelGeneratingProfile.reduce((length, point, index) => (
+    index === 0 ? 0 : length + point.distanceTo(hallBarrelGeneratingProfile[index - 1])
+  ), 0);
+  // At each spring point the Barrel intrados is inset by half its profile
+  // height, in addition to the span's bearing shift. The two plain perimeter
+  // walls perpendicular to the selected Barrel family extend inward to that
+  // exact plane while their exterior faces retain the original footprint.
+  const hallBarrelInteriorBearingInset = hallUsesBarrel
+    ? vaultBearingShift + ribHeight / 2
+    : thickness / 2;
+  const meshes = [];
+  const addMesh = (mesh, name, metadata = {}) => {
+    mesh.name = name;
+    Object.assign(mesh.userData, metadata);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    meshes.push(mesh);
+    return mesh;
+  };
+  // The Hall perimeter is one continuous interior loop and one continuous
+  // exterior loop. Reusing these two materials both preserves the selected
+  // bonds on every wall face and avoids regenerating the same large texture
+  // for each wall and boundary-vault infill.
+  const hallInteriorWallMaterial = directRoomWallFaceMaterial(
+    walls, 'room_plan_interior', hallPerimeter, wallTop, 0, hallPerimeter,
+  );
+  const hallExteriorWallMaterial = directRoomWallFaceMaterial(
+    walls, 'room_plan_exterior', hallPerimeter, wallTop, 0, hallPerimeter,
+  );
+  const hallOpeningPlacement = (opening) => {
+    const angle = ((Number(opening.rotation) % 360) + 360) % 360;
+    const sides = [
+      { side: 'north', center: 0, span: width, rotationY: 0, position: [0, 0, -depth / 2], direction: 1 },
+      { side: 'east', center: 90, span: depth, rotationY: Math.PI / 2, position: [width / 2, 0, 0], direction: -1 },
+      { side: 'south', center: 180, span: width, rotationY: 0, position: [0, 0, depth / 2], direction: -1 },
+      { side: 'west', center: 270, span: depth, rotationY: -Math.PI / 2, position: [-width / 2, 0, 0], direction: -1 },
+    ];
+    const placement = sides.reduce((nearest, candidate) => {
+      const raw = Math.abs(angle - candidate.center);
+      const distance = Math.min(raw, 360 - raw);
+      return !nearest || distance < nearest.distance ? { ...candidate, distance } : nearest;
+    }, null);
+    let delta = angle - placement.center;
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+    const halfOpening = Math.max(0.15, Number(opening.width) / 2 || 0.5);
+    const maximumCenter = Math.max(0, placement.span / 2 - halfOpening);
+    const along = THREE.MathUtils.clamp(
+      placement.direction * delta / 45 * placement.span / 2,
+      -maximumCenter,
+      maximumCenter,
+    );
+    return { ...placement, along, angle };
+  };
+  const hallOpeningsBySide = Object.fromEntries(WALL_SIDES.map((side) => [side, []]));
+  (walls.roomPlanOpenings || []).forEach((opening) => {
+    const placement = hallOpeningPlacement(opening);
+    hallOpeningsBySide[placement.side].push({ ...opening, ...placement });
+  });
+  const hallTransitionOpeningProfile = (opening, bayCenter, span) => {
+    const center = opening.along - bayCenter;
+    const width = Math.min(Math.max(0.3, Number(opening.width) || 1), span - 0.1);
+    const left = center - width / 2;
+    const bottom = Math.max(0, Number(opening.sillHeight) || 0);
+    const springTop = bottom + Math.max(0, Number(opening.height) || 1);
+    const profile = {
+      left,
+      right: left + width,
+      bottom,
+      top: springTop,
+      springTop,
+      center,
+      width,
+      height: springTop - bottom,
+      head: opening.head === 'arch' ? 'arch' : 'lintel',
+    };
+    if (profile.head !== 'arch') return profile;
+    const points = archCurve(
+      profile.center,
+      width / 2,
+      springTop,
+      springTop,
+      opening.arch?.greenOffset,
+      opening.arch?.greenHeight,
+      36,
+      { archType: opening.arch?.archType, redOffset: opening.arch?.redOffset },
+    );
+    if (points.length < 3) return { ...profile, head: 'lintel' };
+    return {
+      ...profile,
+      archPoints: points,
+      top: Math.max(...points.map((point) => point.y)),
+    };
+  };
+  const hallWallShape = (span, openings) => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-span / 2, 0);
+    shape.lineTo(span / 2, 0);
+    shape.lineTo(span / 2, wallTop);
+    shape.lineTo(-span / 2, wallTop);
+    shape.closePath();
+    openings.forEach((opening) => {
+      const halfOpening = Math.max(0.15, Number(opening.width) / 2 || 0.5);
+      const left = Math.max(-span / 2, opening.along - halfOpening);
+      const right = Math.min(span / 2, opening.along + halfOpening);
+      const bottom = THREE.MathUtils.clamp(Number(opening.sillHeight) || 0, 0, wallTop);
+      const springTop = THREE.MathUtils.clamp(bottom + (Number(opening.height) || 1), bottom, wallTop);
+      if (right <= left + 0.0001 || springTop <= bottom + 0.0001) return;
+      if (opening.head !== 'arch' || springTop >= wallTop - 0.0001) {
+        shape.holes.push(rectangleHole(left, bottom, right, springTop));
+        return;
+      }
+      const archPoints = archCurve(
+        opening.along,
+        halfOpening,
+        springTop,
+        springTop,
+        opening.arch?.greenOffset,
+        opening.arch?.greenHeight,
+        36,
+        { archType: opening.arch?.archType, redOffset: opening.arch?.redOffset },
+      );
+      if (archPoints.length < 3) {
+        shape.holes.push(rectangleHole(left, bottom, right, springTop));
+        return;
+      }
+      const hole = new THREE.Path();
+      hole.moveTo(left, bottom);
+      hole.lineTo(left, springTop);
+      archPoints.forEach((point) => hole.lineTo(
+        THREE.MathUtils.clamp(point.x, left, right),
+        Math.min(wallTop, point.y),
+      ));
+      hole.lineTo(right, bottom);
+      hole.closePath();
+      shape.holes.push(hole);
+    });
+    return shape;
+  };
+
+  [
+    ['north', width, 0, [0, 0, -depth / 2], 'exterior-first'],
+    ['south', width, 0, [0, 0, depth / 2], 'interior-first'],
+    ['east', depth, Math.PI / 2, [width / 2, 0, 0], 'interior-first'],
+    ['west', depth, -Math.PI / 2, [-width / 2, 0, 0], 'interior-first'],
+  ].forEach(([side, span, rotationY, position, faceOrder]) => {
+    if (walls.openSides.includes(side)) return;
+    const isPlainBarrelBearingWall = hallUsesBarrel && (
+      (hallBarrelAxis === 'x' && (side === 'east' || side === 'west'))
+      || (hallBarrelAxis === 'y' && (side === 'north' || side === 'south'))
+    );
+    const wallDepth = isPlainBarrelBearingWall
+      ? thickness / 2 + hallBarrelInteriorBearingInset
+      : thickness;
+    const inwardCenterShift = isPlainBarrelBearingWall
+      ? (hallBarrelInteriorBearingInset - thickness / 2) / 2
+      : 0;
+    const adjustedPosition = [...position];
+    if (side === 'north') adjustedPosition[2] += inwardCenterShift;
+    if (side === 'south') adjustedPosition[2] -= inwardCenterShift;
+    if (side === 'east') adjustedPosition[0] -= inwardCenterShift;
+    if (side === 'west') adjustedPosition[0] += inwardCenterShift;
+    const returnMaterial = wallMaterial(walls, side, wallDepth, wallTop, true);
+    const materials = faceOrder === 'exterior-first'
+      ? [hallExteriorWallMaterial, hallInteriorWallMaterial, returnMaterial]
+      : [hallInteriorWallMaterial, hallExteriorWallMaterial, returnMaterial];
+    const geometry = extrudedShape(
+      hallWallShape(span + thickness, hallOpeningsBySide[side]),
+      wallDepth,
+      -wallDepth / 2,
+      materials,
+      side,
+    ).geometry;
+    removeOpeningBoundaryShelves(
+      geometry,
+      wallTop,
+      hallOpeningsBySide[side].map((opening) => hallTransitionOpeningProfile(opening, 0, span)),
+    );
+    applyHallPerimeterBrickUvs(geometry, side, width, depth, { extruded: true });
+    const wall = new THREE.Mesh(geometry, materials);
+    wall.rotation.y = rotationY;
+    wall.position.fromArray(adjustedPosition);
+    addMesh(wall, `Hall ${side} perimeter wall`, {
+      wallSide: side,
+      isHallPerimeterWall: true,
+      hallWallTop: wallTop,
+      hallWallCenterlineAlignedToVault: true,
+      hallInteriorBondSide: 'room_plan_interior',
+      hallExteriorBondSide: 'room_plan_exterior',
+      hallInteriorMaterialIndex: faceOrder === 'exterior-first' ? 1 : 0,
+      hallExteriorMaterialIndex: faceOrder === 'exterior-first' ? 0 : 1,
+      hallReturnMaterialIndex: 2,
+      hallPlanOpeningIds: hallOpeningsBySide[side].map((opening) => opening.id),
+      hallPlanOpeningConstruction: 'movable-door-and-window-holes-through-complete-wall-thickness',
+      hallPerimeterBondCycleLength: hallPerimeter,
+      hallPerimeterBondContinuity: 'independent-seamless-interior-and-exterior-clockwise-loops',
+      hallBrickScaleRule: 'same-metre-based-brick-scale-as-all-other-Mehraz-buildings',
+      hallBarrelPlainBearingWall: isPlainBarrelBearingWall,
+      hallBarrelWallInteriorInset: isPlainBarrelBearingWall ? hallBarrelInteriorBearingInset : null,
+      hallBarrelWallExteriorFootprintRetained: isPlainBarrelBearingWall,
+    });
+  });
+
+  const columnPerimeter = columnProfile === 'circle'
+    ? Math.PI * 2 * columnRadius
+    : columnDimension;
+  const createColumnGeometry = (height) => {
+    const geometry = columnProfile === 'square'
+      ? new THREE.BoxGeometry(columnDimension, height, columnDimension)
+      : new THREE.CylinderGeometry(columnRadius, columnRadius, height, 24);
+    if (columnProfile === 'square') applyWorldAlignedBrickUvs(geometry);
+    else {
+      const positions = geometry.getAttribute('position');
+      const normals = geometry.getAttribute('normal');
+      const uvs = geometry.getAttribute('uv');
+    for (let index = 0; index < uvs.count; index += 1) {
+      if (Math.abs(normals.getY(index)) < 0.5) {
+        // Develop the cylindrical face into metres: U follows the real
+        // circumference and V follows real height, so configured brick width
+        // and brick height remain unchanged on every column diameter.
+        uvs.setXY(index, uvs.getX(index) * columnPerimeter, uvs.getY(index) * hallColumnTop);
+      } else {
+        // Keep the concealed horizontal end caps metrically planar.
+        uvs.setXY(index, positions.getX(index), positions.getZ(index));
+      }
+    }
+      uvs.needsUpdate = true;
+      geometry.userData.hallCircleColumnBondUvMapping = 'developed-cylinder-circumference-and-world-height-metres';
+      geometry.userData.hallCircleColumnBondCircumference = columnPerimeter;
+      geometry.userData.hallCircleColumnBrickWidth = walls.bricks.brickWidth;
+      geometry.userData.hallCircleColumnBrickHeight = walls.bricks.brickHeight;
+    }
+    return geometry;
+  };
+  const columnGeometry = createColumnGeometry(hallInteriorColumnTop);
+  const perimeterColumnGeometry = hallUsesBarrel ? createColumnGeometry(wallTop) : columnGeometry;
+  const columnMaterial = wallMaterial(walls, 'room_plan_interior', columnPerimeter, hallInteriorColumnTop, true);
+  const perimeterColumnMaterial = hallUsesBarrel
+    ? wallMaterial(walls, 'room_plan_interior', columnPerimeter, wallTop, true)
+    : columnMaterial;
+  for (let ix = 0; ix <= gridX; ix += 1) {
+    const x = -width / 2 + ix * bayWidth;
+    for (let iy = 0; iy <= gridY; iy += 1) {
+      const z = -depth / 2 + iy * bayDepth;
+      const isPerimeterColumn = ix === 0 || ix === gridX || iy === 0 || iy === gridY;
+      const columnTop = hallUsesBarrel && isPerimeterColumn ? wallTop : hallInteriorColumnTop;
+      const column = new THREE.Mesh(
+        hallUsesBarrel && isPerimeterColumn ? perimeterColumnGeometry : columnGeometry,
+        hallUsesBarrel && isPerimeterColumn ? perimeterColumnMaterial : columnMaterial,
+      );
+      column.position.set(x, columnTop / 2, z);
+      addMesh(column, `Hall grid column ${ix + 1}-${iy + 1}`, {
+        wallSide: 'hall_columns',
+        isHallBearingColumn: true,
+        hallGridIntersection: [ix, iy],
+        hallColumnProfile: columnProfile,
+        hallColumnDimension: columnDimension,
+        hallColumnTop: columnTop,
+        hallColumnBarrelCut: hallUsesBarrel && !isPerimeterColumn,
+        hallColumnIsPerimeter: isPerimeterColumn,
+        hallColumnBearingRule: hallUsesBarrel
+          ? isPerimeterColumn
+            ? 'full-height-perimeter-column-without-boundary-arch'
+            : 'cut-to-underside-of-lowered-perpendicular-vault-leg'
+          : 'full-height-to-shared-vault-spring',
+        hallColumnBrickScaleRule: columnProfile === 'circle'
+          ? 'configured-brick-width-around-developed-circumference-and-configured-brick-height-up-world-y'
+          : 'same-metre-based-brick-scale-as-hall-walls',
+      });
+    }
+  }
+
+  const constructionForSpan = (span) => pointedArchConstruction(
+    0, span / 2, wallTop,
+    Math.max(0.05, Number(archSettings.greenOffset) || 1),
+    wallTop + (Number.isFinite(Number(archSettings.greenHeightOffset)) ? Number(archSettings.greenHeightOffset) : -1),
+    { archType: archSettings.archType, redOffset: Number(archSettings.redOffset) || 0, redRadius: archSettings.redRadius },
+  );
+  const hallVaultFinish = building.hallVaultFinish === 'color' ? 'color' : 'bricks';
+  const hallVaultColor = /^#[0-9a-f]{6}$/i.test(building.hallVaultColor || '')
+    ? building.hallVaultColor
+    : '#3490b7';
+  const vaultBrickWalls = {
+    ...walls,
+    color: hallVaultColor,
+    bricks: {
+      ...walls.bricks,
+      enabled: true,
+      sideBonds: {
+        ...walls.bricks.sideBonds,
+        arch: { source: 'builtin', builtIn: 'running', scale: 1 },
+      },
+    },
+  };
+  const archMaterial = hallVaultFinish === 'bricks'
+    ? wallMaterial(vaultBrickWalls, 'arch', 1, ribWidth, true)
+    : new THREE.MeshStandardMaterial({ color: hallVaultColor, roughness: 0.72, metalness: 0, side: THREE.DoubleSide });
+  archMaterial.userData.hallVaultFinish = hallVaultFinish;
+  archMaterial.userData.hallVaultColor = hallVaultColor;
+  archMaterial.userData.hallVaultBond = hallVaultFinish === 'bricks' ? 'running' : null;
+  archMaterial.userData.hallVaultMortarColor = walls.bricks.mortarColor;
+  archMaterial.userData.hallVaultMortarSize = walls.bricks.mortar;
+  archMaterial.userData.hallVaultBondAndMortarTextureEnabled = hallVaultFinish === 'bricks'
+    && Boolean(archMaterial.map);
+  const applyHallBarrelSpandrelUvs = (geometry, direction, centerX, centerZ) => {
+    const positions = geometry.getAttribute('position');
+    const normals = geometry.getAttribute('normal');
+    const uvs = geometry.getAttribute('uv');
+    for (let index = 0; index < uvs.count; index += 1) {
+      const longitudinal = direction === 'x'
+        ? centerX + positions.getX(index)
+        : centerZ - positions.getX(index);
+      const barrelSpringPhase = normals.getZ(index) < -0.5
+        ? hallBarrelGeneratingArcLength
+        : 0;
+      uvs.setXY(index, longitudinal, barrelSpringPhase + positions.getY(index) - wallTop);
+    }
+    uvs.needsUpdate = true;
+    geometry.userData.hallBarrelSpandrelUvMapping = 'world-longitudinal-u-and-adjacent-barrel-spring-arc-phase-v';
+    geometry.userData.hallBarrelSpandrelNegativeFaceSpringPhase = hallBarrelGeneratingArcLength;
+    geometry.userData.hallBarrelSpandrelPositiveFaceSpringPhase = 0;
+    geometry.userData.hallBarrelSpandrelGeneratingArcLength = hallBarrelGeneratingArcLength;
+  };
+  const hallVaultVerticalShiftFor = (direction) => (
+    hallUsesBarrel && direction !== hallBarrelAxis ? hallBarrelPerpendicularVaultShift : 0
+  );
+  const squareVaultGeometry = (points, direction) => {
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    const halfWidth = ribWidth / 2;
+    const halfHeight = ribHeight / 2;
+    const depthAxis = direction === 'x'
+      ? new THREE.Vector3(0, 0, 1)
+      : new THREE.Vector3(1, 0, 0);
+    const frames = points.map((point, index) => {
+      const previous = points[Math.max(0, index - 1)];
+      const next = points[Math.min(points.length - 1, index + 1)];
+      const tangent = next.clone().sub(previous).normalize();
+      const inPlaneNormal = depthAxis.clone().cross(tangent).normalize();
+      if (index === 0 || index === points.length - 1) {
+        inPlaneNormal.y = 0;
+        inPlaneNormal.normalize();
+      }
+      return [
+        inPlaneNormal.clone().multiplyScalar(halfHeight).addScaledVector(depthAxis, halfWidth),
+        inPlaneNormal.clone().multiplyScalar(halfHeight).addScaledVector(depthAxis, -halfWidth),
+        inPlaneNormal.clone().multiplyScalar(-halfHeight).addScaledVector(depthAxis, -halfWidth),
+        inPlaneNormal.clone().multiplyScalar(-halfHeight).addScaledVector(depthAxis, halfWidth),
+      ].map((offset) => {
+        return point.clone().add(offset);
+      });
+    });
+    const distances = [0];
+    for (let index = 1; index < points.length; index += 1) {
+      distances.push(distances.at(-1) + points[index - 1].distanceTo(points[index]));
+    }
+    // Duplicate vertices for each longitudinal face. Normals remain smooth
+    // along the curved path but cannot average across the four square corners.
+    for (let face = 0; face < 4; face += 1) {
+      const nextFace = (face + 1) % 4;
+      const faceStart = positions.length / 3;
+      frames.forEach((frame, section) => {
+        positions.push(...frame[face].toArray(), ...frame[nextFace].toArray());
+        const longitudinalCoordinate = (vertex) => direction === 'x' ? vertex.z : vertex.x;
+        // Extrados and intrados run U across the vault profile width. The two
+        // arch-plane side faces instead run U across the profile height; using
+        // the depth-axis coordinate there gives both edges the same U and
+        // collapses the brick texture into a single line.
+        const faceU = face === 1
+          ? [
+              longitudinalCoordinate(frame[face]),
+              longitudinalCoordinate(frame[face]) + ribHeight,
+            ]
+          : face === 3
+            ? [
+                longitudinalCoordinate(frame[nextFace]) - ribHeight,
+                longitudinalCoordinate(frame[nextFace]),
+              ]
+            : [longitudinalCoordinate(frame[face]), longitudinalCoordinate(frame[nextFace])];
+        uvs.push(
+          faceU[0], distances[section],
+          faceU[1], distances[section],
+        );
+      });
+      for (let section = 0; section < points.length - 1; section += 1) {
+        const start = faceStart + section * 2;
+        const end = start + 2;
+        indices.push(start, end, start + 1, start + 1, end, end + 1);
+      }
+    }
+    [0, frames.length - 1].forEach((section, capIndex) => {
+      const capStart = positions.length / 3;
+      frames[section].forEach((vertex, corner) => {
+        positions.push(...vertex.toArray());
+        uvs.push(corner === 0 || corner === 3 ? 0 : ribWidth, corner < 2 ? ribHeight : 0);
+      });
+      if (capIndex === 0) indices.push(capStart, capStart + 2, capStart + 1, capStart, capStart + 3, capStart + 2);
+      else indices.push(capStart, capStart + 1, capStart + 2, capStart, capStart + 2, capStart + 3);
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    geometry.userData.hallVaultProfile = 'square';
+    geometry.userData.hallVaultDimension = ribWidth;
+    geometry.userData.hallVaultProfileWidth = ribWidth;
+    geometry.userData.hallVaultProfileHeight = ribHeight;
+    geometry.userData.hallVaultProfileSectionCount = points.length;
+    geometry.userData.hallVaultSharpProfileEdges = true;
+    geometry.userData.hallVaultUvMapping = 'global-axis-u-and-vault-arc-length-v-shared-with-directional-barrel-cover';
+    geometry.userData.hallVaultSideFaceUvMapping = 'profile-height-u-and-vault-arc-length-v-running-bond';
+    geometry.userData.hallVaultSideFaceUvWidth = ribHeight;
+    geometry.userData.hallVaultCourseOrientation = 'horizontal-at-leg-then-rotates-with-arch-curve';
+    geometry.userData.hallVaultArcLength = distances.at(-1);
+    geometry.userData.constructionVaultCenterline = points.map((point) => point.toArray());
+    geometry.userData.constructionVaultRevealRule = 'both-springing-feet-to-crown';
+    geometry.userData.hallVaultIntersectionRule = 'unclipped-profile-shifted-inward-to-shared-column-top-bearing-point';
+    return geometry;
+  };
+  const guideRoot = new THREE.Group();
+  guideRoot.name = 'Hall vault arch construction guides';
+  guideRoot.userData.isHallArchConstructionGuide = true;
+  guideRoot.userData.isKarbandiVisualGuide = true;
+  const guideArc = (center, radius, startPoint, endPoint, radiusPoint, mapPoint, color, name, parent = guideRoot) => {
+    const points = sampleCircularArc(
+      center,
+      radius,
+      Math.atan2(startPoint.y - center.y, startPoint.x - center.x),
+      Math.atan2(endPoint.y - center.y, endPoint.x - center.x),
+      48,
+    ).map((point) => mapPoint(point.x, point.y));
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false }),
+    );
+    line.name = name;
+    line.renderOrder = 35;
+    line.userData.isHallArchConstructionGuide = true;
+    line.userData.isKarbandiVisualGuide = true;
+    line.userData.hallConstructionGuideKind = 'arc';
+    line.userData.hallConstructionGuideCategory = parent.userData.hallConstructionGuideCategory;
+    line.userData.hallConstructionGuideSourceBay = parent.userData.hallConstructionGuideSourceBay;
+    line.raycast = () => {};
+    parent.add(line);
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(Math.max(0.025, Math.min(0.07, radius * 0.025)), 12, 8),
+      new THREE.MeshBasicMaterial({ color, depthTest: false }),
+    );
+    marker.position.copy(mapPoint(center.x, center.y));
+    marker.renderOrder = 36;
+    marker.userData.isHallArchConstructionGuide = true;
+    marker.userData.isKarbandiVisualGuide = true;
+    marker.userData.hallConstructionGuideKind = 'center';
+    marker.userData.hallConstructionGuideCategory = parent.userData.hallConstructionGuideCategory;
+    marker.userData.hallConstructionGuideSourceBay = parent.userData.hallConstructionGuideSourceBay;
+    marker.raycast = () => {};
+    parent.add(marker);
+    if (radiusPoint) {
+      const radiusLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          mapPoint(center.x, center.y),
+          mapPoint(radiusPoint.x, radiusPoint.y),
+        ]),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false }),
+      );
+      radiusLine.name = `${name} radius`;
+      radiusLine.renderOrder = 35;
+      radiusLine.userData.isHallArchConstructionGuide = true;
+      radiusLine.userData.isKarbandiVisualGuide = true;
+      radiusLine.userData.hallConstructionGuideKind = 'radius';
+      radiusLine.userData.hallConstructionGuideCategory = parent.userData.hallConstructionGuideCategory;
+      radiusLine.userData.hallConstructionGuideSourceBay = parent.userData.hallConstructionGuideSourceBay;
+      radiusLine.raycast = () => {};
+      parent.add(radiusLine);
+    }
+  };
+  const addArchGuide = (
+    construction,
+    mapPoint,
+    label,
+    visible = building.hallArchGuideVisible === true,
+    plane = 'x',
+    category = 'vault',
+    sourceBay = null,
+  ) => {
+    if (!construction || !visible) return;
+    const diagram = new THREE.Group();
+    diagram.name = `${label} construction diagram ${plane.toUpperCase()}`;
+    diagram.visible = plane === 'x';
+    diagram.userData.isHallArchConstructionGuide = true;
+    diagram.userData.isKarbandiVisualGuide = true;
+    diagram.userData.hallConstructionGuidePlane = plane;
+    diagram.userData.hallConstructionGuideCategory = category;
+    diagram.userData.hallConstructionGuideSourceBay = sourceBay;
+    const mirroredGreen = new THREE.Vector2(-construction.greenCenter.x, construction.greenCenter.y);
+    const greenStartPoint = construction.archType === 'one-point'
+      ? construction.sidePoint
+      : construction.tangentPoint;
+    const mirroredGreenStartPoint = new THREE.Vector2(-greenStartPoint.x, greenStartPoint.y);
+    const mirroredApexPoint = new THREE.Vector2(-construction.apexPoint.x, construction.apexPoint.y);
+    const greenRadiusPoint = greenStartPoint;
+    const mirroredGreenRadiusPoint = greenRadiusPoint && new THREE.Vector2(-greenRadiusPoint.x, greenRadiusPoint.y);
+    if (construction.archType !== 'one-point' && construction.redCenter) {
+      const mirroredRed = new THREE.Vector2(-construction.redCenter.x, construction.redCenter.y);
+      const redRadiusPoint = construction.sidePoint;
+      const mirroredRedRadiusPoint = redRadiusPoint && new THREE.Vector2(-redRadiusPoint.x, redRadiusPoint.y);
+      guideArc(construction.redCenter, construction.redRadius, construction.sidePoint, construction.tangentPoint, redRadiusPoint, mapPoint, '#ef4444', `${label} red arc right`, diagram);
+      guideArc(mirroredRed, construction.redRadius, mirroredRedRadiusPoint, mirroredGreenStartPoint, mirroredRedRadiusPoint, mapPoint, '#ef4444', `${label} red arc left`, diagram);
+    }
+    guideArc(construction.greenCenter, construction.greenRadius, greenStartPoint, construction.apexPoint, greenRadiusPoint, mapPoint, '#22c55e', `${label} green arc right`, diagram);
+    guideArc(mirroredGreen, construction.greenRadius, mirroredGreenStartPoint, mirroredApexPoint, mirroredGreenRadiusPoint, mapPoint, '#22c55e', `${label} green arc left`, diagram);
+    if (diagram.children.length) guideRoot.add(diagram);
+  };
+  const addHallArch = ({ span, centerX, centerZ, direction, gridIndex, showGuide = false }) => {
+    const profile = archPointsForSpan(span);
+    if (profile.length < 3) return;
+    const verticalShift = hallVaultVerticalShiftFor(direction, span);
+    const points = profile.map((point) => direction === 'x'
+      ? new THREE.Vector3(centerX + point.x, point.y + verticalShift, centerZ)
+      : new THREE.Vector3(centerX, point.y + verticalShift, centerZ + point.x));
+    const arch = new THREE.Mesh(
+      squareVaultGeometry(points, direction),
+      archMaterial,
+    );
+    const construction = constructionForSpan(span);
+    addMesh(arch, `Hall ${direction.toUpperCase()} vault arch ${gridIndex.join('-')}`, {
+      wallSide: 'hall_vault_arch',
+      isHallVaultArch: true,
+      hallVaultDirection: direction,
+      hallVaultProfile: 'square',
+      hallVaultDimension: ribWidth,
+      hallVaultProfileWidth: ribWidth,
+      hallVaultProfileHeight: ribHeight,
+      hallVaultFinish,
+      hallVaultColor,
+      hallVaultBrickCourseDirection: hallVaultFinish === 'bricks' ? 'follows-vault-curve' : null,
+      hallVaultBearing: 'centerlines-converge-at-grid-column-centres',
+      hallVaultIntersectionRule: 'unclipped-profile-shifted-inward-to-shared-column-top-bearing-point',
+      hallVaultVerticalShift: verticalShift,
+      hallVaultLayerRole: verticalShift < 0 ? 'below-barrel' : hallUsesBarrel ? 'barrel-generating' : 'shared-bearing',
+      hallVaultLayeringRule: hallUsesBarrel
+        ? 'perpendicular-vault-extrados-meets-selected-barrel-soffit'
+        : null,
+      hallGridEdge: gridIndex,
+      hallArchConstruction: {
+        redOffset: Number(archSettings.redOffset) || 0,
+        redRadius: construction?.redRadius || null,
+        greenOffset: Number(archSettings.greenOffset) || 1,
+        greenHeightOffset: Number(archSettings.greenHeightOffset) || 0,
+      },
+    });
+    if (verticalShift < 0) {
+      const shiftedProfile = profile.map((point) => new THREE.Vector2(point.x, point.y + verticalShift));
+      const extradosProfile = shiftedProfile.map((point, index) => {
+        if (index === 0 || index === shiftedProfile.length - 1) {
+          return point.clone().add(new THREE.Vector2(
+            (point.x < 0 ? -1 : 1) * ribHeight / 2,
+            0,
+          ));
+        }
+        const previous = shiftedProfile[index - 1];
+        const next = shiftedProfile[index + 1];
+        const tangent = next.clone().sub(previous).normalize();
+        const firstNormal = new THREE.Vector2(-tangent.y, tangent.x);
+        const upperNormal = firstNormal.y >= 0 ? firstNormal : firstNormal.multiplyScalar(-1);
+        return point.clone().addScaledVector(upperNormal.normalize(), ribHeight / 2);
+      });
+      const spandrelShape = new THREE.Shape();
+      spandrelShape.moveTo(extradosProfile[0].x, wallTop);
+      spandrelShape.lineTo(extradosProfile.at(-1).x, wallTop);
+      [...extradosProfile].reverse().forEach((point) => spandrelShape.lineTo(point.x, point.y));
+      spandrelShape.closePath();
+      const spandrel = extrudedShape(
+        spandrelShape,
+        ribWidth,
+        -ribWidth / 2,
+        [archMaterial, archMaterial, archMaterial],
+        'hall_barrel_spandrel',
+      );
+      applyHallBarrelSpandrelUvs(spandrel.geometry, direction, centerX, centerZ);
+      spandrel.position.set(centerX, 0, centerZ);
+      if (direction === 'y') spandrel.rotation.y = Math.PI / 2;
+      addMesh(spandrel, `Hall Barrel ${direction.toUpperCase()} transverse vault spandrel ${gridIndex.join('-')}`, {
+        wallSide: 'hall_barrel_spandrel',
+        roomDomePart: 'barrel-transverse-vault-spandrel',
+        isHallBarrelSpandrelInfill: true,
+        hallVaultDirection: direction,
+        hallGridEdge: gridIndex,
+        hallBarrelAxis,
+        hallBarrelSpandrelTopY: wallTop,
+        hallBarrelSpandrelBottomProfile: extradosProfile.map((point) => point.toArray()),
+        hallBarrelSpandrelRule: 'solid-wall-between-lowered-transverse-vault-extrados-and-barrel-spring-soffit',
+        hallBarrelSpandrelThickness: ribWidth,
+        hallBarrelSpandrelInteriorBondSide: 'arch',
+        hallBarrelSpandrelMaterialSource: 'exact-shared-hall-vault-and-barrel-material',
+        hallBarrelSpandrelBondContinuity: 'each-face-matches-its-adjacent-barrel-spring-arc-phase',
+      });
+    }
+    if (showGuide) addArchGuide(
+        construction,
+        direction === 'x'
+          ? (u, v) => new THREE.Vector3(centerX + u, v + verticalShift, centerZ + 0.012)
+          : (u, v) => new THREE.Vector3(centerX + 0.012, v + verticalShift, centerZ + u),
+        'Hall central representative vault arch',
+        building.hallArchGuideVisible === true,
+        direction === 'x' ? 'y' : 'x',
+        'vault',
+        gridIndex,
+      );
+  };
+
+  const centralBayX = Math.floor((gridX - 1) / 2);
+  const centralBayY = Math.floor((gridY - 1) / 2);
+  const retainGridTemplateBarrelTransverseVaults = building.gridTemplateIncludeBarrelTransverseVaults === true;
+  for (let iy = 0; iy <= gridY; iy += 1) {
+    if (hallUsesBarrel && hallBarrelAxis !== 'x'
+      && !retainGridTemplateBarrelTransverseVaults
+      && (iy === 0 || iy === gridY)) continue;
+    const z = -depth / 2 + iy * bayDepth;
+    for (let ix = 0; ix < gridX; ix += 1) addHallArch({
+      span: xVaultSpan,
+      centerX: -width / 2 + (ix + 0.5) * bayWidth,
+      centerZ: z,
+      direction: 'x',
+      gridIndex: [ix, iy],
+      showGuide: ix === centralBayX && iy === centralBayY,
+    });
+  }
+  for (let ix = 0; ix <= gridX; ix += 1) {
+    if (hallUsesBarrel && hallBarrelAxis !== 'y'
+      && !retainGridTemplateBarrelTransverseVaults
+      && (ix === 0 || ix === gridX)) continue;
+    const x = -width / 2 + ix * bayWidth;
+    for (let iy = 0; iy < gridY; iy += 1) addHallArch({
+      span: yVaultSpan,
+      centerX: x,
+      centerZ: -depth / 2 + (iy + 0.5) * bayDepth,
+      direction: 'y',
+      gridIndex: [ix, iy],
+      showGuide: ix === centralBayX && iy === centralBayY,
+    });
+  }
+  const shiftedArchProfile = (span, direction) => {
+    const verticalShift = hallVaultVerticalShiftFor(direction, span);
+    return archPointsForSpan(span).map((point) => new THREE.Vector2(point.x, point.y + verticalShift));
+  };
+  const xArchProfile = shiftedArchProfile(xVaultSpan, 'x');
+  const yArchProfile = shiftedArchProfile(yVaultSpan, 'y');
+  const hallBarrelGeometry = (profile, axis, crossCenter, longitudinalStart, longitudinalEnd) => {
+    const halfThickness = ribHeight / 2;
+    const offsetProfile = (offset) => profile.map((point, index) => {
+      const previous = profile[Math.max(0, index - 1)];
+      const next = profile[Math.min(profile.length - 1, index + 1)];
+      const tangent = next.clone().sub(previous).normalize();
+      const normal = new THREE.Vector2(-tangent.y, tangent.x).normalize();
+      if (index === 0 || index === profile.length - 1) {
+        normal.y = 0;
+        normal.normalize();
+      }
+      return point.clone().addScaledVector(normal, offset);
+    });
+    const innerProfile = offsetProfile(-halfThickness);
+    const outerProfile = offsetProfile(halfThickness);
+    const arcDistances = [0];
+    for (let index = 1; index < profile.length; index += 1) {
+      arcDistances.push(arcDistances.at(-1) + profile[index - 1].distanceTo(profile[index]));
+    }
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    const point3 = (point, longitudinal) => axis === 'x'
+      ? new THREE.Vector3(crossCenter + point.x, point.y, longitudinal)
+      : new THREE.Vector3(longitudinal, point.y, crossCenter + point.x);
+    const addQuad = (a, b, c, d, uvA, uvB, uvC, uvD, reverse = false) => {
+      const start = positions.length / 3;
+      [a, b, c, d].forEach((point) => positions.push(...point.toArray()));
+      [uvA, uvB, uvC, uvD].forEach(([u, v]) => uvs.push(u, v));
+      if (reverse) indices.push(start, start + 2, start + 1, start + 1, start + 2, start + 3);
+      else indices.push(start, start + 1, start + 2, start + 1, start + 3, start + 2);
+    };
+    for (let index = 0; index < profile.length - 1; index += 1) {
+      const outerA = point3(outerProfile[index], longitudinalStart);
+      const outerB = point3(outerProfile[index], longitudinalEnd);
+      const outerC = point3(outerProfile[index + 1], longitudinalStart);
+      const outerD = point3(outerProfile[index + 1], longitudinalEnd);
+      const innerA = point3(innerProfile[index], longitudinalStart);
+      const innerB = point3(innerProfile[index], longitudinalEnd);
+      const innerC = point3(innerProfile[index + 1], longitudinalStart);
+      const innerD = point3(innerProfile[index + 1], longitudinalEnd);
+      addQuad(
+        outerA, outerB, outerC, outerD,
+        [longitudinalStart, arcDistances[index]], [longitudinalEnd, arcDistances[index]],
+        [longitudinalStart, arcDistances[index + 1]], [longitudinalEnd, arcDistances[index + 1]],
+      );
+      addQuad(
+        innerA, innerB, innerC, innerD,
+        [longitudinalStart, arcDistances[index]], [longitudinalEnd, arcDistances[index]],
+        [longitudinalStart, arcDistances[index + 1]], [longitudinalEnd, arcDistances[index + 1]],
+        true,
+      );
+    }
+    for (const endpoint of [0, profile.length - 1]) {
+      const v = arcDistances[endpoint];
+      addQuad(
+        point3(innerProfile[endpoint], longitudinalStart),
+        point3(innerProfile[endpoint], longitudinalEnd),
+        point3(outerProfile[endpoint], longitudinalStart),
+        point3(outerProfile[endpoint], longitudinalEnd),
+        [longitudinalStart, v], [longitudinalEnd, v],
+        [longitudinalStart, v + ribHeight], [longitudinalEnd, v + ribHeight],
+      );
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    geometry.userData.hallBarrelAxis = axis;
+    geometry.userData.hallBarrelShellThickness = ribHeight;
+    geometry.userData.hallBarrelThicknessSource = 'selected-axis-hall-vault-profile-height';
+    geometry.userData.hallBarrelUvMapping = 'global-selected-axis-coordinate-u-and-generating-vault-arc-length-v';
+    geometry.userData.hallBarrelPatternContinuity = 'shared-material-and-global-uv-phase-across-vault-ribs-and-between-vault-shells';
+    geometry.userData.hallBarrelArcLength = arcDistances.at(-1);
+    return geometry;
+  };
+  const hallRibVaultGeometry = (shellThickness, {
+    raised = false,
+    centerOpeningEnabled = false,
+    centerOpeningCoverage = 85,
+  } = {}) => {
+    const subdivisions = 20;
+    const coverHalfX = Math.max(0.05, raised ? bayWidth / 2 : bayWidth / 2 - ribWidth / 2);
+    const coverHalfZ = Math.max(0.05, raised ? bayDepth / 2 : bayDepth / 2 - ribWidth / 2);
+    const measuredProfile = (profile) => {
+      const points = [...profile].sort((left, right) => left.x - right.x);
+      const lengths = [0];
+      for (let index = 1; index < points.length; index += 1) {
+        lengths.push(lengths.at(-1) + points[index - 1].distanceTo(points[index]));
+      }
+      return {
+        points,
+        total: lengths.at(-1) || 0,
+        distanceAt(coordinate) {
+          if (!points.length || coordinate <= points[0].x) return 0;
+          if (coordinate >= points.at(-1).x) return lengths.at(-1);
+          for (let index = 0; index < points.length - 1; index += 1) {
+            const start = points[index];
+            const end = points[index + 1];
+            if (coordinate < start.x || coordinate > end.x) continue;
+            const segmentLength = start.distanceTo(end);
+            const amount = Math.abs(end.x - start.x) > 0.000001
+              ? (coordinate - start.x) / (end.x - start.x)
+              : 0;
+            return lengths[index] + segmentLength * amount;
+          }
+          return 0;
+        },
+      };
+    };
+    const xProfileMetric = measuredProfile(xArchProfile);
+    const yProfileMetric = measuredProfile(yArchProfile);
+    const profileHeightAt = (profile, coordinate) => {
+      if (!profile.length) return wallTop;
+      if (coordinate <= profile[0].x) return profile[0].y;
+      if (coordinate >= profile.at(-1).x) return profile.at(-1).y;
+      for (let index = 0; index < profile.length - 1; index += 1) {
+        const start = profile[index];
+        const end = profile[index + 1];
+        if (coordinate < start.x || coordinate > end.x) continue;
+        const amount = Math.abs(end.x - start.x) > 0.000001
+          ? (coordinate - start.x) / (end.x - start.x)
+          : 0;
+        return THREE.MathUtils.lerp(start.y, end.y, amount);
+      }
+      return wallTop;
+    };
+    const profileCoordinateAtHeight = (metric, sideSign, targetHeight) => {
+      const branch = metric.points
+        .filter((point) => sideSign < 0 ? point.x <= 0.000001 : point.x >= -0.000001)
+        .sort((left, right) => sideSign < 0 ? left.x - right.x : right.x - left.x);
+      if (!branch.length) return null;
+      if (targetHeight <= branch[0].y + 0.000001) return branch[0].x;
+      if (targetHeight > branch.at(-1).y + 0.000001) return null;
+      for (let index = 0; index < branch.length - 1; index += 1) {
+        const start = branch[index];
+        const end = branch[index + 1];
+        if (targetHeight < start.y - 0.000001 || targetHeight > end.y + 0.000001) continue;
+        const amount = Math.abs(end.y - start.y) > 0.000001
+          ? (targetHeight - start.y) / (end.y - start.y)
+          : 0;
+        return THREE.MathUtils.lerp(start.x, end.x, amount);
+      }
+      return branch.at(-1).x;
+    };
+    const offsetVaultProfile = (profile, offset) => profile.map((point, index) => {
+      const previous = profile[Math.max(0, index - 1)];
+      const next = profile[Math.min(profile.length - 1, index + 1)];
+      const tangent = next.clone().sub(previous).normalize();
+      const normal = new THREE.Vector2(-tangent.y, tangent.x).normalize();
+      // Match squareVaultGeometry exactly at its two vertical leg ends.
+      if (index === 0 || index === profile.length - 1) {
+        normal.y = 0;
+        normal.normalize();
+      }
+      return point.clone().addScaledVector(normal, offset);
+    });
+    const profilePointAtProgress = (profile, progress) => {
+      const scaled = THREE.MathUtils.clamp(progress, 0, 1) * (profile.length - 1);
+      const start = Math.floor(scaled);
+      const end = Math.min(profile.length - 1, start + 1);
+      return profile[start].clone().lerp(profile[end], scaled - start);
+    };
+    const clipProfileToClearOpening = (profile, clearHalfSpan) => {
+      const sorted = [...profile].sort((left, right) => left.x - right.x);
+      const pointAt = (coordinate) => {
+        if (coordinate <= sorted[0].x) return sorted[0].clone();
+        if (coordinate >= sorted.at(-1).x) return sorted.at(-1).clone();
+        for (let index = 0; index < sorted.length - 1; index += 1) {
+          const start = sorted[index];
+          const end = sorted[index + 1];
+          if (coordinate < start.x || coordinate > end.x) continue;
+          const amount = Math.abs(end.x - start.x) > 0.000001
+            ? (coordinate - start.x) / (end.x - start.x)
+            : 0;
+          return start.clone().lerp(end, amount);
+        }
+        return sorted.at(-1).clone();
+      };
+      return [
+        pointAt(-clearHalfSpan),
+        ...sorted.filter((point) => point.x > -clearHalfSpan && point.x < clearHalfSpan),
+        pointAt(clearHalfSpan),
+      ];
+    };
+    const interiorFaceDefinesBayBoundary = raised
+      && building.hallRibVaultInteriorFaceDefinesBayBoundary === true;
+    const interiorProfileOffset = interiorFaceDefinesBayBoundary ? 0 : -shellThickness / 2;
+    const exteriorProfileOffset = interiorFaceDefinesBayBoundary ? shellThickness : shellThickness / 2;
+    const rawFaceProfiles = [
+      {
+        x: offsetVaultProfile(xArchProfile, interiorProfileOffset),
+        y: offsetVaultProfile(yArchProfile, interiorProfileOffset),
+      },
+      {
+        x: offsetVaultProfile(xArchProfile, exteriorProfileOffset),
+        y: offsetVaultProfile(yArchProfile, exteriorProfileOffset),
+      },
+    ];
+    const transitionBearingY = Math.max(
+      ...rawFaceProfiles[1].x.map((point) => point.y),
+      ...rawFaceProfiles[1].y.map((point) => point.y),
+    );
+    const coverInteriorBaseY = Math.min(
+      rawFaceProfiles[0].x[0].y,
+      rawFaceProfiles[0].x.at(-1).y,
+      rawFaceProfiles[0].y[0].y,
+      rawFaceProfiles[0].y.at(-1).y,
+    );
+    const verticalShift = raised ? Math.max(0, transitionBearingY - coverInteriorBaseY) : 0;
+    const faceProfiles = rawFaceProfiles.map((profiles) => ({
+      x: raised ? profiles.x : clipProfileToClearOpening(profiles.x, coverHalfX),
+      y: raised ? profiles.y : clipProfileToClearOpening(profiles.y, coverHalfZ),
+    }));
+    const faceMetrics = faceProfiles.map((profiles) => ({
+      x: measuredProfile(profiles.x),
+      y: measuredProfile(profiles.y),
+    }));
+    const positions = [];
+    const uvs = [];
+    const panels = raised ? [
+      { sourceAxis: 'y', sideSign: -1, side: 'north' },
+      { sourceAxis: 'y', sideSign: 1, side: 'south' },
+      { sourceAxis: 'x', sideSign: 1, side: 'east' },
+      { sourceAxis: 'x', sideSign: -1, side: 'west' },
+    ] : [
+      { sourceAxis: 'x', sideSign: -1, side: 'north' },
+      { sourceAxis: 'x', sideSign: 1, side: 'south' },
+      { sourceAxis: 'y', sideSign: 1, side: 'east' },
+      { sourceAxis: 'y', sideSign: -1, side: 'west' },
+    ];
+    const panelPoint = (panel, layer, alongProgress, inwardProgress) => {
+      const profiles = faceProfiles[layer];
+      const metrics = faceMetrics[layer];
+      if (raised) {
+        const sourceProfile = profiles[panel.sourceAxis];
+        const sourceBranch = sourceProfile
+          .filter((point) => panel.sideSign < 0 ? point.x <= 0.000001 : point.x >= -0.000001)
+          .sort((left, right) => panel.sideSign < 0 ? left.x - right.x : right.x - left.x);
+        const source = profilePointAtProgress(sourceBranch, inwardProgress);
+        if (panel.sourceAxis === 'y') {
+          const negativeX = profileCoordinateAtHeight(metrics.x, -1, source.y) ?? 0;
+          const positiveX = profileCoordinateAtHeight(metrics.x, 1, source.y) ?? 0;
+          return new THREE.Vector3(
+            THREE.MathUtils.lerp(negativeX, positiveX, alongProgress),
+            source.y + verticalShift,
+            source.x,
+          );
+        }
+        const negativeZ = profileCoordinateAtHeight(metrics.y, -1, source.y) ?? 0;
+        const positiveZ = profileCoordinateAtHeight(metrics.y, 1, source.y) ?? 0;
+        return new THREE.Vector3(
+          source.x,
+          source.y + verticalShift,
+          THREE.MathUtils.lerp(negativeZ, positiveZ, alongProgress),
+        );
+      }
+      if (panel.sourceAxis === 'x') {
+        const source = profilePointAtProgress(profiles.x, alongProgress);
+        const ridgeZ = profileCoordinateAtHeight(metrics.y, panel.sideSign, source.y) ?? 0;
+        return new THREE.Vector3(
+          source.x,
+          source.y + verticalShift,
+          THREE.MathUtils.lerp(panel.sideSign * coverHalfZ, ridgeZ, inwardProgress),
+        );
+      }
+      const source = profilePointAtProgress(profiles.y, alongProgress);
+      const ridgeX = profileCoordinateAtHeight(metrics.x, panel.sideSign, source.y) ?? 0;
+      return new THREE.Vector3(
+        THREE.MathUtils.lerp(panel.sideSign * coverHalfX, ridgeX, inwardProgress),
+        source.y + verticalShift,
+        source.x,
+      );
+    };
+    for (let layer = 0; layer < 2; layer += 1) {
+      panels.forEach((panel) => {
+        for (let inward = 0; inward <= subdivisions; inward += 1) {
+          for (let along = 0; along <= subdivisions; along += 1) {
+            const point = panelPoint(panel, layer, along / subdivisions, inward / subdivisions);
+            positions.push(point.x, point.y, point.z);
+            const metric = faceMetrics[layer][panel.sourceAxis];
+            const arcDistance = panel.sourceAxis === 'x'
+              ? metric.distanceAt(point.x)
+              : metric.distanceAt(point.z);
+            const arcLength = metric.total;
+            uvs.push(
+              panel.sourceAxis === 'x' ? Math.abs(point.z) : Math.abs(point.x),
+              Math.min(arcDistance, arcLength - arcDistance),
+            );
+          }
+        }
+      });
+    }
+    const row = subdivisions + 1;
+    const patchSize = row * row;
+    const layerSize = panels.length * patchSize;
+    const underside = [];
+    const exterior = [];
+    const returns = [];
+    const vertex = (layer, panel, along, inward) => (
+      layer * layerSize + panel * patchSize + inward * row + along
+    );
+    const pointAt = (index) => new THREE.Vector3(
+      positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2],
+    );
+    const addOrientedTriangle = (target, a, b, c, upward) => {
+      const normalY = pointAt(b).sub(pointAt(a)).cross(pointAt(c).sub(pointAt(a))).y;
+      if ((upward && normalY < 0) || (!upward && normalY > 0)) target.push(a, c, b);
+      else target.push(a, b, c);
+    };
+    panels.forEach((panel, panelIndex) => {
+      for (let inward = 0; inward < subdivisions; inward += 1) {
+        for (let along = 0; along < subdivisions; along += 1) {
+          const lowerA = vertex(0, panelIndex, along, inward);
+          const lowerB = vertex(0, panelIndex, along + 1, inward);
+          const lowerC = vertex(0, panelIndex, along, inward + 1);
+          const lowerD = vertex(0, panelIndex, along + 1, inward + 1);
+          const upperA = vertex(1, panelIndex, along, inward);
+          const upperB = vertex(1, panelIndex, along + 1, inward);
+          const upperC = vertex(1, panelIndex, along, inward + 1);
+          const upperD = vertex(1, panelIndex, along + 1, inward + 1);
+          addOrientedTriangle(underside, lowerA, lowerB, lowerC, false);
+          addOrientedTriangle(underside, lowerB, lowerD, lowerC, false);
+          addOrientedTriangle(exterior, upperA, upperB, upperC, true);
+          addOrientedTriangle(exterior, upperB, upperD, upperC, true);
+        }
+      }
+    });
+    const addBoundary = (lowerA, lowerB, upperA, upperB) => {
+      returns.push(lowerA, lowerB, upperA, lowerB, upperB, upperA);
+    };
+    panels.forEach((panel, panelIndex) => {
+      for (let along = 0; along < subdivisions; along += 1) {
+        addBoundary(
+          vertex(0, panelIndex, along + 1, 0),
+          vertex(0, panelIndex, along, 0),
+          vertex(1, panelIndex, along + 1, 0),
+          vertex(1, panelIndex, along, 0),
+        );
+      }
+    });
+    let geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex([...underside, ...exterior, ...returns]);
+    geometry.addGroup(0, underside.length, 0);
+    geometry.addGroup(underside.length, exterior.length, 1);
+    geometry.addGroup(underside.length + exterior.length, returns.length, 2);
+    geometry.computeVertexNormals();
+    const openingCoverage = THREE.MathUtils.clamp(Number(centerOpeningCoverage) || 0, 0, 100);
+    const openingHalfSize = centerOpeningEnabled && openingCoverage < 100
+      ? Math.min(coverHalfX, coverHalfZ) * (100 - openingCoverage) / 100
+      : 0;
+    if (openingHalfSize > 0.000001) {
+      const source = geometry;
+      const sourcePositions = source.getAttribute('position');
+      const sourceUvs = source.getAttribute('uv');
+      const sourceNormals = source.getAttribute('normal');
+      const sourceIndices = source.getIndex();
+      const materialTriangles = [[], [], []];
+      const vertexData = (index) => ({
+        position: new THREE.Vector3().fromBufferAttribute(sourcePositions, index),
+        uv: new THREE.Vector2().fromBufferAttribute(sourceUvs, index),
+        normal: new THREE.Vector3().fromBufferAttribute(sourceNormals, index),
+      });
+      const interpolateVertex = (start, end, amount) => ({
+        position: start.position.clone().lerp(end.position, amount),
+        uv: start.uv.clone().lerp(end.uv, amount),
+        normal: start.normal.clone().lerp(end.normal, amount).normalize(),
+      });
+      const clipPolygon = (polygon, coordinate, boundary, keepGreater) => {
+        const result = [];
+        polygon.forEach((start, index) => {
+          const end = polygon[(index + 1) % polygon.length];
+          const startValue = start.position[coordinate];
+          const endValue = end.position[coordinate];
+          const startDistance = keepGreater ? startValue - boundary : boundary - startValue;
+          const endDistance = keepGreater ? endValue - boundary : boundary - endValue;
+          const startInside = startDistance >= -0.000001;
+          const endInside = endDistance >= -0.000001;
+          if (startInside) result.push(start);
+          if (startInside === endInside) return;
+          const amount = startDistance / (startDistance - endDistance);
+          result.push(interpolateVertex(start, end, amount));
+        });
+        return result;
+      };
+      // Four non-overlapping rectangles are the complement of the center square.
+      const outsideRegions = [
+        [['x', -openingHalfSize, false]],
+        [['x', openingHalfSize, true]],
+        [['x', -openingHalfSize, true], ['x', openingHalfSize, false], ['z', -openingHalfSize, false]],
+        [['x', -openingHalfSize, true], ['x', openingHalfSize, false], ['z', openingHalfSize, true]],
+      ];
+      source.groups.forEach((group, materialIndex) => {
+        for (let offset = group.start; offset < group.start + group.count; offset += 3) {
+          const triangle = [0, 1, 2].map((corner) => vertexData(sourceIndices.getX(offset + corner)));
+          outsideRegions.forEach((region) => {
+            const clipped = region.reduce(
+              (polygon, [coordinate, boundary, keepGreater]) => (
+                polygon.length ? clipPolygon(polygon, coordinate, boundary, keepGreater) : polygon
+              ),
+              triangle,
+            );
+            for (let corner = 1; corner + 1 < clipped.length; corner += 1) {
+              materialTriangles[materialIndex].push(clipped[0], clipped[corner], clipped[corner + 1]);
+            }
+          });
+        }
+      });
+      const openingSegments = subdivisions;
+      const profileHeight = (layer, x, z) => {
+        const xHeight = profileHeightAt(faceProfiles[layer].x, x);
+        const zHeight = profileHeightAt(faceProfiles[layer].y, z);
+        return (raised ? Math.min(xHeight, zHeight) : Math.max(xHeight, zHeight)) + verticalShift;
+      };
+      const openingSides = [
+        { start: [-openingHalfSize, -openingHalfSize], end: [openingHalfSize, -openingHalfSize], normal: [0, 0, 1] },
+        { start: [openingHalfSize, -openingHalfSize], end: [openingHalfSize, openingHalfSize], normal: [-1, 0, 0] },
+        { start: [openingHalfSize, openingHalfSize], end: [-openingHalfSize, openingHalfSize], normal: [0, 0, -1] },
+        { start: [-openingHalfSize, openingHalfSize], end: [-openingHalfSize, -openingHalfSize], normal: [1, 0, 0] },
+      ];
+      const returnVertex = (x, y, z, u, v, normal) => ({
+        position: new THREE.Vector3(x, y, z),
+        uv: new THREE.Vector2(u, v),
+        normal: new THREE.Vector3(...normal),
+      });
+      openingSides.forEach((side) => {
+        for (let segment = 0; segment < openingSegments; segment += 1) {
+          const startAmount = segment / openingSegments;
+          const endAmount = (segment + 1) / openingSegments;
+          const x0 = THREE.MathUtils.lerp(side.start[0], side.end[0], startAmount);
+          const z0 = THREE.MathUtils.lerp(side.start[1], side.end[1], startAmount);
+          const x1 = THREE.MathUtils.lerp(side.start[0], side.end[0], endAmount);
+          const z1 = THREE.MathUtils.lerp(side.start[1], side.end[1], endAmount);
+          const lower0 = returnVertex(x0, profileHeight(0, x0, z0), z0, segment, 0, side.normal);
+          const lower1 = returnVertex(x1, profileHeight(0, x1, z1), z1, segment + 1, 0, side.normal);
+          const upper0 = returnVertex(x0, profileHeight(1, x0, z0), z0, segment, 1, side.normal);
+          const upper1 = returnVertex(x1, profileHeight(1, x1, z1), z1, segment + 1, 1, side.normal);
+          materialTriangles[2].push(lower0, lower1, upper0, lower1, upper1, upper0);
+        }
+      });
+      const clippedPositions = [];
+      const clippedUvs = [];
+      const clippedNormals = [];
+      geometry = new THREE.BufferGeometry();
+      materialTriangles.forEach((vertices, materialIndex) => {
+        const groupStart = clippedPositions.length / 3;
+        vertices.forEach((vertexItem) => {
+          clippedPositions.push(...vertexItem.position.toArray());
+          clippedUvs.push(...vertexItem.uv.toArray());
+          clippedNormals.push(...vertexItem.normal.toArray());
+        });
+        geometry.addGroup(groupStart, vertices.length, materialIndex);
+      });
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(clippedPositions, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(clippedUvs, 2));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(clippedNormals, 3));
+      source.dispose();
+    }
+    geometry.userData.hallRibVaultConstruction = 'intersection-of-x-and-y-curved-vault-roofs';
+    geometry.userData.hallRibVaultIntradosRule = raised
+      ? 'minimum-envelope-retains-only-shared-central-x-y-vault-intersection'
+      : 'four-panel-intersection-of-x-and-y-vault-soffit-profiles';
+    geometry.userData.hallRibVaultShellThickness = shellThickness;
+    geometry.userData.hallRibVaultSubdivisions = subdivisions;
+    geometry.userData.hallRibVaultRidgeRule = 'four-diagonal-groins-follow-equal-height-intersections';
+    geometry.userData.hallRibVaultUvMapping = 'metre-based-symmetric-u-follows-generating-barrel-axis-v-follows-nearest-spring-vault-arc';
+    geometry.userData.hallRibVaultBrickScaleRule = 'same-physical-bond-period-on-x-and-y-generated-roof-panels';
+    geometry.userData.hallRibVaultPatternContinuity = 'shared-symmetric-phase-across-four-groins-on-equal-span-bays';
+    geometry.userData.hallRibVaultPanelConstruction = 'four-independent-curved-panels-with-duplicated-sharp-groin-edges';
+    geometry.userData.hallRibVaultPanelCount = panels.length;
+    geometry.userData.hallRibVaultCenterOpeningEnabled = openingHalfSize > 0.000001;
+    geometry.userData.hallRibVaultCenterOpeningShape = openingHalfSize > 0.000001 ? 'square' : null;
+    geometry.userData.hallRibVaultCenterOpeningHalfSize = openingHalfSize;
+    geometry.userData.hallRibVaultCenterOpeningCoverage = openingCoverage;
+    geometry.userData.hallRibVaultCenterOpeningRule = openingHalfSize > 0.000001
+      ? 'physical-square-hole-only-bond-and-pattern-remain-full-coverage'
+      : null;
+    geometry.userData.hallRibVaultXArcLength = xProfileMetric.total;
+    geometry.userData.hallRibVaultYArcLength = yProfileMetric.total;
+    const ridgePathsForFace = (layer) => {
+      const profiles = faceProfiles[layer];
+      const metrics = faceMetrics[layer];
+      return [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([signX, signZ]) => {
+        const xBranch = profiles.x
+          .filter((point) => signX < 0 ? point.x <= 0.000001 : point.x >= -0.000001)
+          .sort((left, right) => signX < 0 ? left.x - right.x : right.x - left.x);
+        const path = [];
+        for (let step = 0; step <= subdivisions; step += 1) {
+          const point = profilePointAtProgress(xBranch, step / subdivisions);
+          const z = profileCoordinateAtHeight(metrics.y, signZ, point.y);
+          if (z == null) break;
+          path.push([point.x, point.y + verticalShift, z]);
+        }
+        return path;
+      }).filter((path) => path.length > 1);
+    };
+    geometry.userData.hallRibVaultInteriorRidgePaths = ridgePathsForFace(0);
+    geometry.userData.hallRibVaultExteriorRidgePaths = ridgePathsForFace(1);
+    geometry.userData.hallRibVaultRidgePaths = geometry.userData.hallRibVaultInteriorRidgePaths;
+    geometry.userData.hallRibVaultBoundaryFlushRule = 'interior-follows-vault-soffit-exterior-follows-vault-extrados';
+    geometry.userData.hallRibVaultInteriorFaceDefinesBayBoundary = interiorFaceDefinesBayBoundary;
+    geometry.userData.hallRibVaultSeatRule = raised
+      ? 'retains-full-overlapping-vault-footprint-at-supporting-vault-centerlines'
+      : 'starts-at-inward-vault-side-faces-with-no-centerline-overlap';
+    geometry.userData.hallRibVaultClearHalfWidth = coverHalfX;
+    geometry.userData.hallRibVaultClearHalfDepth = coverHalfZ;
+    geometry.userData.hallRibVaultVaultFaceInset = raised ? 0 : ribWidth / 2;
+    geometry.userData.hallRaisedRibVault = raised;
+    geometry.userData.hallRaisedRibVaultBooleanRule = raised
+      ? 'keep-central-overlap-remove-non-overlapping-outer-lobes'
+      : null;
+    geometry.userData.hallRaisedRibVaultVerticalShift = verticalShift;
+    geometry.userData.hallRaisedRibVaultBearingY = transitionBearingY;
+    geometry.userData.hallRaisedRibVaultFootprint = raised ? {
+      northOuter: rawFaceProfiles[1].y[0].x,
+      northInner: rawFaceProfiles[0].y[0].x,
+      southInner: rawFaceProfiles[0].y.at(-1).x,
+      southOuter: rawFaceProfiles[1].y.at(-1).x,
+      westOuter: rawFaceProfiles[1].x[0].x,
+      westInner: rawFaceProfiles[0].x[0].x,
+      eastInner: rawFaceProfiles[0].x.at(-1).x,
+      eastOuter: rawFaceProfiles[1].x.at(-1).x,
+    } : null;
+    geometry.userData.hallRaisedRibVaultTransitionProfiles = raised ? {
+      xBottom: rawFaceProfiles[1].x.map((point) => point.toArray()),
+      xTop: rawFaceProfiles[1].x.map((point) => [point.x, transitionBearingY]),
+      yBottom: rawFaceProfiles[1].y.map((point) => point.toArray()),
+      yTop: rawFaceProfiles[1].y.map((point) => [point.x, transitionBearingY]),
+    } : null;
+    return geometry;
+  };
+  const archSoffitProfile = (profile) => profile.map((point, index) => {
+    const previous = profile[Math.max(0, index - 1)];
+    const next = profile[Math.min(profile.length - 1, index + 1)];
+    const tangent = next.clone().sub(previous).normalize();
+    const soffitNormal = new THREE.Vector2(tangent.y, -tangent.x).normalize();
+    return point.clone().addScaledVector(soffitNormal, ribHeight / 2);
+  });
+  const archInfillShape = (soffit, openings) => {
+    if (!openings.length) {
+      const solidShape = new THREE.Shape();
+      solidShape.moveTo(soffit[0].x, wallTop);
+      soffit.forEach((point) => solidShape.lineTo(point.x, point.y));
+      solidShape.lineTo(soffit.at(-1).x, wallTop);
+      solidShape.closePath();
+      return solidShape;
+    }
+    const shape = archCapShape(
+      soffit[0].x,
+      soffit.at(-1).x,
+      wallTop,
+      soffit,
+      [],
+      openings,
+    );
+    return shape;
+  };
+  const addBoundaryVaultInfill = ({ side, direction, profile, center, rotationY = 0, extrusionStart, faceOrder }) => {
+    if ((hallUsesBarrel && direction !== hallBarrelAxis) || walls.openSides.includes(side)) return;
+    const soffit = archSoffitProfile(profile);
+    if (Math.max(...soffit.map((point) => point.y)) <= wallTop + 0.0001) return;
+    const span = profile.at(-1).x - profile[0].x;
+    const boundaryBayCenters = side === 'north' || side === 'south'
+      ? Array.from({ length: gridX }, (_, index) => -width / 2 + (index + 0.5) * bayWidth)
+      : Array.from({ length: gridY }, (_, index) => -depth / 2 + (index + 0.5) * bayDepth);
+    const belongsToThisBay = (opening) => {
+      const nearestCenter = boundaryBayCenters.reduce((nearest, candidate) => (
+        Math.abs(opening.along - candidate) < Math.abs(opening.along - nearest) ? candidate : nearest
+      ), boundaryBayCenters[0]);
+      return Math.abs(center - nearestCenter) <= 0.0001;
+    };
+    const transitionOpenings = hallOpeningsBySide[side]
+      .filter(belongsToThisBay)
+      .map((opening) => ({
+        ...hallTransitionOpeningProfile(opening, center, span),
+        openingId: opening.id,
+        openingType: opening.type,
+      }))
+      .filter((opening) => (
+        opening.top > wallTop + 0.0001
+        && opening.right > soffit[0].x
+        && opening.left < soffit.at(-1).x
+      ));
+    const rise = Math.max(0.1, ...profile.map((point) => point.y - wallTop));
+    const returnMaterial = wallMaterial(walls, side, thickness, rise, true);
+    const materials = faceOrder === 'exterior-first'
+      ? [hallExteriorWallMaterial, hallInteriorWallMaterial, returnMaterial]
+      : [hallInteriorWallMaterial, hallExteriorWallMaterial, returnMaterial];
+    const infill = extrudedShape(archInfillShape(soffit, transitionOpenings), thickness, extrusionStart, materials, side);
+    applyHallPerimeterBrickUvs(infill.geometry, side, width, depth, {
+      alongOffset: center,
+      extruded: true,
+    });
+    infill.rotation.y = rotationY;
+    if (side === 'north' || side === 'south') infill.position.x = center;
+    else {
+      infill.position.x = side === 'east' ? width / 2 : -width / 2;
+      infill.position.z = center;
+    }
+    addMesh(infill, `Hall ${side} wall masonry under boundary vault`, {
+      wallSide: side,
+      isHallBoundaryVaultInfill: true,
+      hallWallContinuation: 'perimeter-wall-to-vault-underside',
+      hallInteriorBondSide: 'room_plan_interior',
+      hallExteriorBondSide: 'room_plan_exterior',
+      hallPerimeterBondCycleLength: hallPerimeter,
+      hallPerimeterBondContinuity: 'continues-corresponding-lower-wall-face-without-phase-reset',
+      hallBrickCourseAxis: 'horizontal-world-y',
+      hallVaultOverlapRule: 'wall-stops-at-square-vault-soffit-edge',
+      hallVaultSoffitProfile: soffit.map((point) => point.toArray()),
+      hallBoundaryVaultCenter: center,
+      hallBoundaryVaultWallTop: wallTop,
+      hallTransitionOpeningIds: transitionOpenings.map((opening) => opening.openingId),
+      hallTransitionOpeningTypes: transitionOpenings.map((opening) => opening.openingType),
+      hallTransitionOpeningContinuation: 'same-world-height-cut-from-connected-perimeter-wall',
+    });
+  };
+  for (let ix = 0; ix < gridX; ix += 1) {
+    const centerX = -width / 2 + (ix + 0.5) * bayWidth;
+    addBoundaryVaultInfill({
+      side: 'north', direction: 'x', profile: xArchProfile, center: centerX,
+      extrusionStart: -depth / 2 - thickness / 2, faceOrder: 'exterior-first',
+    });
+    addBoundaryVaultInfill({
+      side: 'south', direction: 'x', profile: xArchProfile, center: centerX,
+      extrusionStart: depth / 2 - thickness / 2, faceOrder: 'interior-first',
+    });
+  }
+  for (let iy = 0; iy < gridY; iy += 1) {
+    const centerZ = -depth / 2 + (iy + 0.5) * bayDepth;
+    addBoundaryVaultInfill({
+      side: 'east', direction: 'y', profile: yArchProfile, center: centerZ,
+      rotationY: Math.PI / 2, extrusionStart: -thickness / 2, faceOrder: 'interior-first',
+    });
+    addBoundaryVaultInfill({
+      side: 'west', direction: 'y', profile: yArchProfile, center: centerZ,
+      rotationY: -Math.PI / 2, extrusionStart: -thickness / 2, faceOrder: 'interior-first',
+    });
+  }
+  const archHeightAt = (profile, coordinate) => {
+    if (!profile.length) return wallTop;
+    const sorted = [...profile].sort((left, right) => left.x - right.x);
+    if (coordinate <= sorted[0].x) return sorted[0].y;
+    if (coordinate >= sorted.at(-1).x) return sorted.at(-1).y;
+    for (let index = 0; index < sorted.length - 1; index += 1) {
+      const start = sorted[index];
+      const end = sorted[index + 1];
+      if (coordinate < start.x || coordinate > end.x) continue;
+      const progress = Math.abs(end.x - start.x) < 0.000001
+        ? 0
+        : (coordinate - start.x) / (end.x - start.x);
+      return THREE.MathUtils.lerp(start.y, end.y, progress);
+    }
+    return wallTop;
+  };
+  const archExtradosProfile = (profile) => profile.map((point, index) => {
+    if (index === 0 || index === profile.length - 1) {
+      return point.clone().add(new THREE.Vector2(
+        (point.x < 0 ? -1 : 1) * ribHeight / 2,
+        0,
+      ));
+    }
+    const previous = profile[Math.max(0, index - 1)];
+    const next = profile[Math.min(profile.length - 1, index + 1)];
+    const tangent = next.clone().sub(previous).normalize();
+    const firstNormal = new THREE.Vector2(-tangent.y, tangent.x);
+    const secondNormal = firstNormal.clone().multiplyScalar(-1);
+    let extrados = firstNormal.y > secondNormal.y + 0.000001 ? firstNormal : secondNormal;
+    if (Math.abs(firstNormal.y - secondNormal.y) <= 0.000001) {
+      extrados = firstNormal.x * point.x >= secondNormal.x * point.x ? firstNormal : secondNormal;
+    }
+    return point.clone().addScaledVector(extrados.normalize(), ribHeight / 2);
+  });
+  const xVaultExtradosProfile = archExtradosProfile(xArchProfile);
+  const yVaultExtradosProfile = archExtradosProfile(yArchProfile);
+  const vaultCrownY = Math.max(
+    wallTop + 0.05,
+    ...xArchProfile.map((point) => point.y),
+    ...yArchProfile.map((point) => point.y),
+  );
+  // Use the actual sampled top edge of the rectangular vault, rather than a
+  // nominal centreline crown plus half-height. At a pointed crown those are not
+  // guaranteed to coincide because the profile offset follows the local frame.
+  // This measured elevation is the single shared spring for both Pendentive
+  // dome-base curves and the dome shell above them.
+  const vaultBearingTopY = Math.max(
+    ...xVaultExtradosProfile.map((point) => point.y),
+    ...yVaultExtradosProfile.map((point) => point.y),
+  );
+  const halfExtradosProfile = (profile, sideSign) => {
+    const extrados = profile === xArchProfile
+      ? xVaultExtradosProfile
+      : profile === yArchProfile
+        ? yVaultExtradosProfile
+        : archExtradosProfile(profile);
+    const apexIndex = extrados.reduce((best, point, index) => (
+      point.y > extrados[best].y ? index : best
+    ), 0);
+    return sideSign < 0
+      ? extrados.slice(0, apexIndex + 1)
+      : extrados.slice(apexIndex).reverse();
+  };
+  const sampleProfileByArc = (profile, progress) => {
+    if (profile.length <= 1) return profile[0]?.clone() || new THREE.Vector2();
+    const lengths = [0];
+    for (let index = 1; index < profile.length; index += 1) {
+      lengths.push(lengths.at(-1) + profile[index - 1].distanceTo(profile[index]));
+    }
+    const target = THREE.MathUtils.clamp(progress, 0, 1) * lengths.at(-1);
+    let segment = 0;
+    while (segment < lengths.length - 2 && lengths[segment + 1] < target) segment += 1;
+    const length = lengths[segment + 1] - lengths[segment];
+    const amount = length > 0.000001 ? (target - lengths[segment]) / length : 0;
+    return profile[segment].clone().lerp(profile[segment + 1], amount);
+  };
+  const hallPendentiveGeometry = ({
+    centerX,
+    centerZ,
+    domeRadius,
+    domeOuterRadius,
+    springY,
+    springYAtAngle = null,
+    domeMeridianLength = null,
+    closeUpperInterface = false,
+  }) => {
+    const angularSegments = building.gridPerformanceMode === 'large' ? 16 : 32;
+    const verticalSegments = building.gridPerformanceMode === 'large' ? 12 : 24;
+    const halfWidth = bayWidth / 2;
+    const halfDepth = bayDepth / 2;
+    const intersectionCutHalf = Math.max(ribWidth, columnDimension) / 2;
+    const supportHalfWidth = Math.max(0.1, halfWidth - intersectionCutHalf);
+    const supportHalfDepth = Math.max(0.1, halfDepth - intersectionCutHalf);
+    const xExtradosBySign = new Map([-1, 1].map((sign) => [sign, halfExtradosProfile(xArchProfile, sign)]));
+    const yExtradosBySign = new Map([-1, 1].map((sign) => [sign, halfExtradosProfile(yArchProfile, sign)]));
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+    const patchRows = [];
+    const appendVertex = (point) => {
+      positions.push(point.x, point.y, point.z);
+      uvs.push(0, point.y);
+      return positions.length / 3 - 1;
+    };
+    const continuesDomeBond = Number(domeMeridianLength) > 0.000001;
+    const interiorVaultEdgeIntersectionPoint = (signX, signZ) => {
+      const faceX = centerX + signX * supportHalfWidth;
+      const faceZ = centerZ + signZ * supportHalfDepth;
+      // The two inner vault-edge arcs share this exact bearing point. A
+      // triangular Pendentive has one lower corner here; retaining the former
+      // L-shaped column cut as a fourth edge made its visible tip appear offset
+      // from the vault intersection when viewed closely.
+      return new THREE.Vector3(faceX, wallTop, faceZ);
+    };
+    const mapRowUvsByMeasuredLength = (rows, sourcePositions, targetUvs, vertexOffset = 0) => {
+      const pointAt = (vertexIndex) => new THREE.Vector3(
+        sourcePositions[vertexIndex * 3],
+        sourcePositions[vertexIndex * 3 + 1],
+        sourcePositions[vertexIndex * 3 + 2],
+      );
+      const columnDistances = Array.from({ length: rows[0].length }, () => [0]);
+      for (let segment = 0; segment < rows[0].length; segment += 1) {
+        for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+          const previousIndex = rows[rowIndex - 1][segment] + vertexOffset;
+          const currentIndex = rows[rowIndex][segment] + vertexOffset;
+          columnDistances[segment].push(
+            columnDistances[segment].at(-1)
+            + pointAt(previousIndex).distanceTo(pointAt(currentIndex)),
+          );
+        }
+      }
+      rows.forEach((row, rowIndex) => {
+        const distances = [0];
+        for (let index = 1; index < row.length; index += 1) {
+          const previousIndex = row[index - 1] + vertexOffset;
+          const currentIndex = row[index] + vertexOffset;
+          distances.push(distances.at(-1) + pointAt(previousIndex).distanceTo(pointAt(currentIndex)));
+        }
+        const centerDistance = distances.at(-1) / 2;
+        row.forEach((vertexIndex, segment) => {
+          const targetIndex = vertexIndex + vertexOffset;
+          const meridianDistance = columnDistances[segment][rowIndex];
+          const courseCoordinate = continuesDomeBond
+            ? 1 - (
+              columnDistances[segment].at(-1) - meridianDistance
+            ) / domeMeridianLength
+            : meridianDistance;
+          if (continuesDomeBond) {
+            targetUvs[targetIndex * 2 + 1] = courseCoordinate;
+          } else {
+            targetUvs[targetIndex * 2] = distances[segment] - centerDistance;
+            targetUvs[targetIndex * 2 + 1] = courseCoordinate;
+          }
+        });
+      });
+    };
+    const quadrantCourseU = (signX, signZ, progress) => {
+      const startAngle = signZ < 0 ? Math.PI : signX < 0 ? Math.PI * 2 : 0;
+      const endAngle = signX < 0 ? Math.PI * 1.5 : Math.PI * 0.5;
+      return THREE.MathUtils.lerp(startAngle, endAngle, progress) / (Math.PI * 2);
+    };
+    const mapPatchPhysicalRowUvs = (
+      targetUvs,
+      sourcePositions,
+      faceRadius,
+      vertexOffset = 0,
+    ) => {
+      const pointAt = (vertexIndex) => new THREE.Vector3(
+        sourcePositions[vertexIndex * 3],
+        sourcePositions[vertexIndex * 3 + 1],
+        sourcePositions[vertexIndex * 3 + 2],
+      );
+      const circumference = Math.max(0.000001, Math.PI * 2 * faceRadius);
+      patchRows.forEach(({ rows, signX, signZ }) => {
+        const direction = Math.sign(
+          quadrantCourseU(signX, signZ, 1) - quadrantCourseU(signX, signZ, 0),
+        );
+        const centerCoordinate = quadrantCourseU(signX, signZ, 0.5);
+        rows.forEach((row) => {
+          const distances = [0];
+          for (let index = 1; index < row.length; index += 1) {
+            const previous = row[index - 1] + vertexOffset;
+            const current = row[index] + vertexOffset;
+            distances.push(distances.at(-1) + pointAt(previous).distanceTo(pointAt(current)));
+          }
+          const anchorDistance = distances[Math.floor(row.length / 2)];
+          row.forEach((vertexIndex, index) => {
+            const physicalOffset = direction * (distances[index] - anchorDistance);
+            targetUvs[(vertexIndex + vertexOffset) * 2] = continuesDomeBond
+              ? centerCoordinate + physicalOffset / circumference
+              : centerCoordinate * circumference + physicalOffset;
+          });
+        });
+      });
+      // The shared dome interface retains its exact angular phase. Every row
+      // below it uses physical distance, so its brick count decreases with its
+      // circumference instead of squeezing the same joints toward the point.
+      if (continuesDomeBond) {
+        patchRows.forEach(({ rows, signX, signZ }) => {
+          rows.at(-1).forEach((vertexIndex, segment) => {
+            targetUvs[(vertexIndex + vertexOffset) * 2] = quadrantCourseU(
+              signX,
+              signZ,
+              segment / angularSegments,
+            );
+          });
+        });
+      }
+    };
+    [[1, 1], [1, -1], [-1, -1], [-1, 1]].forEach(([signX, signZ]) => {
+      const rows = [];
+      const xCrownProfilePoint = sampleProfileByArc(xExtradosBySign.get(signX), 1);
+      const yCrownProfilePoint = sampleProfileByArc(yExtradosBySign.get(signZ), 1);
+      const xCrown = new THREE.Vector3(
+        centerX + xCrownProfilePoint.x,
+        xCrownProfilePoint.y,
+        centerZ + signZ * supportHalfDepth,
+      );
+      const yCrown = new THREE.Vector3(
+        centerX + signX * supportHalfWidth,
+        yCrownProfilePoint.y,
+        centerZ + yCrownProfilePoint.x,
+      );
+      for (let rowIndex = 0; rowIndex <= verticalSegments; rowIndex += 1) {
+        const v = rowIndex / verticalSegments;
+        const xEdgeProfilePoint = sampleProfileByArc(xExtradosBySign.get(signX), v);
+        const yEdgeProfilePoint = sampleProfileByArc(yExtradosBySign.get(signZ), v);
+        const xEdge = new THREE.Vector3(
+          centerX + xEdgeProfilePoint.x,
+          xEdgeProfilePoint.y,
+          centerZ + signZ * supportHalfDepth,
+        );
+        const yEdge = new THREE.Vector3(
+          centerX + signX * supportHalfWidth,
+          yEdgeProfilePoint.y,
+          centerZ + yEdgeProfilePoint.x,
+        );
+        const row = [];
+        for (let segment = 0; segment <= angularSegments; segment += 1) {
+          const s = segment / angularSegments;
+          const angle = s * Math.PI / 2;
+          let planAngle = Math.atan2(signX * Math.sin(angle), signZ * Math.cos(angle));
+          if (planAngle < 0) planAngle += Math.PI * 2;
+          const curvedSpringY = typeof springYAtAngle === 'function'
+            ? Number(springYAtAngle(planAngle))
+            : springY;
+          const domeEdge = new THREE.Vector3(
+            centerX + signX * domeRadius * Math.sin(angle),
+            Number.isFinite(curvedSpringY) ? curvedSpringY : springY,
+            centerZ + signZ * domeRadius * Math.cos(angle),
+          );
+          // Develop the interior from its three final boundaries. The two
+          // vault-inner clipping curves stay inside the red vault outlines and
+          // terminate at the green interior points on the dome base circle.
+          const point = xEdge.clone().multiplyScalar(1 - s)
+            .addScaledVector(yEdge, s)
+            .addScaledVector(domeEdge, v)
+            .addScaledVector(xCrown, -v * (1 - s))
+            .addScaledVector(yCrown, -v * s);
+          if (rowIndex === 0) {
+            point.copy(interiorVaultEdgeIntersectionPoint(signX, signZ));
+          }
+          if (rowIndex === verticalSegments) point.copy(domeEdge);
+          row.push(appendVertex(point));
+        }
+        rows.push(row);
+      }
+      for (let rowIndex = 0; rowIndex < rows.length - 1; rowIndex += 1) {
+        for (let segment = 0; segment < angularSegments; segment += 1) {
+          const lowerLeft = rows[rowIndex][segment];
+          const lowerRight = rows[rowIndex][segment + 1];
+          const upperLeft = rows[rowIndex + 1][segment];
+          const upperRight = rows[rowIndex + 1][segment + 1];
+          indices.push(lowerLeft, upperLeft, lowerRight, lowerRight, upperLeft, upperRight);
+        }
+      }
+      patchRows.push({ rows, signX, signZ });
+    });
+    // Relax only the interior control net. The analytic construction above is
+    // exact on all four edges, but its direct transfinite blend concentrates
+    // interior rows toward the column corner. A fixed-boundary harmonic pass
+    // distributes that curvature across the patch, producing the broad,
+    // flattened guide curves used to lay the masonry courses. The bearing cut,
+    // both vault curves, dome circle, and penultimate crown row are never moved;
+    // keeping that last row fixed also leaves the measured dome tangent intact.
+    const interiorRelaxationIterations = Math.max(32, verticalSegments * 2);
+    const interiorRelaxationAmount = 0.68;
+    const relaxPatchControlNet = (rows, targetPositions) => {
+      const lastRelaxedRow = rows.length - 3;
+      if (lastRelaxedRow < 1) return;
+      for (let iteration = 0; iteration < interiorRelaxationIterations; iteration += 1) {
+        const updates = [];
+        for (let rowIndex = 1; rowIndex <= lastRelaxedRow; rowIndex += 1) {
+          for (let segment = 1; segment < angularSegments; segment += 1) {
+            const vertexIndex = rows[rowIndex][segment];
+            const coordinate = vertexIndex * 3;
+            const neighborIndices = [
+              rows[rowIndex - 1][segment],
+              rows[rowIndex + 1][segment],
+              rows[rowIndex][segment - 1],
+              rows[rowIndex][segment + 1],
+            ];
+            const average = new THREE.Vector3();
+            neighborIndices.forEach((neighborIndex) => {
+              const neighborCoordinate = neighborIndex * 3;
+              average.x += targetPositions[neighborCoordinate];
+              average.y += targetPositions[neighborCoordinate + 1];
+              average.z += targetPositions[neighborCoordinate + 2];
+            });
+            average.multiplyScalar(0.25);
+            updates.push([
+              coordinate,
+              THREE.MathUtils.lerp(targetPositions[coordinate], average.x, interiorRelaxationAmount),
+              THREE.MathUtils.lerp(targetPositions[coordinate + 1], average.y, interiorRelaxationAmount),
+              THREE.MathUtils.lerp(targetPositions[coordinate + 2], average.z, interiorRelaxationAmount),
+            ]);
+          }
+        }
+        updates.forEach(([coordinate, x, y, z]) => {
+          targetPositions[coordinate] = x;
+          targetPositions[coordinate + 1] = y;
+          targetPositions[coordinate + 2] = z;
+        });
+      }
+    };
+    patchRows.forEach(({ rows }) => relaxPatchControlNet(rows, positions));
+    const shellThickness = Math.max(0.01, domeOuterRadius - domeRadius);
+    // The interior face is the exact Pendentive surface bounded by the visible
+    // top of both square vaults. Do not shorten or resample its rows: the
+    // natural dome blend must be free to reach the red-point base circle at
+    // the crown instead of remaining pinned to the rib's inner edge.
+    const interiorVaultBearingInset = 0;
+    patchRows.forEach(({ rows }) => mapRowUvsByMeasuredLength(rows, positions, uvs));
+    mapPatchPhysicalRowUvs(uvs, positions, domeRadius);
+    const innerGeometry = new THREE.BufferGeometry();
+    innerGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    innerGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    innerGeometry.setIndex(indices);
+    innerGeometry.computeVertexNormals();
+    const innerPositions = innerGeometry.getAttribute('position');
+    const surfaceVertexCount = innerPositions.count;
+    const shellPositions = Array.from(innerPositions.array);
+    // Construct the exterior as its own boundary surface. It is not derived by
+    // displacing interior vertices. Each quadrant interpolates its two sampled
+    // exterior vault curves, its exterior dome-base quarter-circle, and the
+    // clean bearing return. The full Coons correction preserves every boundary
+    // exactly and avoids both radial swelling and per-vertex clipping bumps.
+    const outerSurface = new Float32Array(surfaceVertexCount * 3);
+    const writeOuterPoint = (vertexIndex, point) => {
+      outerSurface[vertexIndex * 3] = point.x;
+      outerSurface[vertexIndex * 3 + 1] = point.y;
+      outerSurface[vertexIndex * 3 + 2] = point.z;
+    };
+    const outerSupportHalfWidth = supportHalfWidth + shellThickness;
+    const outerSupportHalfDepth = supportHalfDepth + shellThickness;
+    patchRows.forEach(({ rows, signX, signZ }) => {
+      const xOuterProfile = xExtradosBySign.get(signX);
+      const yOuterProfile = yExtradosBySign.get(signZ);
+      const xOuterStart = sampleProfileByArc(xOuterProfile, 0);
+      const yOuterStart = sampleProfileByArc(yOuterProfile, 0);
+      const xSeatCorrection = signX * outerSupportHalfWidth - xOuterStart.x;
+      const ySeatCorrection = signZ * outerSupportHalfDepth - yOuterStart.x;
+      const xCrownProfilePoint = sampleProfileByArc(xOuterProfile, 1);
+      const yCrownProfilePoint = sampleProfileByArc(yOuterProfile, 1);
+      const xCrown = new THREE.Vector3(
+        centerX + xCrownProfilePoint.x,
+        xCrownProfilePoint.y,
+        centerZ + signZ * outerSupportHalfDepth,
+      );
+      const yCrown = new THREE.Vector3(
+        centerX + signX * outerSupportHalfWidth,
+        yCrownProfilePoint.y,
+        centerZ + yCrownProfilePoint.x,
+      );
+      rows.forEach((row, rowIndex) => {
+        const v = rowIndex / Math.max(1, rows.length - 1);
+        const xEdgeProfilePoint = sampleProfileByArc(xOuterProfile, v);
+        const yEdgeProfilePoint = sampleProfileByArc(yOuterProfile, v);
+        // Preserve the complete vault-arch elevation while smoothly seating
+        // its plan position onto the shared exterior red point. Smoothstep's
+        // zero derivatives avoid introducing a new kink at either endpoint.
+        const seatCorrection = 1 - v * v * (3 - 2 * v);
+        xEdgeProfilePoint.x += xSeatCorrection * seatCorrection;
+        yEdgeProfilePoint.x += ySeatCorrection * seatCorrection;
+        const xEdge = new THREE.Vector3(
+          centerX + xEdgeProfilePoint.x,
+          xEdgeProfilePoint.y,
+          centerZ + signZ * outerSupportHalfDepth,
+        );
+        const yEdge = new THREE.Vector3(
+          centerX + signX * outerSupportHalfWidth,
+          yEdgeProfilePoint.y,
+          centerZ + yEdgeProfilePoint.x,
+        );
+        row.forEach((vertexIndex, segment) => {
+          const s = segment / angularSegments;
+          const angle = s * Math.PI / 2;
+          let planAngle = Math.atan2(signX * Math.sin(angle), signZ * Math.cos(angle));
+          if (planAngle < 0) planAngle += Math.PI * 2;
+          const curvedSpringY = typeof springYAtAngle === 'function'
+            ? Number(springYAtAngle(planAngle))
+            : springY;
+          const domeBoundary = new THREE.Vector3(
+            centerX + signX * domeOuterRadius * Math.sin(angle),
+            Number.isFinite(curvedSpringY) ? curvedSpringY : springY,
+            centerZ + signZ * domeOuterRadius * Math.cos(angle),
+          );
+          // Evaluate the exterior from its own three curves. This intentionally
+          // mirrors the interior patch equation but never reads an interior
+          // vertex or normal, so the two faces have the same smooth character
+          // without turning the exterior into a displaced copy.
+          const point = xEdge.clone().multiplyScalar(1 - s)
+            .addScaledVector(yEdge, s)
+            .addScaledVector(domeBoundary, v)
+            .addScaledVector(xCrown, -(1 - s) * v)
+            .addScaledVector(yCrown, -s * v);
+          if (rowIndex === 0) point.set(
+            centerX + signX * outerSupportHalfWidth,
+            wallTop,
+            centerZ + signZ * outerSupportHalfDepth,
+          );
+          if (rowIndex === rows.length - 1) point.copy(domeBoundary);
+          writeOuterPoint(vertexIndex, point);
+        });
+      });
+    });
+    patchRows.forEach(({ rows }) => relaxPatchControlNet(rows, outerSurface));
+    shellPositions.push(...outerSurface);
+    const exteriorCrownStartRow = verticalSegments;
+    const exteriorVaultCurveStripSegments = 0;
+    const outerUvs = [...uvs];
+    patchRows.forEach(({ rows }) => mapRowUvsByMeasuredLength(
+      rows,
+      shellPositions,
+      outerUvs,
+      surfaceVertexCount,
+    ));
+    mapPatchPhysicalRowUvs(outerUvs, shellPositions, domeOuterRadius, surfaceVertexCount);
+    const harmonizeSharedCrownPhases = (targetUvs, sourcePositions, vertexOffset = 0) => {
+      const phaseGroups = new Map();
+      patchRows.forEach(({ rows }) => {
+        [rows.at(-1)[0], rows.at(-1).at(-1)].forEach((vertexIndex) => {
+          const targetIndex = vertexIndex + vertexOffset;
+          let angle = Math.atan2(
+            sourcePositions[targetIndex * 3] - centerX,
+            sourcePositions[targetIndex * 3 + 2] - centerZ,
+          );
+          if (angle < 0) angle += Math.PI * 2;
+          const key = Math.round(angle * 1000000);
+          if (!phaseGroups.has(key)) phaseGroups.set(key, []);
+          phaseGroups.get(key).push(targetIndex);
+        });
+      });
+      phaseGroups.forEach((vertexIndices) => {
+        if (vertexIndices.length < 2) return;
+        const sharedPhase = vertexIndices.reduce(
+          (sum, vertexIndex) => sum + targetUvs[vertexIndex * 2 + 1],
+          0,
+        ) / vertexIndices.length;
+        vertexIndices.forEach((vertexIndex) => {
+          targetUvs[vertexIndex * 2 + 1] = sharedPhase;
+        });
+      });
+    };
+    harmonizeSharedCrownPhases(uvs, positions);
+    harmonizeSharedCrownPhases(outerUvs, shellPositions, surfaceVertexCount);
+    const shellUvs = [...uvs, ...outerUvs.slice(surfaceVertexCount * 2)];
+    const innerIndices = [...indices];
+    const outerIndices = [];
+    for (let index = 0; index < indices.length; index += 3) {
+      outerIndices.push(
+        indices[index] + surfaceVertexCount,
+        indices[index + 2] + surfaceVertexCount,
+        indices[index + 1] + surfaceVertexCount,
+      );
+    }
+    const returnIndices = [];
+    const addBoundaryReturn = (path) => {
+      for (let index = 0; index < path.length - 1; index += 1) {
+        const start = path[index];
+        const end = path[index + 1];
+        returnIndices.push(
+          start, end, end + surfaceVertexCount,
+          start, end + surfaceVertexCount, start + surfaceVertexCount,
+        );
+      }
+    };
+    patchRows.forEach(({ rows }) => {
+      addBoundaryReturn(rows[0]);
+      // With a dome, this is a shared masonry interface rather than an exposed
+      // horizontal cap. The dome's inner and outer shells continue directly
+      // from these two circles.
+      if (closeUpperInterface || !continuesDomeBond) addBoundaryReturn(rows.at(-1));
+      addBoundaryReturn(rows.map((row) => row[0]));
+      addBoundaryReturn(rows.map((row) => row.at(-1)));
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(shellPositions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(shellUvs, 2));
+    geometry.setIndex([...innerIndices, ...outerIndices, ...returnIndices]);
+    geometry.addGroup(0, innerIndices.length, 0);
+    geometry.addGroup(innerIndices.length, outerIndices.length, 1);
+    geometry.addGroup(innerIndices.length + outerIndices.length, returnIndices.length, 2);
+    geometry.computeVertexNormals();
+    geometry.userData.hallPendentiveLowerBoundary = 'two-exact-sampled-square-vault-extrados-edge-curves-per-corner';
+    geometry.userData.hallPendentiveUpperBoundary = 'planar-dome-base-circle-through-four-vault-crown-points';
+    geometry.userData.hallPendentiveMeridian = 'triangular-two-arch-coons-style-smooth-patch';
+    geometry.userData.hallPendentiveMeridianBlendRule = 'cubic-zero-start-slope-unit-crown-slope-no-horizontal-course-forcing';
+    geometry.userData.hallPendentiveVaultContact = 'square-vault-upper-bearing-surface';
+    geometry.userData.hallPendentiveTwoVaultBlend = 'one-patch-directly-bounded-by-both-vault-edges-and-dome-quarter-circle';
+    geometry.userData.hallPendentiveBrickCourseFlow = 'dome-base-anchored-concentric-courses-measured-down-each-surface-meridian';
+    geometry.userData.hallPendentiveClipRule = 'triangular-surface-terminates-on-both-vault-curves';
+    geometry.userData.hallPendentiveShellThickness = shellThickness;
+    geometry.userData.hallPendentiveShellThicknessSource = 'one-normal-brick-length';
+    geometry.userData.hallPendentiveSurfaceVertexCount = surfaceVertexCount;
+    geometry.userData.hallPendentiveInnerFaceRule = 'three-boundary-triangular-coons-patch-ending-at-green-vault-interior-points';
+    geometry.userData.hallPendentiveInteriorBoundaryCount = 3;
+    geometry.userData.hallPendentiveInteriorPointCount = 3;
+    geometry.userData.hallPendentiveInteriorBoundaries = ['first-vault-inner-clipping-curve', 'dome-interior-base-arc', 'second-vault-inner-clipping-curve'];
+    geometry.userData.hallPendentiveInnerVaultClipRule = 'stays-inside-vault-inner-edges-and-ends-at-green-dome-base-points';
+    geometry.userData.hallPendentiveInnerVaultBearingInset = interiorVaultBearingInset;
+    geometry.userData.hallPendentiveInteriorRelaxationRule = 'fixed-boundary-harmonic-control-net-with-preserved-crown-tangent-row';
+    geometry.userData.hallPendentiveInteriorRelaxationIterations = interiorRelaxationIterations;
+    geometry.userData.hallPendentiveOuterFaceRule = 'independent-three-boundary-exterior-coons-patch';
+    geometry.userData.hallPendentiveExteriorBoundaryCount = 3;
+    geometry.userData.hallPendentiveExteriorPointCount = 3;
+    geometry.userData.hallPendentiveExteriorBoundaries = ['first-vault-extrados', 'dome-exterior-base-arc', 'second-vault-extrados'];
+    geometry.userData.hallPendentiveClosedBoundaries = closeUpperInterface || !continuesDomeBond;
+    geometry.userData.hallPendentiveDomeAssemblyClosure = closeUpperInterface
+      ? 'same-curved-dome-interface-closed-only-because-visible-dome-is-disabled'
+      : continuesDomeBond
+      ? 'open-shared-circular-interface-closed-by-coincident-dome-inner-and-exterior-shells'
+      : 'standalone-transition-closed-by-upper-return';
+    geometry.userData.hallPendentiveVaultClipRule = 'exact-three-curve-boundary-with-no-post-offset-clipping';
+    geometry.userData.hallPendentiveColumnSeatRule = 'interior-collapses-to-exact-shared-vault-edge-intersection-exterior-ends-on-its-two-vault-curve-legs';
+    geometry.userData.hallPendentiveInteriorBottomCornerRule = 'single-exact-intersection-of-the-two-inner-vault-edge-arcs';
+    geometry.userData.hallPendentiveIntersectionCutRule = 'exterior-bearing-edge-interpolates-only-between-two-vault-curve-leg-points';
+    geometry.userData.hallPendentiveIntersectionCutHalf = intersectionCutHalf;
+    geometry.userData.hallPendentiveBearingThicknessRamp = 0;
+    geometry.userData.hallPendentiveVaultBoundaryThicknessRamp = 0;
+    geometry.userData.hallPendentiveBrickUvRule = continuesDomeBond
+      ? 'radial-centerline-anchored-physical-row-distance-u-with-shared-angular-dome-base-and-physical-meridian-distance-v'
+      : 'measured-row-u-with-independent-meridian-arc-length-v-in-metres';
+    geometry.userData.hallPendentiveHorizontalJointSpacingRule = 'constant-physical-width-with-fewer-bricks-toward-each-bottom-point';
+    geometry.userData.hallPendentiveVerticalJointFlowRule = 'fixed-dome-radial-centerlines-with-side-clipped-joints-not-boundary-anchored-drift';
+    geometry.userData.hallPendentiveDomeBondContinuation = continuesDomeBond;
+    geometry.userData.hallPendentiveDomeBondUvRule = continuesDomeBond
+      ? 'shared-concentric-v1-course-continues-into-corresponding-dome-meridian'
+      : null;
+    geometry.userData.hallPendentiveAngularSeamRule = 'continuous-per-quadrant-dome-lathe-u-with-explicit-360-degree-endpoint';
+    geometry.userData.hallPendentiveSharedCrownPhaseRule = 'all-interior-and-exterior-quadrants-share-dome-base-phase-v1';
+    geometry.userData.hallPendentiveDomeBondMeridianLength = continuesDomeBond
+      ? domeMeridianLength
+      : null;
+    geometry.userData.hallPendentiveExteriorShapeRule = 'independent-smooth-triangular-patch-developed-from-three-red-points-and-three-curves';
+    geometry.userData.hallPendentiveExteriorOffsetRule = 'none-independent-boundary-surface';
+    geometry.userData.hallPendentiveExteriorBottomCornerRule = 'single-one-brick-plan-offset-intersection-of-two-smoothly-seated-vault-extrados-curves';
+    geometry.userData.hallPendentiveExteriorRelaxationRule = 'fixed-three-boundary-harmonic-control-net-with-preserved-crown-tangent-row';
+    geometry.userData.hallPendentiveExteriorBearingClipRule = 'exterior-face-ends-at-exact-sampled-vault-leg-points';
+    geometry.userData.hallPendentiveExteriorCrownRule = 'exact-dome-exterior-base-arc-boundary';
+    geometry.userData.hallPendentiveCrownCurvature = 'circular-in-plan-with-no-sinusoidal-elevation-wave';
+    geometry.userData.hallPendentiveExteriorVaultBoundaryRule = 'two-exact-vault-extrados-boundaries-meet-dome-circle-at-their-red-crown-points';
+    geometry.userData.hallPendentiveExteriorVaultLimit = 'vault-centerline';
+    geometry.userData.hallPendentiveExteriorVaultCurveStripRule = 'disabled-no-crown-flattening-or-smoothing-strip';
+    geometry.userData.hallPendentiveExteriorVaultCurveStripSegments = exteriorVaultCurveStripSegments;
+    geometry.userData.hallPendentiveExteriorCrownStartRow = exteriorCrownStartRow;
+    geometry.userData.hallPendentiveVerticalSegments = verticalSegments;
+    geometry.userData.hallPendentiveAngularSegments = angularSegments;
+    geometry.userData.hallPendentiveResolutionRule = 'fixed-24-vertical-by-32-angular-unrelated-to-room-pendentive-controls';
+    geometry.userData.hallPendentiveTopClipRule = closeUpperInterface
+      ? 'same-curved-dome-interface-with-clean-shell-thickness-return'
+      : continuesDomeBond
+      ? 'exact-dome-base-arc-continues-to-uncapped-shared-dome-interface'
+      : 'standalone-transition-closed-at-upper-bearing';
+    geometry.userData.hallPendentiveTopClipY = springY;
+    geometry.userData.hallPendentiveDomeExteriorContactRadius = domeOuterRadius;
+    geometry.userData.hallPendentiveDomeContactRule = 'upper-exterior-circle-coincident-with-dome-exterior-base-circle';
+    geometry.userData.hallPendentiveInteriorDomeJointRule = 'dome-interior-base-and-pendentive-interior-arc-share-vault-green-point-radius';
+    geometry.userData.hallPendentiveLegTrimRule = 'interior-terminates-before-vault-red-arc-on-two-green-inner-crown-points';
+    geometry.userData.hallPendentiveSolidClosureRule = 'inner-and-exterior-shells-joined-by-clean-lower-upper-and-two-vault-curve-returns';
+    innerGeometry.dispose();
+    return geometry;
+  };
+  const measurePendentiveCrownTangents = (geometry, centerX, centerZ) => {
+    const positions = geometry?.getAttribute('position');
+    const surfaceVertexCount = Number(geometry?.userData?.hallPendentiveSurfaceVertexCount);
+    const verticalSegments = Number(geometry?.userData?.hallPendentiveVerticalSegments);
+    const angularSegments = Number(geometry?.userData?.hallPendentiveAngularSegments);
+    if (!positions || ![surfaceVertexCount, verticalSegments, angularSegments]
+      .every((value) => Number.isFinite(value) && value > 1)) return null;
+    const rowStride = angularSegments + 1;
+    const verticesPerPatch = (verticalSegments + 1) * rowStride;
+    const averagedFaceTangent = (faceOffset) => {
+      const tangentSum = new THREE.Vector2();
+      let sampleCount = 0;
+      for (let patch = 0; patch < 4; patch += 1) {
+        const patchStart = patch * verticesPerPatch + faceOffset;
+        for (let segment = 0; segment <= angularSegments; segment += 1) {
+          const top = patchStart + verticalSegments * rowStride + segment;
+          const previous = top - rowStride;
+          const radialAt = (index) => Math.hypot(
+            positions.getX(index) - centerX,
+            positions.getZ(index) - centerZ,
+          );
+          // Read the physical direction of the final Pendentive course. Using
+          // the final surface interval preserves the curve the user sees and
+          // avoids an analytic constraint silently replacing that tangent.
+          const radialDerivative = radialAt(top) - radialAt(previous);
+          const verticalDerivative = positions.getY(top) - positions.getY(previous);
+          const tangent = new THREE.Vector2(radialDerivative, verticalDerivative);
+          if (tangent.x >= -0.000001 || tangent.y <= 0.000001 || tangent.lengthSq() < 0.00000001) continue;
+          tangentSum.add(tangent);
+          sampleCount += 1;
+        }
+      }
+      return sampleCount > 0 ? tangentSum.multiplyScalar(1 / sampleCount).normalize() : null;
+    };
+    const inner = averagedFaceTangent(0);
+    // The exterior Pendentive is the masonry-thickness offset of the interior
+    // design surface. Develop both dome faces from the same design tangent so
+    // the shell remains parallel instead of inheriting triangulation noise
+    // from the offset mesh at its open crown boundary.
+    return inner ? { inner: inner.toArray(), outer: inner.toArray() } : null;
+  };
+  const transferPendentiveCrownPhaseToDome = (dome, pendentiveGeometry, centerX, centerZ) => {
+    if (!dome?.geometry || !pendentiveGeometry) return;
+    const pendentivePositions = pendentiveGeometry.getAttribute('position');
+    const pendentiveUvs = pendentiveGeometry.getAttribute('uv');
+    const domePositions = dome.geometry.getAttribute('position');
+    const domeUvs = dome.geometry.getAttribute('uv');
+    const surfaceVertexCount = Number(pendentiveGeometry.userData.hallPendentiveSurfaceVertexCount);
+    const verticalSegments = Number(pendentiveGeometry.userData.hallPendentiveVerticalSegments);
+    const angularSegments = Number(pendentiveGeometry.userData.hallPendentiveAngularSegments);
+    const profileLength = Number(dome.geometry.userData.domeShellProfileLength);
+    const outerProfileLength = Number(dome.geometry.userData.domeShellOuterProfileLength);
+    const innerProfileLength = Number(dome.geometry.userData.domeShellInnerProfileLength);
+    if (![surfaceVertexCount, verticalSegments, angularSegments, profileLength, outerProfileLength, innerProfileLength]
+      .every((value) => Number.isFinite(value) && value > 0)) return;
+    const rowStride = angularSegments + 1;
+    const verticesPerPatch = (verticalSegments + 1) * rowStride;
+    const phaseSamples = (faceOffset) => {
+      const samples = [];
+      for (let patch = 0; patch < 4; patch += 1) {
+        const topRow = patch * verticesPerPatch + verticalSegments * rowStride + faceOffset;
+        for (let segment = 0; segment <= angularSegments; segment += 1) {
+          const index = topRow + segment;
+          let angle = Math.atan2(
+            pendentivePositions.getX(index) - centerX,
+            pendentivePositions.getZ(index) - centerZ,
+          );
+          if (angle < 0) angle += Math.PI * 2;
+          samples.push({ angle, phase: pendentiveUvs.getY(index) });
+        }
+      }
+      return samples;
+    };
+    const innerSamples = phaseSamples(0);
+    const outerSamples = phaseSamples(surfaceVertexCount);
+    const nearestPhase = (samples, angle) => {
+      let nearest = samples[0];
+      let nearestDistance = Infinity;
+      samples.forEach((sample) => {
+        const rawDistance = Math.abs(sample.angle - angle);
+        const distance = Math.min(rawDistance, Math.PI * 2 - rawDistance);
+        if (distance < nearestDistance) {
+          nearest = sample;
+          nearestDistance = distance;
+        }
+      });
+      return nearest.phase;
+    };
+    for (let vertex = 0; vertex < domeUvs.count; vertex += 1) {
+      let angle = Math.atan2(
+        domePositions.getX(vertex) - centerX,
+        domePositions.getZ(vertex) - centerZ,
+      );
+      if (angle < 0) angle += Math.PI * 2;
+      const shellIndex = vertex % profileLength;
+      const usesInnerPhase = shellIndex >= outerProfileLength
+        && shellIndex < outerProfileLength + innerProfileLength;
+      const crownPhase = nearestPhase(usesInnerPhase ? innerSamples : outerSamples, angle);
+      const originalV = domeUvs.getY(vertex);
+      const phaseFade = originalV * originalV * (3 - 2 * originalV);
+      domeUvs.setY(vertex, originalV + (crownPhase - 1) * phaseFade);
+    }
+    domeUvs.needsUpdate = true;
+    dome.geometry.userData.domeBondBasePhaseRule = 'shared-concentric-v1-course-at-pendentive-and-dome-base';
+    dome.geometry.userData.domeBondBasePhaseContinuous = true;
+  };
+
+  const hallShellThickness = Math.max(
+    0.01,
+    Number(walls.bricks?.brickWidth) || DEFAULT_WALL_SYSTEM.bricks.brickWidth,
+  );
+  const hallRibVaultShellThickness = Math.max(0.03, ribHeight);
+  // The dome's interior base is carried by the inward top point of each of the
+  // four surrounding vaults. Keep both plan radii: rectangular Hall bays need
+  // an elliptical bearing through all four points instead of a circle derived
+  // only from the smaller bay dimension.
+  const hallDomeInteriorRadiusX = Math.max(0.05, bayWidth / 2 - ribWidth / 2);
+  const hallDomeInteriorRadiusZ = Math.max(0.05, bayDepth / 2 - ribWidth / 2);
+  const hallDomeInteriorRadius = Math.min(hallDomeInteriorRadiusX, hallDomeInteriorRadiusZ);
+  const hallDomeExteriorRadius = hallDomeInteriorRadius + hallShellThickness;
+  const hallPendentiveTangentProbe = hallUsesDirectVaultCover ? null : hallPendentiveGeometry({
+    centerX: 0,
+    centerZ: 0,
+    domeRadius: hallDomeInteriorRadius,
+    domeOuterRadius: hallDomeExteriorRadius,
+    springY: vaultBearingTopY,
+  });
+  const hallPendentiveCrownTangents = hallPendentiveTangentProbe
+    ? measurePendentiveCrownTangents(hallPendentiveTangentProbe, 0, 0)
+    : null;
+  hallPendentiveTangentProbe?.dispose();
+  const automaticHallDomeRedRadius = 0.0001;
+  const automaticHallDomeTangent = hallPendentiveCrownTangents?.outer
+    ? new THREE.Vector2(...hallPendentiveCrownTangents.outer).normalize()
+    : null;
+  const automaticHallDomeTangentRadius = automaticHallDomeTangent
+    ? hallDomeExteriorRadius / automaticHallDomeTangent.y
+    : hallDomeExteriorRadius * 1.5;
+  const automaticHallDomeGreenOffset = automaticHallDomeTangent ? 0 : hallDomeExteriorRadius * 0.5;
+  const automaticHallDomeGreenHeight = automaticHallDomeTangent
+    ? vaultBearingTopY - automaticHallDomeTangentRadius * -automaticHallDomeTangent.x
+    : vaultBearingTopY;
+  const automaticHallDomeRedOffset = automaticHallDomeTangent
+    ? -(hallDomeExteriorRadius - automaticHallDomeRedRadius * automaticHallDomeTangent.y)
+    : -(hallDomeExteriorRadius - automaticHallDomeRedRadius);
+  const hallDomeUsesAutomaticContinuity = hallTransitionType === 'pendentive'
+    && building.hallDomeArch?.greenOffsetAuto !== false
+    && building.hallDomeArch?.greenHeightAuto !== false;
+  const hallDomeGreenOffset = hallDomeUsesAutomaticContinuity
+    ? automaticHallDomeGreenOffset
+    : Math.max(0.05, Number(building.hallDomeArch?.greenOffset) || 0.05);
+  const hallDomeGreenHeight = hallDomeUsesAutomaticContinuity
+    ? automaticHallDomeGreenHeight
+    : Number.isFinite(Number(building.hallDomeArch?.greenHeightOffset))
+      ? vaultBearingTopY + Number(building.hallDomeArch.greenHeightOffset)
+      : Number.isFinite(Number(building.hallDomeArch?.greenHeight))
+        ? Number(building.hallDomeArch.greenHeight)
+        : automaticHallDomeGreenHeight;
+  const bayBuilding = {
+    ...building,
+    type: 'room',
+    buildingType: 'hall',
+    roomPlanShape: 'square',
+    width: bayWidth,
+    depth: bayDepth,
+    length: bayDepth,
+    // No-cover Pendentives still use an invisible dome solely to derive and
+    // close their curved upper joint. Rib vault is the only mode that must
+    // never create even that construction reference.
+    domeEnabled: !hallUsesDirectVaultCover,
+    domeCoverType: 'dome',
+    domeTransition: hallTransitionType,
+    domeTransitionCoverEnabled: hallTransitionType === 'karbandi'
+      ? walls.karbandi?.coverEnabled === true
+      : false,
+    domeTransitionHeight: vaultBearingTopY - wallTop,
+    domeDrumHeight: 0,
+    domeDrumHeightByTransition: { ...building.domeDrumHeightByTransition, pendentive: 0 },
+    domeOuterRingEnabledByCoverType: { ...building.domeOuterRingEnabledByCoverType, dome: false },
+    domeOuterRingEnabledByTransitionAndCoverType: {
+      ...building.domeOuterRingEnabledByTransitionAndCoverType,
+      [hallTransitionType]: { ...building.domeOuterRingEnabledByTransitionAndCoverType?.[hallTransitionType], dome: false },
+    },
+    domeOuterLegExtensionByCoverType: { ...building.domeOuterLegExtensionByCoverType, dome: 0 },
+    domeOuterLegExtensionByTransitionAndCoverType: {
+      ...building.domeOuterLegExtensionByTransitionAndCoverType,
+      [hallTransitionType]: { ...building.domeOuterLegExtensionByTransitionAndCoverType?.[hallTransitionType], dome: 0 },
+    },
+    domeArch: {
+      ...building.hallDomeArch,
+      redOffset: hallDomeUsesAutomaticContinuity
+        ? automaticHallDomeRedOffset
+        : building.hallDomeArch?.redOffset,
+      redRadius: hallDomeUsesAutomaticContinuity
+        ? automaticHallDomeRedRadius
+        : building.hallDomeArch?.redRadius,
+      greenOffset: hallDomeGreenOffset,
+      greenHeightOffset: hallDomeGreenHeight - vaultBearingTopY,
+      legExtension: 0,
+    },
+    innerDomeEnabled: false,
+    betweenDomeSupportWallsEnabled: false,
+  };
+  const hallKarbandiReferenceNeeded = hallTransitionType === 'karbandi'
+    && (hallTransitionEnabled || hallCoverType === 'dome');
+  const hallKarbandiWalls = (() => {
+    if (!hallKarbandiReferenceNeeded) return null;
+    const requested = {
+      ...walls.karbandi,
+      enabled: true,
+      guideVisible: walls.karbandi?.guideVisible === true,
+    };
+    const solved = requested.wallLegMode === 'one'
+      ? solveKarbandiOneLegCornerSeating(requested, bayBuilding, walls)
+      : solveKarbandiWallSeating(requested, bayBuilding, walls);
+    return {
+      ...walls,
+      karbandi: {
+        ...requested,
+        ...solved,
+        enabled: true,
+      },
+    };
+  })();
+  const hallRibVaultCenterOpeningEnabled = hallUsesRibVault
+    && building.hallRibVaultCenterOpeningEnabledByCoverType?.[hallCoverType] === true;
+  const hallRibVaultCoverage = building.hallRibVaultCoverageByCoverType?.[hallCoverType] ?? 85;
+  const hallRibVaultTemplate = hallUsesRibVault
+    ? hallRibVaultGeometry(hallRibVaultShellThickness, {
+      raised: hallUsesRaisedRibVault,
+      centerOpeningEnabled: hallRibVaultCenterOpeningEnabled,
+      centerOpeningCoverage: hallRibVaultCoverage,
+    })
+    : null;
+  const hallRibVaultWalls = {
+    ...walls,
+    color: /^#[0-9a-f]{6}$/i.test(building.domeColor || '') ? building.domeColor : walls.color,
+  };
+  const hallRibVaultRise = Math.max(
+    0.1,
+    ...xArchProfile.map((point) => point.y - wallTop),
+    ...yArchProfile.map((point) => point.y - wallTop),
+  );
+  const hallRibVaultMaterials = hallRibVaultTemplate ? [
+    wallMaterial(hallRibVaultWalls, 'room_dome_interior', Math.max(bayWidth, bayDepth), hallRibVaultRise, true),
+    wallMaterial(hallRibVaultWalls, 'room_dome', Math.max(bayWidth, bayDepth), hallRibVaultRise, true),
+    wallMaterial(hallRibVaultWalls, 'room_dome', hallRibVaultShellThickness, hallRibVaultRise, true),
+  ] : null;
+  hallRibVaultMaterials?.forEach((material) => { material.side = THREE.DoubleSide; });
+  const raisedRibTransitionInteriorMaterial = hallUsesRaisedRibVault
+    ? wallMaterial(walls, 'room_dome_transition', Math.max(bayWidth, bayDepth), hallRibVaultRise, true)
+    : null;
+  const raisedRibTransitionExteriorMaterial = hallUsesRaisedRibVault
+    ? wallMaterial(walls, 'room_dome_transition_exterior', Math.max(bayWidth, bayDepth), hallRibVaultRise, true)
+    : null;
+  const raisedRibTransitionReturnMaterial = hallUsesRaisedRibVault
+    ? wallMaterial(walls, 'room_dome_transition_exterior', ribWidth, hallRibVaultRise, true)
+    : null;
+  let hallDomeTemplate = null;
+  const hallPendentiveTemplates = new Map();
+  const clonedHallPendentiveGeometry = (parameters) => {
+    const {
+      centerX: targetCenterX,
+      centerZ: targetCenterZ,
+      ...localParameters
+    } = parameters;
+    const key = JSON.stringify(localParameters);
+    if (!hallPendentiveTemplates.has(key)) {
+      hallPendentiveTemplates.set(key, hallPendentiveGeometry({
+        ...localParameters,
+        centerX: 0,
+        centerZ: 0,
+      }));
+    }
+    const geometry = hallPendentiveTemplates.get(key).clone();
+    geometry.translate(targetCenterX, 0, targetCenterZ);
+    geometry.userData.hallRepeatedBayGeometry = 'clone-of-local-bay-template';
+    return geometry;
+  };
+  if (hallUsesBarrel) {
+    const generatingProfile = hallBarrelAxis === 'x' ? xArchProfile : yArchProfile;
+    const laneCount = hallBarrelAxis === 'x' ? gridX : gridY;
+    const intervalCount = hallBarrelAxis === 'x' ? gridY : gridX;
+    const crossOrigin = hallBarrelAxis === 'x' ? -width / 2 : -depth / 2;
+    const crossSpacing = hallBarrelAxis === 'x' ? bayWidth : bayDepth;
+    const longitudinalOrigin = hallBarrelAxis === 'x' ? -depth / 2 : -width / 2;
+    const longitudinalSpacing = hallBarrelAxis === 'x' ? bayDepth : bayWidth;
+    for (let lane = 0; lane < laneCount; lane += 1) {
+      const crossCenter = crossOrigin + (lane + 0.5) * crossSpacing;
+      for (let interval = 0; interval < intervalCount; interval += 1) {
+        const longitudinalStart = longitudinalOrigin + interval * longitudinalSpacing + ribWidth / 2;
+        const longitudinalEnd = longitudinalOrigin + (interval + 1) * longitudinalSpacing - ribWidth / 2;
+        if (longitudinalEnd <= longitudinalStart + 0.0001) continue;
+        const geometry = hallBarrelGeometry(
+          generatingProfile,
+          hallBarrelAxis,
+          crossCenter,
+          longitudinalStart,
+          longitudinalEnd,
+        );
+        const bay = hallBarrelAxis === 'x' ? [lane, interval] : [interval, lane];
+        const barrel = new THREE.Mesh(geometry, archMaterial);
+        addMesh(barrel, `Hall ${hallBarrelAxis.toUpperCase()}-axis Barrel ${lane + 1}-${interval + 1}`, {
+          wallSide: 'hall_vault_arch',
+          roomDomePart: 'barrel-cover',
+          isHallBayCover: true,
+          isHallBarrelCover: true,
+          hallBay: bay,
+          hallBarrelAxis,
+          hallBarrelLane: lane,
+          hallBarrelInterval: interval,
+          hallBarrelShellThickness: ribHeight,
+          hallBarrelThicknessSource: 'selected-axis-hall-vault-profile-height',
+          hallBarrelGeneratingVaultDirection: hallBarrelAxis,
+          hallBarrelContinuation: 'fills-clear-space-between-consecutive-selected-axis-vaults',
+          hallBarrelPerimeterBearing: 'terminates-at-retained-selected-axis-boundary-vaults',
+          hallBarrelPatternContinuity: 'same-vault-material-global-axis-u-and-shared-arc-length-v',
+          hallBarrelVaultFinish: hallVaultFinish,
+          hallBarrelVaultColor: hallVaultColor,
+        });
+      }
+    }
+  }
+  for (let ix = 0; ix < gridX; ix += 1) {
+    for (let iy = 0; iy < gridY; iy += 1) {
+      const bayCenterX = -width / 2 + (ix + 0.5) * bayWidth;
+      const bayCenterZ = -depth / 2 + (iy + 0.5) * bayDepth;
+      const firstChild = group.children.length;
+      let hallKarbandiGenerated = [];
+      let hallKarbandiCrownY = null;
+      let hallKarbandiCrownRadius = null;
+      let hallUsesSharedKarbandi = false;
+      if (hallKarbandiWalls) {
+        // A hidden Hall transition still supplies the dome's construction
+        // crown. Build it in a detached group so its exact solve is unchanged
+        // without leaving hidden transition objects in the scene hierarchy.
+        const karbandiTargetGroup = hallTransitionEnabled ? group : new THREE.Group();
+        const bayWalls = ix === 0 && iy === 0
+          ? hallKarbandiWalls
+          : {
+            ...hallKarbandiWalls,
+            karbandi: { ...hallKarbandiWalls.karbandi, guideVisible: false, archIntersectionGuideVisible: false },
+          };
+        hallKarbandiGenerated = addKarbandiVault(karbandiTargetGroup, {
+          westX: bayCenterX - bayWidth / 2,
+          westExteriorX: bayCenterX - bayWidth / 2 - thickness,
+          eastX: bayCenterX + bayWidth / 2,
+          eastExteriorX: bayCenterX + bayWidth / 2 + thickness,
+          northZ: bayCenterZ - bayDepth / 2,
+          northExteriorZ: bayCenterZ - bayDepth / 2 - thickness,
+          southZ: bayCenterZ + bayDepth / 2,
+          southExteriorZ: bayCenterZ + bayDepth / 2 + thickness,
+          sideTop: wallTop,
+          wallThickness: thickness,
+          wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, wallTop])),
+          northArchPoints: [],
+          northWallLeft: bayCenterX - bayWidth / 2,
+          northWallRight: bayCenterX + bayWidth / 2,
+          northWallHeight: wallTop,
+          northOpeningLeft: bayCenterX - bayWidth / 2,
+          northOpeningRight: bayCenterX + bayWidth / 2,
+          rotationCenterX: bayCenterX,
+          rotationCenterZ: bayCenterZ,
+          roomMode: true,
+          hallMode: true,
+        }, bayWalls);
+        if (hallTransitionEnabled) meshes.push(...hallKarbandiGenerated);
+        const hallKarbandiRibs = hallKarbandiGenerated.filter((mesh) => (
+          mesh.userData?.isKarbandi === true && mesh.userData?.isKarbandiVisualGuide !== true
+        ));
+        hallUsesSharedKarbandi = hallKarbandiRibs.length > 0;
+        hallKarbandiRibs.forEach((rib) => {
+          rib.userData.wallSide = 'room_dome_transition';
+          rib.userData.roomDomePart = 'karbandi-transition-rib';
+          rib.userData.roomDomeTransitionType = 'karbandi';
+          rib.userData.isHallBayTransition = true;
+          rib.userData.isHallKarbandiTransition = true;
+          rib.userData.hallBay = [ix, iy];
+          rib.userData.hallBayCenter = [bayCenterX, bayCenterZ];
+        });
+        hallKarbandiGenerated.filter((mesh) => mesh.userData?.isKarbandiCover === true).forEach((cover) => {
+          cover.userData.wallSide = 'room_dome_transition';
+          cover.userData.roomDomePart = 'transition-cover';
+          cover.userData.roomDomeTransitionType = 'karbandi';
+          cover.userData.isHallBayTransition = true;
+          cover.userData.isHallKarbandiTransition = true;
+          cover.userData.hallBay = [ix, iy];
+          cover.userData.hallBayCenter = [bayCenterX, bayCenterZ];
+        });
+        if (hallKarbandiRibs.length) {
+          const crownRadii = hallKarbandiRibs
+            .map((rib) => Number(rib.userData?.karbandiCrownCenterlineRadius))
+            .filter((radius) => Number.isFinite(radius) && radius > 0.05);
+          if (crownRadii.length) hallKarbandiCrownRadius = Math.max(...crownRadii);
+          karbandiTargetGroup.updateMatrixWorld(true);
+          const generatedCrownY = Math.max(...hallKarbandiRibs.map((rib) => (
+            new THREE.Box3().setFromObject(rib, true).max.y
+          )));
+          const crownAlignmentY = vaultBearingTopY - generatedCrownY;
+          hallKarbandiGenerated.forEach((part) => {
+            part.position.y += crownAlignmentY;
+            part.userData.hallKarbandiCrownAlignmentY = crownAlignmentY;
+            part.userData.hallKarbandiCrownTargetY = vaultBearingTopY;
+            part.userData.hallKarbandiCrownAlignmentRule = 'rib-extrados-crown-aligned-to-vault-extrados-crown';
+          });
+          karbandiTargetGroup.updateMatrixWorld(true);
+          hallKarbandiCrownY = vaultBearingTopY;
+        }
+        if (!hallTransitionEnabled) {
+          hallKarbandiGenerated.forEach((part) => part.geometry?.dispose?.());
+        }
+      }
+      if (hallUsesRibVault) {
+        const geometry = hallRibVaultTemplate.clone();
+        geometry.translate(bayCenterX, 0, bayCenterZ);
+        const ribVault = new THREE.Mesh(geometry, hallRibVaultMaterials);
+        addMesh(ribVault, `Hall bay ${ix + 1}-${iy + 1} intersecting rib vault cover`, {
+          wallSide: 'room_dome',
+          roomDomePart: 'rib-vault-cover',
+          isHallBayCover: true,
+          isHallRibVaultCover: true,
+          hallBay: [ix, iy],
+          hallBayCenter: [bayCenterX, bayCenterZ],
+          hallRibVaultShellThickness: hallRibVaultShellThickness,
+          hallRibVaultThicknessSource: 'hall-vault-profile-height',
+          hallRibVaultExtrusionRule: 'x-and-y-vault-curves-extruded-by-their-vault-profile-height',
+          hallRibVaultCurves: ['x-axis-vault-profile', 'y-axis-vault-profile'],
+          hallRibVaultIntersection: 'four-diagonal-groin-ridges',
+          hallRibVaultInteriorMaterialIndex: 0,
+          hallRibVaultExteriorMaterialIndex: 1,
+          hallRibVaultReturnMaterialIndex: 2,
+          hallRibVaultCoverType: hallCoverType,
+          isHallRaisedRibVaultCover: hallUsesRaisedRibVault,
+          hallRibVaultCenterOpeningEnabled: geometry.userData.hallRibVaultCenterOpeningEnabled,
+          hallRibVaultCenterOpeningShape: geometry.userData.hallRibVaultCenterOpeningShape,
+          hallRibVaultCenterOpeningCoverage: geometry.userData.hallRibVaultCenterOpeningCoverage,
+          hallRibVaultCenterOpeningRule: geometry.userData.hallRibVaultCenterOpeningRule,
+        });
+        const wallBrickMortarColor = color(
+          building.hallRibVaultEdgeColors?.[hallCoverType],
+          color(walls.bricks?.mortarColor, DEFAULT_WALL_SYSTEM.bricks.mortarColor),
+        );
+        const addRidgeLines = (face, ridgePaths, visualOffset) => {
+          const points = [];
+          const openingHalfSize = geometry.userData.hallRibVaultCenterOpeningHalfSize || 0;
+          const ridgePiecesOutsideOpening = (start, end) => {
+            if (openingHalfSize <= 0.000001) return [[start, end]];
+            let enter = 0;
+            let exit = 1;
+            for (const coordinate of [0, 2]) {
+              const delta = end[coordinate] - start[coordinate];
+              if (Math.abs(delta) < 0.000001) {
+                if (Math.abs(start[coordinate]) > openingHalfSize) return [[start, end]];
+                continue;
+              }
+              const first = (-openingHalfSize - start[coordinate]) / delta;
+              const second = (openingHalfSize - start[coordinate]) / delta;
+              enter = Math.max(enter, Math.min(first, second));
+              exit = Math.min(exit, Math.max(first, second));
+              if (enter > exit) return [[start, end]];
+            }
+            const pointAt = (amount) => [
+              THREE.MathUtils.lerp(start[0], end[0], amount),
+              THREE.MathUtils.lerp(start[1], end[1], amount),
+              THREE.MathUtils.lerp(start[2], end[2], amount),
+            ];
+            const pieces = [];
+            if (enter > 0.000001) pieces.push([start, pointAt(enter)]);
+            if (exit < 0.999999) pieces.push([pointAt(exit), end]);
+            return pieces;
+          };
+          ridgePaths.forEach((path) => {
+            for (let index = 0; index < path.length - 1; index += 1) {
+              const start = path[index];
+              const end = path[index + 1];
+              ridgePiecesOutsideOpening(start, end).forEach(([pieceStart, pieceEnd]) => {
+                points.push(
+                  new THREE.Vector3(pieceStart[0] + bayCenterX, pieceStart[1] + visualOffset, pieceStart[2] + bayCenterZ),
+                  new THREE.Vector3(pieceEnd[0] + bayCenterX, pieceEnd[1] + visualOffset, pieceEnd[2] + bayCenterZ),
+                );
+              });
+            }
+          });
+          if (!points.length) return;
+          const ridgeLine = new THREE.LineSegments(
+            new THREE.BufferGeometry().setFromPoints(points),
+            new THREE.LineBasicMaterial({
+              color: wallBrickMortarColor,
+              linewidth: 1,
+              depthTest: true,
+              depthWrite: false,
+            }),
+          );
+          ridgeLine.name = `Hall bay ${ix + 1}-${iy + 1} Rib vault ${face} mortar intersection lines`;
+          ridgeLine.renderOrder = 8;
+          ridgeLine.userData = {
+            wallSide: face === 'interior' ? 'room_dome_interior' : 'room_dome',
+            roomDomePart: `rib-vault-${face}-intersection-lines`,
+            isHallBayCover: true,
+            isHallRibVaultIntersectionLine: true,
+            hallRibVaultIntersectionFace: face,
+            hallRibVaultIntersectionLineStyle: 'solid',
+            hallRibVaultIntersectionLineColorSource: building.hallRibVaultEdgeColors?.[hallCoverType]
+              ? 'cover-specific-edge-line-color'
+              : 'wall-brick-mortar-color-with-default-fallback',
+            hallRibVaultIntersectionLineColor: wallBrickMortarColor,
+            hallRibVaultIntersectionLineWidth: 1,
+            hallRibVaultIntersectionLineSquareOpeningClipped: openingHalfSize > 0.000001,
+            hallBay: [ix, iy],
+            hallBayCenter: [bayCenterX, bayCenterZ],
+          };
+          group.add(ridgeLine);
+        };
+        // A tiny face-normal separation prevents z-fighting while keeping each
+        // line visually seated in its corresponding shell face.
+        addRidgeLines('interior', geometry.userData.hallRibVaultInteriorRidgePaths || [], -0.006);
+        addRidgeLines('exterior', geometry.userData.hallRibVaultExteriorRidgePaths || [], 0.006);
+        if (hallUsesRaisedRibVault) {
+          const transitionProfiles = geometry.userData.hallRaisedRibVaultTransitionProfiles;
+          const footprint = geometry.userData.hallRaisedRibVaultFootprint;
+          const transitionShape = (bottom, top) => {
+            const shape = new THREE.Shape();
+            shape.moveTo(bottom[0][0], bottom[0][1]);
+            bottom.slice(1).forEach(([u, v]) => shape.lineTo(u, v));
+            [...top].reverse().forEach(([u, v]) => shape.lineTo(u, v));
+            shape.closePath();
+            return shape;
+          };
+          const addRaisedTransitionWall = ({ side, bottom, top, depth, extrusionStart, rotationY = 0, position }) => {
+            const materials = side === 'north'
+              ? [raisedRibTransitionExteriorMaterial, raisedRibTransitionInteriorMaterial, raisedRibTransitionReturnMaterial]
+              : [raisedRibTransitionInteriorMaterial, raisedRibTransitionExteriorMaterial, raisedRibTransitionReturnMaterial];
+            const wall = extrudedShape(
+              transitionShape(bottom, top),
+              depth,
+              extrusionStart,
+              materials,
+              'room_dome_transition',
+            );
+            wall.rotation.y = rotationY;
+            wall.position.fromArray(position);
+            addMesh(wall, `Hall bay ${ix + 1}-${iy + 1} Raised rib vault ${side} vertical transition wall`, {
+              wallSide: 'room_dome_transition',
+              roomDomePart: 'raised-rib-vault-transition-wall',
+              isRoomDomeTransition: true,
+              isRoomDomeTransitionCover: true,
+              isHallBayCover: true,
+              isHallBayTransition: true,
+              isHallRaisedRibVaultTransition: true,
+              hallRaisedRibVaultTransitionSide: side,
+              hallRaisedRibVaultTransitionConstruction: 'vertical-solid-wall-from-supporting-vault-extrados-to-raised-cover-soffit',
+              hallRaisedRibVaultTransitionThickness: depth,
+              hallRaisedRibVaultTransitionFootprintRule: 'bounded-exactly-between-raised-cover-exterior-and-interior-base-edges',
+              hallBay: [ix, iy],
+              hallBayCenter: [bayCenterX, bayCenterZ],
+            });
+          };
+          addRaisedTransitionWall({
+            side: 'north',
+            bottom: transitionProfiles.xBottom,
+            top: transitionProfiles.xTop,
+            depth: footprint.northInner - footprint.northOuter,
+            extrusionStart: 0,
+            position: [bayCenterX, 0, bayCenterZ + footprint.northOuter],
+          });
+          addRaisedTransitionWall({
+            side: 'south',
+            bottom: transitionProfiles.xBottom,
+            top: transitionProfiles.xTop,
+            depth: footprint.southOuter - footprint.southInner,
+            extrusionStart: footprint.southInner - footprint.southOuter,
+            position: [bayCenterX, 0, bayCenterZ + footprint.southOuter],
+          });
+          addRaisedTransitionWall({
+            side: 'east',
+            bottom: transitionProfiles.yBottom,
+            top: transitionProfiles.yTop,
+            depth: footprint.eastOuter - footprint.eastInner,
+            extrusionStart: footprint.eastInner - footprint.eastOuter,
+            rotationY: Math.PI / 2,
+            position: [bayCenterX + footprint.eastOuter, 0, bayCenterZ],
+          });
+          addRaisedTransitionWall({
+            side: 'west',
+            bottom: transitionProfiles.yBottom,
+            top: transitionProfiles.yTop,
+            depth: footprint.westInner - footprint.westOuter,
+            extrusionStart: footprint.westOuter - footprint.westInner,
+            rotationY: -Math.PI / 2,
+            position: [bayCenterX + footprint.westOuter, 0, bayCenterZ],
+          });
+        }
+      }
+      let domeWasCloned = false;
+      if (hallCoverType === 'dome'
+        || (!hallUsesRibVault && hallTransitionEnabled && hallTransitionType === 'pendentive')) {
+        if (hallDomeTemplate) {
+          const domeGeometry = hallDomeTemplate.geometry.clone();
+          domeGeometry.translate(
+            bayCenterX - hallDomeTemplate.centerX,
+            0,
+            bayCenterZ - hallDomeTemplate.centerZ,
+          );
+          const clonedDome = new THREE.Mesh(domeGeometry, hallDomeTemplate.material);
+          clonedDome.userData = { ...hallDomeTemplate.userData };
+          clonedDome.userData.hallRepeatedBayGeometry = 'clone-of-first-bay-template';
+          addMesh(clonedDome, 'Room circular dome cover');
+          domeWasCloned = true;
+        } else {
+          addRoomDomeCover(group, meshes, bayBuilding, walls, {
+            centerX: bayCenterX,
+            centerZ: bayCenterZ,
+            width: bayWidth,
+            depth: bayDepth,
+            wallTop,
+            thickness,
+            wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, wallTop])),
+            wallThicknesses: Object.fromEntries(WALL_SIDES.map((side) => [side, thickness])),
+            exteriorCoverBoundaryRadius: hallKarbandiCrownRadius == null
+              ? hallDomeExteriorRadius
+              : hallKarbandiCrownRadius + hallShellThickness / 2,
+            coverInteriorBoundaryRadius: hallKarbandiCrownRadius == null
+              ? hallDomeInteriorRadius
+              : Math.max(0.05, hallKarbandiCrownRadius - hallShellThickness / 2),
+            coverShellThickness: hallShellThickness,
+            coverSpringTangents: hallTransitionType === 'pendentive' && hallDomeUsesAutomaticContinuity
+              ? hallPendentiveCrownTangents
+              : null,
+            coverPlanSegments: building.gridPerformanceMode === 'large' ? 16 : 32,
+            karbandiCrownY: hallKarbandiCrownY,
+            karbandiCrownRadius: hallKarbandiCrownRadius == null
+              ? null
+              : hallKarbandiCrownRadius + hallShellThickness / 2,
+            usesSharedKarbandi: hallUsesSharedKarbandi,
+            skipTransitionDetails: true,
+          });
+        }
+      }
+      const generatedChildren = group.children.slice(firstChild);
+      generatedChildren.filter((child) => child.userData?.isRoomDomeTransitionDetail === true).forEach((detail) => {
+        group.remove(detail);
+        const meshIndex = meshes.indexOf(detail);
+        if (meshIndex >= 0) meshes.splice(meshIndex, 1);
+        detail.geometry?.dispose?.();
+        (Array.isArray(detail.material) ? detail.material : [detail.material]).filter(Boolean)
+          .forEach((material) => material.dispose?.());
+      });
+      const dome = generatedChildren.find((child) => child.userData?.roomDomePart === 'dome-shell');
+      if (dome && hallTransitionType === 'karbandi') {
+        const crownRadius = hallKarbandiCrownRadius ?? hallDomeInteriorRadius;
+        const interiorRadius = Math.max(0.05, crownRadius - hallShellThickness / 2);
+        const exteriorRadius = crownRadius + hallShellThickness / 2;
+        dome.userData.hallDomeInteriorBaseRadii = [interiorRadius, interiorRadius];
+        dome.userData.hallDomeExteriorBaseRadii = [
+          exteriorRadius,
+          exteriorRadius,
+        ];
+        dome.userData.hallDomeBaseExtension = hallShellThickness;
+        dome.userData.hallDomeBaseExtensionRule = 'one-brick-length-centered-on-karbandi-crown-centerline';
+        dome.userData.hallDomeKarbandiCrownRadius = crownRadius;
+        dome.userData.hallDomeBaseCenterlineRadius = (interiorRadius + exteriorRadius) / 2;
+        dome.userData.hallDomeBaseConstructionRule = 'circular-base-centered-on-and-clipped-to-karbandi-crown-centerline';
+        dome.userData.hallDomeCurveMode = 'explicit-hall-dome-arch-no-automatic-continuity';
+        dome.geometry.userData.hallDomeBaseConstructionRule = 'circular-base-centered-on-and-clipped-to-karbandi-crown-centerline';
+      }
+      const domeInteriorRadius = Number(dome?.userData?.portalCoverInteriorBaseRadius)
+        || hallDomeInteriorRadius;
+      const domeOuterRadius = Number(dome?.userData?.roomDomeRadius)
+        || hallDomeExteriorRadius;
+      const domeSpringY = Number(dome?.userData?.roomDomeSpringY) || vaultBearingTopY;
+      let transition = null;
+      if (hallTransitionEnabled && !hallUsesRibVault && hallTransitionType !== 'karbandi') {
+        const domeMaterials = Array.isArray(dome?.material) ? dome.material : [];
+        const continuesDomeBond = hallTransitionType === 'pendentive'
+          && domeMaterials.length >= 2
+          && Number(dome?.geometry?.userData?.domeMeridianLength) > 0.000001;
+        const transitionInteriorMaterial = continuesDomeBond ? domeMaterials[0] : wallMaterial(
+          walls,
+          'room_dome_transition',
+          Math.max(bayWidth, bayDepth),
+          Math.max(0.2, domeSpringY - wallTop),
+          true,
+        );
+        const transitionExteriorMaterial = continuesDomeBond ? domeMaterials[1] : wallMaterial(
+          walls,
+          'room_dome_transition_exterior',
+          Math.max(bayWidth, bayDepth),
+          Math.max(0.2, domeSpringY - wallTop),
+          true,
+        );
+        transitionInteriorMaterial.side = THREE.DoubleSide;
+        transitionExteriorMaterial.side = THREE.DoubleSide;
+        const transitionGeometry = hallTransitionType === 'pendentive'
+          ? clonedHallPendentiveGeometry({
+            centerX: bayCenterX,
+            centerZ: bayCenterZ,
+            domeRadius: domeInteriorRadius,
+            domeOuterRadius,
+            springY: domeSpringY,
+            domeMeridianLength: continuesDomeBond
+              ? dome.geometry.userData.domeMeridianLength
+              : null,
+            closeUpperInterface: hallCoverType === 'none',
+          })
+          : roomDomeTransitionGeometry({
+            centerX: bayCenterX,
+            centerZ: bayCenterZ,
+            width: bayWidth,
+            depth: bayDepth,
+            wallTop,
+            springY: domeSpringY,
+            domeRadius: domeInteriorRadius,
+            type: 'karbandi',
+            settings: { ...(building.domeTransitionSettings?.karbandi || {}), ...walls.karbandi },
+          });
+        if (hallTransitionType === 'pendentive' && continuesDomeBond && !domeWasCloned) {
+          transferPendentiveCrownPhaseToDome(
+            dome,
+            transitionGeometry,
+            bayCenterX,
+            bayCenterZ,
+          );
+        }
+        transition = new THREE.Mesh(
+          transitionGeometry,
+          hallTransitionType === 'pendentive'
+            ? [
+              transitionInteriorMaterial,
+              transitionExteriorMaterial,
+              continuesDomeBond ? (domeMaterials[2] || transitionExteriorMaterial) : transitionExteriorMaterial,
+            ]
+            : transitionInteriorMaterial,
+        );
+        addMesh(transition, `Hall bay ${ix + 1}-${iy + 1} ${hallTransitionType === 'karbandi' ? 'Karbandi' : 'four-vault Pendentives'}`, {
+          wallSide: 'room_dome_transition',
+          roomDomePart: 'transition-cover',
+          isRoomDomeTransition: true,
+          isRoomDomeTransitionCover: true,
+          roomDomeTransitionType: hallTransitionType,
+          isHallBayCover: true,
+          isHallBayTransition: true,
+          isHallFourVaultPendentive: hallTransitionType === 'pendentive',
+          isHallKarbandiTransition: hallTransitionType === 'karbandi',
+          hallBay: [ix, iy],
+          hallBayCenter: [bayCenterX, bayCenterZ],
+          hallPendentiveSupport: hallTransitionType === 'pendentive' ? 'four-shared-pointed-vault-arches' : null,
+          hallKarbandiSupport: hallTransitionType === 'karbandi' ? 'four-shared-pointed-vault-arches' : null,
+          hallPendentiveDomeContactY: domeSpringY,
+          hallPendentiveDomeContactRadius: domeInteriorRadius,
+          hallDomeInteriorFlushTargetRadius: Math.min(bayWidth, bayDepth) / 2 - ribWidth / 2,
+          hallTransitionShellThickness: hallTransitionType === 'pendentive'
+            ? transitionGeometry.userData.hallPendentiveShellThickness
+            : 0,
+          hallPendentiveDomeBondContinuation: hallTransitionType === 'pendentive'
+            && continuesDomeBond,
+        });
+        if (hallTransitionType === 'pendentive' && hallCoverType === 'dome' && dome) {
+          // Keep the established brick meshes and shared UV course phase. The
+          // generic edge overlay otherwise draws both open boundaries and makes
+          // their coincident structural joint look like a projecting dark ring.
+          dome.userData.wallEdgeExcludedHorizontalY = [domeSpringY];
+          transition.userData.wallEdgeExcludedHorizontalY = [domeSpringY];
+          dome.userData.hallPendentiveDomeJointRule = 'direct-tangent-interface-without-rendered-boundary-edge';
+          transition.userData.hallPendentiveDomeJointRule = 'direct-tangent-interface-without-rendered-boundary-edge';
+          dome.userData.hallPendentiveDomeCoursesPreserved = true;
+          transition.userData.hallPendentiveDomeCoursesPreserved = true;
+        }
+        if (!hallDomeTemplate && dome) {
+          hallDomeTemplate = {
+            geometry: dome.geometry.clone(),
+            material: dome.material,
+            userData: { ...dome.userData },
+            centerX: bayCenterX,
+            centerZ: bayCenterZ,
+          };
+        }
+      }
+      if (dome) {
+        if (ix === centralBayX && iy === centralBayY && building.hallDomeGuideVisible === true) {
+          const domeConstruction = dome.userData.roomDomeArchConstruction;
+          if (domeConstruction) {
+            const construction = {
+              archType: domeConstruction.archType,
+              redCenter: domeConstruction.redCenter ? new THREE.Vector2(...domeConstruction.redCenter) : null,
+              redRadius: domeConstruction.redRadius,
+              greenCenter: new THREE.Vector2(...domeConstruction.greenCenter),
+              greenRadius: domeConstruction.greenRadius,
+              sidePoint: new THREE.Vector2(...domeConstruction.sidePoint),
+              tangentPoint: new THREE.Vector2(...domeConstruction.tangentPoint),
+              apexPoint: new THREE.Vector2(...domeConstruction.apexPoint),
+            };
+            addArchGuide(
+              construction,
+              (u, v) => new THREE.Vector3(bayCenterX + u, v, bayCenterZ + 0.018),
+              'Hall central dome',
+              true,
+              'y',
+              'dome',
+              [ix, iy],
+            );
+            addArchGuide(
+              construction,
+              (u, v) => new THREE.Vector3(bayCenterX + 0.018, v, bayCenterZ + u),
+              'Hall central dome',
+              true,
+              'x',
+              'dome',
+              [ix, iy],
+            );
+          }
+        }
+      }
+      if (hallCoverType === 'none' && dome) {
+        group.remove(dome);
+        const domeMeshIndex = meshes.indexOf(dome);
+        if (domeMeshIndex >= 0) meshes.splice(domeMeshIndex, 1);
+        // The Pendentive intentionally shares these materials and UV phase,
+        // so dispose only the invisible reference geometry.
+        dome.geometry?.dispose?.();
+        if (transition) transition.userData.hallInvisibleDomeReferenceUsed = true;
+      }
+      group.children.slice(firstChild).forEach((child) => {
+        child.userData.isHallBayCover = true;
+        child.userData.hallBay = [ix, iy];
+        child.userData.hallBayCenter = [bayCenterX, bayCenterZ];
+      });
+    }
+  }
+  hallDomeTemplate?.geometry.dispose();
+  hallPendentiveTemplates.forEach((geometry) => geometry.dispose());
+  hallRibVaultTemplate?.dispose();
+  if (guideRoot.children.length) group.add(guideRoot);
+
+  group.userData.hallGridX = gridX;
+  group.userData.hallGridY = gridY;
+  group.userData.hallBayWidth = bayWidth;
+  group.userData.hallBayDepth = bayDepth;
+  group.userData.hallBayCount = gridX * gridY;
+  group.userData.hallBearingIntersectionCount = (gridX + 1) * (gridY + 1);
+  group.userData.hallTransitionEnabled = hallTransitionEnabled && !hallUsesRibVault;
+  group.userData.hallTransitionType = hallTransitionType;
+  group.userData.hallCoverType = hallCoverType;
+  group.userData.hallBarrelAxis = hallUsesBarrel ? hallBarrelAxis : null;
+  group.userData.hallBarrelShellThickness = hallUsesBarrel ? ribHeight : null;
+  group.userData.hallBarrelThicknessSource = hallUsesBarrel
+    ? 'selected-axis-hall-vault-profile-height'
+    : null;
+  group.userData.hallBarrelPatternContinuity = hallUsesBarrel
+    ? 'same-vault-material-global-axis-u-and-shared-arc-length-v'
+    : null;
+  group.userData.hallBarrelPerpendicularVaultShift = hallUsesBarrel
+    ? hallVaultVerticalShiftFor(hallBarrelAxis === 'x' ? 'y' : 'x', hallBarrelAxis === 'x' ? yVaultSpan : xVaultSpan)
+    : 0;
+  group.userData.hallBarrelInteriorBearingInset = hallUsesBarrel
+    ? hallBarrelInteriorBearingInset
+    : null;
+  group.userData.hallBarrelVaultLayeringRule = hallUsesBarrel
+    ? 'selected-axis-vaults-generate-barrel-perpendicular-vault-extrados-recesses-below-barrel-spring-soffit'
+    : null;
+  group.userData.hallBarrelSpandrelCount = hallUsesBarrel
+    ? group.children.filter((child) => child.userData?.isHallBarrelSpandrelInfill).length
+    : 0;
+  group.userData.hallBarrelSpandrelRule = hallUsesBarrel
+    ? 'solid-brick-wall-from-lowered-transverse-vault-extrados-to-barrel-spring-soffit'
+    : null;
+  group.userData.hallColumnTop = hallColumnTop;
+  group.userData.hallPerimeterColumnTop = hallUsesBarrel ? wallTop : hallColumnTop;
+  group.userData.hallColumnBarrelCutRule = hallUsesBarrel
+    ? 'interior-columns-stop-at-lowered-vault-bearing-perimeter-columns-remain-full-wall-height'
+    : null;
+  group.userData.hallRibVaultShellThickness = hallUsesRibVault ? hallRibVaultShellThickness : null;
+  group.userData.hallRibVaultConstruction = hallUsesRibVault
+    ? 'two-intersecting-curved-roofs-following-x-and-y-vault-arches'
+    : null;
+  group.userData.hallRepeatedBayGeometryStrategy = 'one-local-template-cloned-per-identical-bay';
+  group.userData.hallVaultArchSource = 'shared-red-and-green-pointed-arch-construction';
+  group.userData.hallVaultProfile = 'square';
+  group.userData.hallVaultDimension = ribWidth;
+  group.userData.hallVaultProfileWidth = ribWidth;
+  group.userData.hallVaultProfileHeight = ribHeight;
+  group.userData.hallVaultBearingShift = vaultBearingShift;
+  group.userData.hallVaultSpanX = xVaultSpan;
+  group.userData.hallVaultSpanY = yVaultSpan;
+  group.userData.hallVaultIntersectionRule = 'unclipped-profile-shifted-inward-to-shared-column-top-bearing-point';
+  group.userData.hallVaultCrownCenterlineY = vaultCrownY;
+  group.userData.hallDomeBearingY = vaultBearingTopY;
+  group.userData.hallVaultExtradosCrownY = vaultBearingTopY;
+  group.userData.hallDomeBearingRule = 'measured-sampled-vault-extrados-crown';
+  const hallKarbandiDome = meshes.find((mesh) => (
+    mesh.userData?.roomDomePart === 'dome-shell'
+    && mesh.userData?.hallDomeKarbandiCrownRadius != null
+  ));
+  group.userData.hallDomeInteriorBaseRadii = hallKarbandiDome?.userData.hallDomeInteriorBaseRadii
+    || [hallDomeInteriorRadiusX, hallDomeInteriorRadiusZ];
+  group.userData.hallDomeBaseConstructionRule = hallTransitionType === 'karbandi'
+    ? 'circular-base-centered-on-and-clipped-to-karbandi-crown-centerline'
+    : 'circle-through-four-vault-crown-points';
+  group.userData.hallDomeAutomaticGreenOffset = automaticHallDomeGreenOffset;
+  group.userData.hallDomeAutomaticGreenHeight = automaticHallDomeGreenHeight;
+  group.userData.hallDomeAutomaticRedOffset = automaticHallDomeRedOffset;
+  group.userData.hallDomeAutomaticRedRadius = automaticHallDomeRedRadius;
+  group.userData.hallDomeAutomaticTangentRadius = automaticHallDomeTangentRadius;
+  group.userData.hallDomePendentiveSpringTangents = hallPendentiveCrownTangents;
+  group.userData.hallDomeGreenContinuityRule = 'interior-and-exterior-dome-meridians-developed-from-measured-pendentive-crown-tangent';
+  group.userData.hallPendentivePositiveCrownRise = 0;
+  group.userData.hallPendentiveCrownInterpolation = 'plan-circle-only-no-elevation-wave';
+  meshes.forEach((mesh) => addEdges(group, mesh, walls));
+  setShadow(group, walls.shadows);
+  return group;
+}
+
+function addPortalHalfHallRibVault(group, building, walls, context) {
+  const coverType = walls.portalCover;
+  if (coverType !== 'raised-rib-vault' || walls.portalTransition !== 'none') return [];
+
+  const clearSpan = Math.max(
+    0.2,
+    Number.isFinite(context.westX) && Number.isFinite(context.eastX)
+      ? context.eastX - context.westX
+      : context.archHalfSpan * 2,
+  );
+  const sourceSpan = Math.max(2, clearSpan);
+  const sourceScale = clearSpan / sourceSpan;
+  const sourceRibSize = Math.max(0.03, context.thickness / sourceScale);
+  const sourceBuilding = {
+    ...building,
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallBayWidth: sourceSpan,
+    hallBayDepth: sourceSpan,
+    width: sourceSpan,
+    depth: sourceSpan,
+    height: context.sideTop,
+    wallThickness: sourceRibSize,
+    hallColumnDimension: sourceRibSize,
+    hallArchRibWidth: sourceRibSize,
+    hallArchRibHeight: sourceRibSize,
+    hallCoverType: coverType,
+    hallRibVaultInteriorFaceDefinesBayBoundary: true,
+    hallTransitionType: 'none',
+    hallTransitionEnabled: false,
+    hallArch: {
+      archType: walls.pointedArch.archType,
+      redOffset: walls.pointedArch.redOffset,
+      redRadius: walls.pointedArch.redRadius == null
+        ? null
+        : walls.pointedArch.redRadius / sourceScale,
+      greenOffset: context.greenOffset / sourceScale,
+      greenHeightOffset: context.greenHeight - context.sideTop,
+    },
+    hallVaultFinish: 'bricks',
+    hallVaultColor: building.domeColor || walls.color,
+  };
+  const sourceWalls = {
+    ...walls,
+    edges: { ...walls.edges, enabled: false },
+    openSides: [],
+  };
+  const sourceHall = buildHallWallSystem(sourceBuilding, sourceWalls);
+  const retained = [];
+  sourceHall.traverse((object) => {
+    if ((object.isMesh && object.userData?.isHallRibVaultCover === true)
+      || (object.isLineSegments && object.userData?.isHallRibVaultIntersectionLine === true)) {
+      retained.push(object);
+    }
+  });
+  const raisedVerticalDrop = Number(retained.find((object) => (
+    object.isMesh && object.userData?.isHallRibVaultCover === true
+  ))?.geometry?.userData?.hallRaisedRibVaultVerticalShift) || 0;
+
+  // Portal is the south half of a complete bay. The complete Hall-derived
+  // source bay is centred on the north facade, then physically clipped at
+  // that facade so hidden geometry cannot affect picking or zoom-to-fit.
+  const clipGeometryToSouthHalf = (sourceGeometry) => {
+    const index = sourceGeometry.getIndex();
+    const position = sourceGeometry.getAttribute('position');
+    const uv = sourceGeometry.getAttribute('uv');
+    const vertexCount = index ? index.count : position.count;
+    const positions = [];
+    const uvs = [];
+    const groups = [];
+    const materialIndexAt = (offset) => sourceGeometry.groups.find((entry) => (
+      offset >= entry.start && offset < entry.start + entry.count
+    ))?.materialIndex || 0;
+    const vertex = (offset) => {
+      const vertexIndex = index ? index.getX(offset) : offset;
+      return {
+        point: new THREE.Vector3().fromBufferAttribute(position, vertexIndex),
+        uv: uv ? new THREE.Vector2().fromBufferAttribute(uv, vertexIndex) : null,
+      };
+    };
+    const interpolate = (from, to, amount) => ({
+      point: from.point.clone().lerp(to.point, amount),
+      uv: from.uv && to.uv ? from.uv.clone().lerp(to.uv, amount) : null,
+    });
+    const addTriangle = (triangle, materialIndex) => {
+      const start = positions.length / 3;
+      triangle.forEach((entry) => {
+        positions.push(entry.point.x, entry.point.y, entry.point.z);
+        if (entry.uv) uvs.push(entry.uv.x, entry.uv.y);
+      });
+      const previous = groups.at(-1);
+      if (previous && previous.materialIndex === materialIndex && previous.start + previous.count === start) {
+        previous.count += 3;
+      } else {
+        groups.push({ start, count: 3, materialIndex });
+      }
+    };
+    for (let offset = 0; offset + 2 < vertexCount; offset += 3) {
+      const input = [vertex(offset), vertex(offset + 1), vertex(offset + 2)];
+      const polygon = [];
+      for (let corner = 0; corner < input.length; corner += 1) {
+        const current = input[corner];
+        const next = input[(corner + 1) % input.length];
+        const currentInside = current.point.z >= -0.000001;
+        const nextInside = next.point.z >= -0.000001;
+        if (currentInside) polygon.push(current);
+        if (currentInside !== nextInside) {
+          polygon.push(interpolate(
+            current,
+            next,
+            THREE.MathUtils.clamp(current.point.z / (current.point.z - next.point.z), 0, 1),
+          ));
+        }
+      }
+      for (let corner = 1; corner + 1 < polygon.length; corner += 1) {
+        addTriangle([polygon[0], polygon[corner], polygon[corner + 1]], materialIndexAt(offset));
+      }
+    }
+    const clipped = new THREE.BufferGeometry();
+    clipped.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    if (uv && uvs.length * 3 === positions.length * 2) {
+      clipped.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    }
+    groups.forEach((entry) => clipped.addGroup(entry.start, entry.count, entry.materialIndex));
+    clipped.computeVertexNormals();
+    clipped.computeBoundingBox();
+    clipped.computeBoundingSphere();
+    clipped.userData = {
+      ...sourceGeometry.userData,
+      portalHalfBayLocalSliceZ: 0,
+      portalHalfBaySliceRule: 'literal-south-half-of-complete-Hall-derived-bay',
+    };
+    return clipped;
+  };
+  const clipLineGeometryToSouthHalf = (sourceGeometry) => {
+    const source = sourceGeometry.getAttribute('position');
+    const positions = [];
+    for (let offset = 0; offset + 1 < source.count; offset += 2) {
+      let start = new THREE.Vector3().fromBufferAttribute(source, offset);
+      let end = new THREE.Vector3().fromBufferAttribute(source, offset + 1);
+      const startInside = start.z >= -0.000001;
+      const endInside = end.z >= -0.000001;
+      if (!startInside && !endInside) continue;
+      if (startInside !== endInside) {
+        const intersection = start.clone().lerp(
+          end,
+          THREE.MathUtils.clamp(start.z / (start.z - end.z), 0, 1),
+        );
+        if (startInside) end = intersection;
+        else start = intersection;
+      }
+      positions.push(...start.toArray(), ...end.toArray());
+    }
+    const clipped = new THREE.BufferGeometry();
+    clipped.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    clipped.computeBoundingBox();
+    clipped.computeBoundingSphere();
+    clipped.userData = {
+      ...sourceGeometry.userData,
+      portalHalfBayLocalSliceZ: 0,
+      portalHalfBaySliceRule: 'literal-south-half-of-complete-Hall-derived-bay',
+    };
+    return clipped;
+  };
+  const coverRoot = new THREE.Group();
+  coverRoot.name = `Portal half-bay ${coverType}`;
+  coverRoot.position.set(context.centerX, 0, context.northZ);
+  coverRoot.scale.set(
+    sourceScale,
+    1,
+    Math.max(0.01, context.depth * 2 / sourceSpan),
+  );
+  coverRoot.userData = {
+    isPortalHalfBayCover: true,
+    portalCoverType: coverType,
+    portalCoverSlicePlaneZ: context.northZ,
+    portalRaisedVaultVerticalDrop: raisedVerticalDrop,
+    portalCoverDevelopmentRule: 'lowered Hall raised-rib-vault shell developed from Portal north-wall arch and clipped to its south half-bay',
+    portalCoverBearingRule: 'shell-seats-directly-on-vertical-walls-without-raised-vault-transition-walls',
+    portalCoverInteriorSpringFaces: [context.westX, context.eastX],
+    portalCoverLateralFitRule: 'intrados-springing-edges-flush-with-west-and-east-wall-interior-faces',
+  };
+
+  const cloneMaterial = (material) => {
+    const cloned = material.clone();
+    cloned.needsUpdate = true;
+    return cloned;
+  };
+  const replacedMaterials = new Set();
+  const replacedGeometries = new Set();
+  retained.forEach((mesh) => {
+    mesh.removeFromParent();
+    mesh.updateMatrix();
+    const transformed = mesh.geometry.clone();
+    transformed.applyMatrix4(mesh.matrix);
+    transformed.translate(0, -raisedVerticalDrop, 0);
+    replacedGeometries.add(mesh.geometry);
+    mesh.geometry = mesh.isLineSegments
+      ? clipLineGeometryToSouthHalf(transformed)
+      : clipGeometryToSouthHalf(transformed);
+    transformed.dispose();
+    mesh.position.set(0, 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    mesh.scale.set(1, 1, 1);
+    mesh.updateMatrix();
+    const sourceMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    sourceMaterials.filter(Boolean).forEach((material) => replacedMaterials.add(material));
+    mesh.material = Array.isArray(mesh.material)
+      ? mesh.material.map(cloneMaterial)
+      : cloneMaterial(mesh.material);
+    mesh.userData.isPortalHalfBayCover = true;
+    mesh.userData.portalCoverType = coverType;
+    mesh.userData.portalNorthArchDeveloped = true;
+    mesh.userData.portalCoverSlicePlaneZ = context.northZ;
+    mesh.userData.portalRaisedVaultVerticalDrop = raisedVerticalDrop;
+    mesh.userData.portalCoverBearingRule = 'direct-on-vertical-walls-flush-with-north-wall-arch';
+    mesh.userData.portalCoverInteriorSpringFaces = [context.westX, context.eastX];
+    mesh.userData.portalCoverLateralFitRule = 'intrados-springing-edges-flush-with-west-and-east-wall-interior-faces';
+    mesh.userData.excludeWallEdges = true;
+    coverRoot.add(mesh);
+  });
+
+  const discardedGeometries = new Set();
+  const discardedMaterials = new Set();
+  sourceHall.traverse((object) => {
+    if (object.geometry) discardedGeometries.add(object.geometry);
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.filter(Boolean).forEach((material) => discardedMaterials.add(material));
+  });
+  discardedGeometries.forEach((geometry) => geometry.dispose());
+  discardedMaterials.forEach((material) => material.dispose());
+  replacedGeometries.forEach((geometry) => geometry.dispose());
+  replacedMaterials.forEach((material) => material.dispose());
+
+  group.add(coverRoot);
+  return retained;
+}
+
+function buildGridWallSystem(building, walls, options = {}) {
+  const group = new THREE.Group();
+  group.name = 'Mehraz custom vault Grid';
+  group.userData.wallSystem = walls;
+  group.userData.buildingType = 'grid';
+  if (!walls.enabled) return group;
+
+  const gridX = Math.max(1, Math.round(Number(building.hallGridX) || 3));
+  const gridY = Math.max(1, Math.round(Number(building.hallGridY) || 3));
+  const xSpans = Array.from({ length: gridX }, (_, index) => Math.max(2,
+    Number(building.gridBaySpansX?.[index]) || Number(building.hallBayWidth) || 4));
+  const ySpans = Array.from({ length: gridY }, (_, index) => Math.max(2,
+    Number(building.gridBaySpansY?.[index]) || Number(building.hallBayDepth) || 4));
+  const width = xSpans.reduce((sum, span) => sum + span, 0);
+  const depth = ySpans.reduce((sum, span) => sum + span, 0);
+  const xStarts = xSpans.map((_, index) => -width / 2 + xSpans.slice(0, index).reduce((sum, span) => sum + span, 0));
+  const yStarts = ySpans.map((_, index) => -depth / 2 + ySpans.slice(0, index).reduce((sum, span) => sum + span, 0));
+  const removedBays = new Set(building.gridRemovedBays || []);
+  const removedWalls = new Set(building.gridRemovedWalls || []);
+  const removedVaults = new Set(building.gridRemovedVaults || []);
+  const removedDomes = new Set(building.gridRemovedDomes || []);
+  const removedTransitions = new Set(building.gridRemovedTransitions || []);
+  const elementColors = building.gridElementColors || {};
+  const activeBayCount = gridX * gridY - removedBays.size;
+  const largeGrid = activeBayCount >= 16;
+  const {
+    gridBayCovers: ignoredGridBayCovers,
+    gridBayTransitions: ignoredGridBayTransitions,
+    gridElementColors: ignoredGridElementColors,
+    gridRemovedBays: ignoredGridRemovedBays,
+    gridRemovedWalls: ignoredGridRemovedWalls,
+    gridRemovedVaults: ignoredGridRemovedVaults,
+    gridRemovedDomes: ignoredGridRemovedDomes,
+    gridRemovedTransitions: ignoredGridRemovedTransitions,
+    gridBaySpansX: ignoredGridBaySpansX,
+    gridBaySpansY: ignoredGridBaySpansY,
+    dimensionsByBuildingType: ignoredDimensionProfiles,
+    hallGridX: ignoredGridX,
+    hallGridY: ignoredGridY,
+    width: ignoredGridWidth,
+    depth: ignoredGridDepth,
+    length: ignoredGridLength,
+    ...sharedBuildingSettings
+  } = building;
+  const sharedTemplateSignature = JSON.stringify({ building: sharedBuildingSettings, walls });
+  const cacheState = options.gridTemplateCache;
+  if (cacheState && cacheState.signature !== sharedTemplateSignature) {
+    const geometries = new Set();
+    const materials = new Set();
+    cacheState.templates.forEach((template) => template.traverse((child) => {
+      if (child.geometry) geometries.add(child.geometry);
+      (Array.isArray(child.material) ? child.material : [child.material]).filter(Boolean)
+        .forEach((material) => materials.add(material));
+    }));
+    geometries.forEach((geometry) => geometry.dispose?.());
+    materials.forEach((material) => {
+      material.userData?.generatedTexture?.dispose?.();
+      material.map?.dispose?.();
+      material.dispose?.();
+    });
+    cacheState.templates.clear();
+    cacheState.signature = sharedTemplateSignature;
+  }
+  const bayTemplateCache = cacheState?.templates || new Map();
+  let generatedTemplateCount = 0;
+  const retainedColumns = new Set();
+  const retainedVaults = new Set();
+  const retainedBarrelSpandrels = new Set();
+  const structuralVaults = new Set();
+  for (let ix = 0; ix < gridX; ix += 1) {
+    for (let iy = 0; iy < gridY; iy += 1) {
+      if (removedBays.has(`${ix}:${iy}`)) continue;
+      structuralVaults.add(`vault:x:${ix}:${iy}`);
+      structuralVaults.add(`vault:x:${ix}:${iy + 1}`);
+      structuralVaults.add(`vault:y:${ix}:${iy}`);
+      structuralVaults.add(`vault:y:${ix + 1}:${iy}`);
+    }
+  }
+  removedVaults.forEach((id) => structuralVaults.delete(id));
+  const usedColumns = new Set();
+  structuralVaults.forEach((id) => {
+    const [, direction, xText, yText] = id.split(':');
+    const x = Number(xText);
+    const y = Number(yText);
+    if (direction === 'x') {
+      usedColumns.add(`column:${x}:${y}`);
+      usedColumns.add(`column:${x + 1}:${y}`);
+    } else {
+      usedColumns.add(`column:${x}:${y}`);
+      usedColumns.add(`column:${x}:${y + 1}`);
+    }
+  });
+  const sourceWalls = {
+    ...walls,
+    roomPlanOpenings: [],
+    edges: { ...walls.edges, enabled: false },
+  };
+
+  const boundaryWallId = (side, ix, iy) => {
+    if (side === 'north') {
+      if (iy > 0 && !removedBays.has(`${ix}:${iy - 1}`)) return null;
+      return iy === 0 ? `wall:north:${ix}` : `wall:between-y:${ix}:${iy}`;
+    }
+    if (side === 'south') {
+      if (iy < gridY - 1 && !removedBays.has(`${ix}:${iy + 1}`)) return null;
+      return iy === gridY - 1 ? `wall:south:${ix}` : `wall:between-y:${ix}:${iy + 1}`;
+    }
+    if (side === 'west') {
+      if (ix > 0 && !removedBays.has(`${ix - 1}:${iy}`)) return null;
+      return ix === 0 ? `wall:west:${iy}` : `wall:between-x:${ix}:${iy}`;
+    }
+    if (side === 'east') {
+      if (ix < gridX - 1 && !removedBays.has(`${ix + 1}:${iy}`)) return null;
+      return ix === gridX - 1 ? `wall:east:${iy}` : `wall:between-x:${ix + 1}:${iy}`;
+    }
+    return null;
+  };
+
+  for (let ix = 0; ix < gridX; ix += 1) {
+    for (let iy = 0; iy < gridY; iy += 1) {
+      const bayKey = `${ix}:${iy}`;
+      if (removedBays.has(bayKey)) continue;
+      const coverType = building.gridBayCovers?.[bayKey] || building.hallCoverType || 'dome';
+      const transitionType = building.gridBayTransitions?.[bayKey] || building.hallTransitionType || 'pendentive';
+      const hallArchGuideVisible = building.hallArchGuideVisible === true && ix === 0 && iy === 0;
+      const hallDomeGuideVisible = building.hallDomeGuideVisible === true && ix === 0 && iy === 0;
+      const templateKey = [sharedTemplateSignature, xSpans[ix], ySpans[iy], coverType, transitionType,
+        hallArchGuideVisible, hallDomeGuideVisible, largeGrid].join('|');
+      if (!bayTemplateCache.has(templateKey)) {
+        generatedTemplateCount += 1;
+        const template = buildHallWallSystem({
+          ...building,
+          buildingType: 'hall',
+          hallGridX: 1,
+          hallGridY: 1,
+          hallBayWidth: xSpans[ix],
+          hallBayDepth: ySpans[iy],
+          hallCoverType: coverType,
+          hallTransitionType: transitionType,
+          // A one-bay Barrel template has no interior transverse grid line.
+          // Retain its boundary copies here; the Grid assembler deduplicates
+          // them into the shared non-main-direction bearing vaults.
+          gridTemplateIncludeBarrelTransverseVaults: coverType === 'barrel',
+          hallArchGuideVisible,
+          hallDomeGuideVisible,
+          gridPerformanceMode: largeGrid ? 'large' : 'normal',
+        }, sourceWalls);
+        template.traverse((child) => {
+          if (child.geometry) child.geometry.userData.gridSharedTemplate = true;
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.filter(Boolean).forEach((material) => { material.userData.gridSharedTemplate = true; });
+        });
+        bayTemplateCache.set(templateKey, template);
+      }
+      // Clone the object tree while sharing its immutable geometry/materials.
+      const bay = bayTemplateCache.get(templateKey).clone(true);
+      bay.name = `Grid bay ${ix + 1}-${iy + 1}`;
+      bay.position.set(xStarts[ix] + xSpans[ix] / 2, 0, yStarts[iy] + ySpans[iy] / 2);
+      bay.userData.buildingType = 'grid';
+      bay.userData.gridBay = [ix, iy];
+      bay.userData.gridBayCoverType = coverType;
+      bay.userData.gridBayTransitionType = transitionType;
+
+      bay.children.slice().forEach((child) => {
+        let keep = true;
+        let elementId = null;
+        let elementType = null;
+        if (child.userData?.isHallPerimeterWall || child.userData?.isHallBoundaryVaultInfill) {
+          const id = boundaryWallId(child.userData.wallSide, ix, iy);
+          keep = Boolean(id) && !walls.openSides.includes(child.userData.wallSide) && !removedWalls.has(id);
+          elementId = id;
+          elementType = 'wall';
+        } else if (child.userData?.isHallBearingColumn) {
+          const [localX, localY] = child.userData.hallGridIntersection || [0, 0];
+          const id = `column:${ix + localX}:${iy + localY}`;
+          keep = usedColumns.has(id) && !retainedColumns.has(id);
+          retainedColumns.add(id);
+          if (keep) Object.assign(child.userData, { gridElementId: id, gridElementType: 'column', gridIntersection: [ix + localX, iy + localY] });
+        } else if (child.userData?.isHallVaultArch || child.userData?.isHallBarrelSpandrelInfill) {
+          const [localX, localY] = child.userData.hallGridEdge || [0, 0];
+          const direction = child.userData.hallVaultDirection || 'x';
+          const gx = ix + (direction === 'y' ? localX : 0);
+          const gy = iy + (direction === 'x' ? localY : 0);
+          const id = `vault:${direction}:${gx}:${gy}`;
+          const retainedStructuralParts = child.userData?.isHallBarrelSpandrelInfill
+            ? retainedBarrelSpandrels
+            : retainedVaults;
+          keep = structuralVaults.has(id) && !retainedStructuralParts.has(id);
+          retainedStructuralParts.add(id);
+          elementId = id;
+          elementType = 'vault';
+          child.userData.gridVaultDirection = direction;
+        } else if (child.userData?.isHallBayTransition) {
+          const id = `transition:${ix}:${iy}`;
+          keep = !removedTransitions.has(id);
+          elementId = id;
+          elementType = 'transition';
+        } else if (child.userData?.isHallBayCover) {
+          const dome = coverType === 'dome';
+          const id = `${dome ? 'dome' : 'cover'}:${ix}:${iy}`;
+          keep = dome ? !removedDomes.has(id) : !removedVaults.has(id);
+          elementId = id;
+          elementType = dome ? 'dome' : 'vault';
+          child.userData.gridBayCoverType = coverType;
+        }
+        if (keep && elementId) {
+          Object.assign(child.userData, { gridElementId: elementId, gridElementType: elementType, gridBay: [ix, iy] });
+          const color = elementColors[elementId];
+          if (color && child.isMesh) {
+            const recolor = (material) => {
+              const clone = material.clone();
+              if (clone.color) clone.color.set(color);
+              clone.userData = { ...material.userData, gridElementColorOverride: color };
+              return clone;
+            };
+            child.material = Array.isArray(child.material)
+              ? child.material.map(recolor)
+              : recolor(child.material);
+          }
+        }
+        if (!keep) bay.remove(child);
+      });
+      group.add(bay);
+    }
+  }
+
+  if (activeBayCount >= 8) {
+    group.updateMatrixWorld(true);
+    const batches = [];
+    const sameMaterials = (left, right) => {
+      const leftList = Array.isArray(left) ? left : [left];
+      const rightList = Array.isArray(right) ? right : [right];
+      return leftList.length === rightList.length
+        && leftList.every((material, index) => material === rightList[index]);
+    };
+    group.traverse((child) => {
+      if (!child.isMesh || child.isInstancedMesh
+        || !['dome', 'transition'].includes(child.userData?.gridElementType)) return;
+      let batch = batches.find((candidate) => (
+        candidate.geometry === child.geometry
+        && sameMaterials(candidate.material, child.material)
+        && candidate.type === child.userData.gridElementType
+      ));
+      if (!batch) {
+        batch = {
+          geometry: child.geometry,
+          material: child.material,
+          type: child.userData.gridElementType,
+          meshes: [],
+        };
+        batches.push(batch);
+      }
+      batch.meshes.push(child);
+    });
+    const inverseRoot = group.matrixWorld.clone().invert();
+    batches.filter((batch) => batch.meshes.length > 1).forEach((batch) => {
+      const instanced = new THREE.InstancedMesh(batch.geometry, batch.material, batch.meshes.length);
+      instanced.name = `Grid instanced ${batch.type} batch`;
+      instanced.userData = {
+        isGridInstancedBatch: true,
+        gridElementType: batch.type,
+        gridInstances: batch.meshes.map((mesh) => ({
+          id: mesh.userData.gridElementId,
+          type: mesh.userData.gridElementType,
+          bay: mesh.userData.gridBay || null,
+        })),
+      };
+      batch.meshes.forEach((mesh, index) => {
+        instanced.setMatrixAt(index, inverseRoot.clone().multiply(mesh.matrixWorld));
+        mesh.parent?.remove(mesh);
+      });
+      instanced.instanceMatrix.needsUpdate = true;
+      group.add(instanced);
+    });
+  }
+
+  if (walls.edges.enabled && !largeGrid) {
+    const meshes = [];
+    group.traverse((child) => {
+      if (child.isMesh && !child.isInstancedMesh && child.geometry) meshes.push(child);
+    });
+    meshes.forEach((mesh) => addEdges(mesh.parent || group, mesh, walls));
+  }
+  group.userData.gridBaySpansX = xSpans;
+  group.userData.gridBaySpansY = ySpans;
+  group.userData.gridBayCovers = { ...(building.gridBayCovers || {}) };
+  group.userData.gridBayTransitions = { ...(building.gridBayTransitions || {}) };
+  group.userData.gridRemovedBays = [...removedBays];
+  group.userData.gridRemovedWalls = [...removedWalls];
+  group.userData.gridRemovedVaults = [...removedVaults];
+  group.userData.gridRemovedDomes = [...removedDomes];
+  group.userData.gridRemovedTransitions = [...removedTransitions];
+  group.userData.gridBayCount = gridX * gridY;
+  group.userData.gridActiveBayCount = activeBayCount;
+  group.userData.gridSharedTemplateCount = bayTemplateCache.size;
+  group.userData.gridRegeneratedTemplateCount = generatedTemplateCount;
+  group.userData.gridInstancingEnabled = activeBayCount >= 8;
+  group.userData.gridEdgesSuppressed = largeGrid && walls.edges.enabled;
+  group.userData.gridShadowsSuppressed = largeGrid;
+  group.userData.gridConstructionRule = 'individually-sized Hall-derived bays with independently selected covers';
+  setShadow(group, walls.shadows);
+  if (largeGrid) {
+    group.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.userData.gridLargeModelShadowSuppressed = true;
+    });
+  }
+  return group;
+}
+
+export function buildWallSystem(building, value = {}, zones = [], options = {}) {
+  const circleBuildingDefinesBoundary = building.type === 'room'
+    && (building.roomPlanShape || 'square') === 'circle'
+    && building.roomExteriorColumnsEnabled === true
+    && building.roomExteriorCircleColumnBoundaryMode === 'building';
+  const normalizedWalls = normalizeWallSystem(value, building);
+  const followsCircleBoundaryWithContainedColumns = circleBuildingDefinesBoundary
+    && normalizedWalls.stoneBase.enabled
+    && normalizedWalls.stoneBase.planShape === 'follow';
+  const walls = followsCircleBoundaryWithContainedColumns
+    ? {
+      ...normalizedWalls,
+      stoneBase: {
+        ...normalizedWalls.stoneBase,
+        planShape: 'circle',
+        requestedPlanShape: 'follow',
+      },
+    }
+    : normalizedWalls;
+  if (building.buildingType === 'grid') return buildGridWallSystem(building, walls, options);
+  if (building.buildingType === 'hall') return buildHallWallSystem(building, walls);
   const group = new THREE.Group();
   group.name = 'Mehraz architectural wall system';
   group.userData.wallSystem = walls;
   if (!walls.enabled) return group;
 
   const thickness = Math.max(0.1, Number(building.wallThickness) || 0.4);
-  const halfWidth = Math.max(1, Number(building.width) / 2);
-  const halfDepth = Math.max(1, Number(building.depth) / 2);
+  const requestedHalfWidth = Math.max(1, Number(building.width) / 2);
+  const requestedHalfDepth = Math.max(1, Number(building.depth) / 2);
+  const boundaryColumnRadius = THREE.MathUtils.clamp(
+    Number(building.roomExteriorColumnRadius) || 0.2,
+    0.05,
+    2,
+  );
+  const boundarySquareRotation = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(
+    Number(building.roomExteriorSquareColumnRotation) || 0,
+    -360,
+    360,
+  ));
+  const boundaryColumnRadialExtent = building.roomExteriorColumnProfile === 'square'
+    ? boundaryColumnRadius * (Math.abs(Math.sin(boundarySquareRotation)) + Math.abs(Math.cos(boundarySquareRotation)))
+    : boundaryColumnRadius;
+  const requestedCircleInteriorRadius = Math.min(requestedHalfWidth, requestedHalfDepth);
+  const requestedCircleBoundaryRadius = requestedCircleInteriorRadius * Math.cos(Math.PI / 64) + thickness;
+  const resizedCircleExteriorFaceRadius = Math.max(
+    thickness + 0.1,
+    requestedCircleBoundaryRadius - boundaryColumnRadialExtent,
+  );
+  const resizedCircleInteriorRadius = Math.max(
+    1,
+    (resizedCircleExteriorFaceRadius - thickness) / Math.cos(Math.PI / 64),
+  );
+  const halfWidth = circleBuildingDefinesBoundary ? resizedCircleInteriorRadius : requestedHalfWidth;
+  const halfDepth = circleBuildingDefinesBoundary ? resizedCircleInteriorRadius : requestedHalfDepth;
   const westX = -halfWidth - walls.sideOffsets.west;
   const eastX = halfWidth + walls.sideOffsets.east;
   const northZ = -halfDepth - walls.sideOffsets.north;
@@ -12455,7 +17372,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
         referenceSpringY + (Number.isFinite(Number(settings.greenHeightOffset))
           ? Number(settings.greenHeightOffset)
           : -0.65),
-        { redOffset: Number.isFinite(Number(settings.redOffset)) ? Number(settings.redOffset) : -0.1 },
+        { archType: settings.archType, redOffset: Number.isFinite(Number(settings.redOffset)) ? Number(settings.redOffset) : -0.1 },
       );
       const crownRise = Math.max(
         0.05,
@@ -12521,16 +17438,15 @@ export function buildWallSystem(building, value = {}, zones = []) {
     const openingProfiles = {};
     const holes = [];
     if (openingSettings.door.enabled) {
-      if (!(building.domeTransition === 'karbandi'
-        && roomKarbandiOpeningMovesAboveWall(openingSettings.door, clearSpan, wallHeight, 0))) {
-        openingProfiles.door = southOpeningProfile(openingSettings.door, 0, clearSpan, wallHeight, 0);
+      const sill = Math.max(0, Number(openingSettings.door.sillHeight) || 0);
+      if (sill < wallHeight - 0.001) {
+        openingProfiles.door = southOpeningProfile(openingSettings.door, 0, clearSpan, wallHeight, sill);
+        if (sill > 0.000001) holes.push(openingHole(openingProfiles.door));
       }
     }
     if (openingSettings.window.enabled) {
       const sill = Math.max(0, Number(openingSettings.window.sillHeight) || 0);
-      const movesToOctagon = building.domeTransition === 'karbandi'
-        && roomKarbandiOpeningMovesAboveWall(openingSettings.window, clearSpan, wallHeight, sill);
-      if (!movesToOctagon && sill < wallHeight - 0.001) {
+      if (sill < wallHeight - 0.001) {
         openingProfiles.window = southOpeningProfile(openingSettings.window, 0, clearSpan, wallHeight, sill);
         holes.push(openingHole(openingProfiles.window));
       }
@@ -12539,32 +17455,34 @@ export function buildWallSystem(building, value = {}, zones = []) {
       structuralLeft,
       structuralRight,
       wallHeight,
-      openingProfiles.door,
+      openingProfiles.door?.bottom > 0.000001 ? null : openingProfiles.door,
       holes,
     );
     const faceShape = rectangleShapeWithDoorNotch(
       -clearSpan / 2,
       clearSpan / 2,
       wallHeight,
-      openingProfiles.door,
+      openingProfiles.door?.bottom > 0.000001 ? null : openingProfiles.door,
       holes,
     );
     const soldierCutouts = openingSoldierCutouts(openingProfiles, walls, gypsumBaseTop);
+    const transitionContinuationTypes = ['door', 'window'].filter((openingType) => (
+      openingSettings[openingType]?.enabled
+        && roomKarbandiOpeningMovesAboveWall(
+          openingSettings[openingType],
+          clearSpan,
+          wallHeight,
+          Math.max(0, Number(openingSettings[openingType].sillHeight) || 0),
+        )
+    ));
     const wallGroup = new THREE.Group();
     wallGroup.name = `Room ${side} south-style wall`;
     wallGroup.userData.wallSide = side;
     wallGroup.userData.roomWallConstructionMethod = 'south-wall-options-and-opening-design';
     wallGroup.userData.roomWallOpeningTypes = Object.keys(openingProfiles);
-    wallGroup.userData.roomWallTransferredOpeningTypes = ['door', 'window'].filter((openingType) => (
-      openingSettings[openingType]?.enabled
-        && !Object.prototype.hasOwnProperty.call(openingProfiles, openingType)
-        && roomKarbandiOpeningMovesAboveWall(
-          openingSettings[openingType],
-          clearSpan,
-          wallHeight,
-          openingType === 'window' ? Math.max(0, Number(openingSettings.window.sillHeight) || 0) : 0,
-        )
-    ));
+    wallGroup.userData.roomWallDoorSillHeight = openingProfiles.door?.bottom ?? null;
+    wallGroup.userData.roomWallTransferredOpeningTypes = [];
+    wallGroup.userData.roomWallTransitionContinuationTypes = transitionContinuationTypes;
     if (side === 'south') wallGroup.position.set(centerX, 0, southZ);
     if (side === 'north') {
       wallGroup.position.set(centerX, 0, northZ);
@@ -12664,7 +17582,32 @@ export function buildWallSystem(building, value = {}, zones = []) {
       null,
       northSouth,
     );
+    removeOpeningBoundaryShelves(
+      body.geometry,
+      wallHeight,
+      transitionContinuationTypes.map((openingType) => {
+        const opening = openingSettings[openingType];
+        const sill = Math.max(0, Number(opening.sillHeight) || 0);
+        return southOpeningProfile(
+          opening,
+          0,
+          clearSpan,
+          Math.max(wallHeight + 100, sill + Math.max(0, Number(opening.height) || 0) + 100),
+          sill,
+        );
+      }),
+    );
     body.userData.roomWallConstructionMethod = 'south-wall-options-and-opening-design';
+    body.userData.roomWallOpeningProfiles = Object.fromEntries(Object.entries(openingProfiles).map(([type, profile]) => [
+      type,
+      {
+        left: profile.left,
+        right: profile.right,
+        bottom: profile.bottom,
+        springTop: profile.springTop,
+        top: profile.top,
+      },
+    ]));
     body.userData.isRoomWallBody = true;
     body.userData.roomWallDepth = wallDepth;
     body.userData.roomWallInteriorFace = 0;
@@ -12693,12 +17636,19 @@ export function buildWallSystem(building, value = {}, zones = []) {
     const raisedProjection = Math.max(0.018, Math.min(0.06, walls.northBoundary?.depth || 0.03));
     const addOpeningTrim = (wallFace) => {
       const exterior = wallFace === 'exterior';
-      const trimZ = exterior ? wallDepth + raisedProjection + 0.008 : -0.008;
+      const reveal = wallFace === 'reveal';
+      // Interior and exterior courses remain slightly raised from each face.
+      // A third extrusion occupies the complete wall depth and supplies the
+      // brick-lined jamb/soffit that physically joins those two courses.
+      const trimZ = reveal
+        ? wallDepth
+        : exterior ? wallDepth + raisedProjection + 0.008 : -0.008;
       const trimOptions = {
         roomWall: true,
         wallFace,
         materialSide: exterior ? `${side}_exterior` : side,
         coordinateSpace: 'local',
+        projectionDepth: reveal ? wallDepth : undefined,
       };
       if (openingProfiles.door) {
         if (openingProfiles.door.archPoints?.length) {
@@ -12706,7 +17656,10 @@ export function buildWallSystem(building, value = {}, zones = []) {
         } else {
           addRaisedOpeningSoldierCourse(wallGroup, 'door', openingProfiles.door.center, openingProfiles.door.top + soldierHeight / 2, openingProfiles.door.width, soldierHeight, trimZ, walls, 'lintel', side, trimOptions);
         }
-        const jambBottom = walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0;
+        const jambBottom = Math.max(
+          openingProfiles.door.bottom,
+          walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0,
+        );
         addRaisedOpeningJambCourses(wallGroup, 'door', openingProfiles.door, jambBottom, soldierHeight, trimZ, walls, side, trimOptions);
       }
       if (openingProfiles.window) {
@@ -12721,6 +17674,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
     };
     addOpeningTrim('interior');
     addOpeningTrim('exterior');
+    addOpeningTrim('reveal');
     group.add(wallGroup);
   };
 
@@ -12849,7 +17803,22 @@ export function buildWallSystem(building, value = {}, zones = []) {
       );
     });
     const karbandiPlanVertices = vestibuleKarbandiPlanVertices || portalVestibulePlanVertices;
-    const vertices = karbandiPlanVertices || verticesAtRadius(radius);
+    const sourceVertices = karbandiPlanVertices || verticesAtRadius(radius);
+    const portalOctagonJambFlush = portalHalfPlan
+      && planShape === 'octagon'
+      && Boolean(portalVestibulePlanVertices);
+    // The Karbandi bearing solve can place the east/west octagon feet a few
+    // centimetres beyond the square facade opening. Keep that bearing solution
+    // for the ribs, but draw the two cut-adjacent wall runs on the opening jamb
+    // planes so the Portal section has one continuous inner face.
+    const sourceWestX = Math.min(...sourceVertices.map((point) => point.x));
+    const sourceEastX = Math.max(...sourceVertices.map((point) => point.x));
+    const vertices = sourceVertices.map((point) => {
+      const adjusted = point.clone();
+      if (portalOctagonJambFlush && Math.abs(point.x - sourceWestX) <= 0.000001) adjusted.x = westX;
+      if (portalOctagonJambFlush && Math.abs(point.x - sourceEastX) <= 0.000001) adjusted.x = eastX;
+      return adjusted;
+    });
     const offsetConvexVertices = (points, distance) => points.map((point, index) => {
       const previous = points[(index - 1 + points.length) % points.length];
       const next = points[(index + 1) % points.length];
@@ -12876,6 +17845,8 @@ export function buildWallSystem(building, value = {}, zones = []) {
     planGroup.userData.portalPlanShape = portalHalfPlan ? planShape : null;
     planGroup.userData.portalHalfPlan = portalHalfPlan;
     planGroup.userData.portalHalfPlanCutLineZ = portalHalfPlan ? planCenterZ : null;
+    planGroup.userData.portalHalfPlanJambFlush = portalOctagonJambFlush;
+    planGroup.userData.portalHalfPlanOpeningJambX = portalOctagonJambFlush ? [westX, eastX] : null;
     planGroup.userData.roomPlanBoundingSize = [width, depth];
     planGroup.userData.roomPlanDiameter = radius * 2;
     planGroup.userData.roomPlanWallDepth = planWallDepth;
@@ -13015,7 +17986,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
         }, 0);
         const northPhase = innerSegmentStarts[northSegmentIndex] + innerSegmentLengths[northSegmentIndex] / 2;
         const centerPhase = ((northPhase + opening.rotation / 360 * innerPerimeter) % innerPerimeter + innerPerimeter) % innerPerimeter;
-        const bottom = opening.type === 'window' ? opening.sillHeight : 0;
+        const bottom = opening.sillHeight;
         const springTop = Math.min(wallHeight, bottom + opening.height);
         if (springTop <= bottom + 0.000001) return [];
         const archPoints = opening.head === 'arch'
@@ -13027,7 +17998,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
             opening.arch?.greenOffset,
             opening.arch?.greenHeight,
             36,
-            { redOffset: opening.arch?.redOffset },
+            { archType: opening.arch?.archType, redOffset: opening.arch?.redOffset },
           )
           : [];
         const usesArch = archPoints.length > 2;
@@ -13182,6 +18153,11 @@ export function buildWallSystem(building, value = {}, zones = []) {
       group.userData.portalHalfPlanFullSideCount = sideCount;
       group.userData.portalHalfPlanCutLineZ = planCenterZ;
       group.userData.portalHalfPlanRadius = radius;
+      group.userData.portalHalfPlanJambFlush = portalOctagonJambFlush;
+      group.userData.portalHalfPlanOpeningJambX = portalOctagonJambFlush ? [westX, eastX] : null;
+      group.userData.portalHalfPlanKarbandiBearingVertices = portalOctagonJambFlush
+        ? sourceVertices.map((point) => [point.x, point.y])
+        : null;
       group.userData.portalHalfPlanVisibleVertices = visiblePlanSegments.length
         ? [
           ...visiblePlanSegments.map((entry) => [entry.start.x, entry.start.y]),
@@ -13198,6 +18174,238 @@ export function buildWallSystem(building, value = {}, zones = []) {
   if (roomMode && (building.roomPlanShape || 'square') === 'square') WALL_SIDES.forEach(addRoomSouthStyleWall);
   if (roomMode && (building.roomPlanShape || 'square') !== 'square') addRegularPlanRoomWalls();
   if (portalRegularPlan) addRegularPlanRoomWalls();
+
+  const stoneSkirtPlanShape = walls.stoneBase.planShape || 'follow';
+  if (walls.stoneBase.enabled
+    && walls.stoneBase.height > 0
+    && stoneSkirtPlanShape !== 'follow') {
+    const skirtGroup = new THREE.Group();
+    skirtGroup.name = 'Independent stone skirt';
+    const skirtHeight = Math.max(0, Number(walls.stoneBase.height) || 0);
+    const skirtThickness = thickness;
+    const circleRoomOuterVertices = roomMode && (building.roomPlanShape || 'square') === 'circle'
+      ? (group.userData.roomPlanOuterVertices || []).map(([x, z]) => new THREE.Vector2(x, z))
+      : [];
+    const circleRoomExteriorRadius = circleRoomOuterVertices.length > 2
+      ? circleRoomOuterVertices.reduce((sum, point, index) => {
+        const next = circleRoomOuterVertices[(index + 1) % circleRoomOuterVertices.length];
+        return sum + point.clone().add(next).multiplyScalar(0.5)
+          .distanceTo(new THREE.Vector2(centerX, centerZ));
+      }, 0) / circleRoomOuterVertices.length
+      : null;
+    const baseBoundaryRadius = Math.max(
+      0.1,
+      circleBuildingDefinesBoundary
+        ? requestedCircleBoundaryRadius
+        : circleRoomExteriorRadius || Math.min(outerWidth, outerDepth) / 2,
+    );
+    const skirtSideCount = stoneSkirtPlanShape === 'circle'
+      ? 64
+      : stoneSkirtPlanShape === 'octagon'
+        ? 8
+        : stoneSkirtPlanShape === 'polygon'
+          ? Math.round(THREE.MathUtils.clamp(Number(walls.stoneBase.polygonSides) || 6, 3, 32))
+          : 4;
+    const circumscribesCircleRoom = roomMode
+      && (building.roomPlanShape || 'square') === 'circle'
+      && ['octagon', 'polygon'].includes(stoneSkirtPlanShape);
+    const boundaryRadius = circumscribesCircleRoom
+      ? baseBoundaryRadius / Math.cos(Math.PI / skirtSideCount)
+      : baseBoundaryRadius;
+    const skirtVertices = Array.from({ length: skirtSideCount }, (_, index) => {
+      const angle = Math.PI / 2 + Math.PI / skirtSideCount + index * Math.PI * 2 / skirtSideCount;
+      return new THREE.Vector2(
+        centerX + Math.cos(angle) * boundaryRadius,
+        centerZ + Math.sin(angle) * boundaryRadius,
+      );
+    });
+    const skirtMaterial = configureStoneBaseMaterial(new THREE.MeshStandardMaterial({
+      color: walls.stoneBase.color,
+      roughness: 0.92,
+      metalness: 0,
+    }), walls, { independent: true });
+    skirtMaterial.userData.isIndependentStoneSkirtMaterial = true;
+    const skirtDoors = [];
+    const addSkirtDoor = (door, direction, tangent, tangentialOffset = 0, id = 'door') => {
+      if (!door?.enabled) return;
+      skirtDoors.push({
+        id,
+        direction: new THREE.Vector2(...direction).normalize(),
+        tangent: new THREE.Vector2(...tangent).normalize(),
+        tangentialOffset: Number(tangentialOffset) || 0,
+        width: Math.max(0.3, Number(door.width) || 1),
+        bottom: Math.max(0, Number(door.sillHeight) || 0),
+        top: Math.max(0, Number(door.sillHeight) || 0) + Math.max(0.3, Number(door.height) || 0.3)
+          + (door.head === 'arch' ? Math.max(0.15, Number(door.width) || 1) * 0.5 : 0),
+      });
+    };
+    if (!roomMode) {
+      addSkirtDoor(walls.southOpenings?.door, [0, 1], [1, 0], walls.southOpenings?.door?.position, 'south-door');
+    } else if ((building.roomPlanShape || 'square') === 'square') {
+      const doorFrames = {
+        south: { direction: [0, 1], tangent: [1, 0] },
+        north: { direction: [0, -1], tangent: [-1, 0] },
+        east: { direction: [1, 0], tangent: [0, -1] },
+        west: { direction: [-1, 0], tangent: [0, 1] },
+      };
+      WALL_SIDES.forEach((side) => {
+        const frame = doorFrames[side];
+        const door = walls.roomWallOpenings?.[side]?.door;
+        addSkirtDoor(door, frame.direction, frame.tangent, door?.position, `${side}-door`);
+      });
+    } else {
+      (walls.roomPlanOpenings || []).filter((opening) => opening.type === 'door').forEach((door) => {
+        const angle = -Math.PI / 2 + THREE.MathUtils.degToRad(Number(door.rotation) || 0);
+        addSkirtDoor(
+          { ...door, enabled: true },
+          [Math.cos(angle), Math.sin(angle)],
+          [-Math.sin(angle), Math.cos(angle)],
+          0,
+          door.id,
+        );
+      });
+    }
+    const cross2 = (left, right) => left.x * right.y - left.y * right.x;
+    const doorCutsBySegment = new Map();
+    skirtDoors.forEach((door) => {
+      const origin = new THREE.Vector2(centerX, centerZ).addScaledVector(door.tangent, door.tangentialOffset);
+      let closest = null;
+      skirtVertices.forEach((start, segmentIndex) => {
+        const end = skirtVertices[(segmentIndex + 1) % skirtVertices.length];
+        const segment = end.clone().sub(start);
+        const denominator = cross2(door.direction, segment);
+        if (Math.abs(denominator) < 0.000001) return;
+        const delta = start.clone().sub(origin);
+        const rayDistance = cross2(delta, segment) / denominator;
+        const segmentRatio = cross2(delta, door.direction) / denominator;
+        if (rayDistance < -0.000001 || segmentRatio < -0.000001 || segmentRatio > 1.000001) return;
+        if (!closest || rayDistance < closest.rayDistance) {
+          closest = { segmentIndex, segmentRatio: THREE.MathUtils.clamp(segmentRatio, 0, 1), rayDistance, segment };
+        }
+      });
+      if (!closest) return;
+      const openingCenter = origin.clone().addScaledVector(door.direction, closest.rayDistance);
+      const halfDoorWidth = door.width / 2;
+      skirtVertices.forEach((start, segmentIndex) => {
+        const end = skirtVertices[(segmentIndex + 1) % skirtVertices.length];
+        const segment = end.clone().sub(start);
+        const segmentLength = segment.length();
+        if (segmentLength < 0.000001) return;
+        const midpointDirection = start.clone().add(end).multiplyScalar(0.5)
+          .sub(new THREE.Vector2(centerX, centerZ)).normalize();
+        if (midpointDirection.dot(door.direction) < 0.25) return;
+        const startProjection = start.clone().sub(openingCenter).dot(door.tangent);
+        const projectionDelta = segment.dot(door.tangent);
+        let minimumRatio;
+        let maximumRatio;
+        if (Math.abs(projectionDelta) < 0.000001) {
+          if (Math.abs(startProjection) > halfDoorWidth + 0.000001) return;
+          minimumRatio = 0;
+          maximumRatio = 1;
+        } else {
+          const firstRatio = (-halfDoorWidth - startProjection) / projectionDelta;
+          const secondRatio = (halfDoorWidth - startProjection) / projectionDelta;
+          minimumRatio = Math.max(0, Math.min(firstRatio, secondRatio));
+          maximumRatio = Math.min(1, Math.max(firstRatio, secondRatio));
+          if (maximumRatio <= minimumRatio + 0.000001) return;
+        }
+        const cuts = doorCutsBySegment.get(segmentIndex) || [];
+        cuts.push({
+          id: door.id,
+          minimumX: minimumRatio * segmentLength,
+          maximumX: maximumRatio * segmentLength,
+          minimumY: Math.min(skirtHeight, door.bottom),
+          maximumY: Math.min(skirtHeight, door.top),
+        });
+        doorCutsBySegment.set(segmentIndex, cuts);
+      });
+    });
+    skirtVertices.forEach((start, index) => {
+      const end = skirtVertices[(index + 1) % skirtVertices.length];
+      const tangent = end.clone().sub(start);
+      const segmentLength = tangent.length();
+      if (segmentLength < 0.000001) return;
+      tangent.normalize();
+      const segmentMidpoint = start.clone().add(end).multiplyScalar(0.5);
+      const outward = segmentMidpoint.clone().sub(new THREE.Vector2(centerX, centerZ)).normalize();
+      const cuts = (doorCutsBySegment.get(index) || []).filter((cut) => cut.maximumY > cut.minimumY + 0.000001);
+      const xBreaks = [...new Set([0, segmentLength, ...cuts.flatMap((cut) => [cut.minimumX, cut.maximumX])])]
+        .sort((left, right) => left - right);
+      let pieceIndex = 0;
+      for (let xIndex = 0; xIndex < xBreaks.length - 1; xIndex += 1) {
+        const minimumX = xBreaks[xIndex];
+        const maximumX = xBreaks[xIndex + 1];
+        if (maximumX <= minimumX + 0.000001) continue;
+        const sampleX = (minimumX + maximumX) / 2;
+        const verticalCuts = cuts
+          .filter((cut) => sampleX > cut.minimumX - 0.000001 && sampleX < cut.maximumX + 0.000001)
+          .map((cut) => [cut.minimumY, cut.maximumY])
+          .sort((left, right) => left[0] - right[0]);
+        const mergedVerticalCuts = [];
+        verticalCuts.forEach(([bottom, top]) => {
+          const previous = mergedVerticalCuts.at(-1);
+          if (previous && bottom <= previous[1] + 0.000001) previous[1] = Math.max(previous[1], top);
+          else mergedVerticalCuts.push([bottom, top]);
+        });
+        const visibleBands = [];
+        let bandBottom = 0;
+        mergedVerticalCuts.forEach(([bottom, top]) => {
+          if (bottom > bandBottom + 0.000001) visibleBands.push([bandBottom, bottom]);
+          bandBottom = Math.max(bandBottom, top);
+        });
+        if (bandBottom < skirtHeight - 0.000001) visibleBands.push([bandBottom, skirtHeight]);
+        visibleBands.forEach(([minimumY, maximumY]) => {
+          const pieceWidth = maximumX - minimumX;
+          const pieceHeight = maximumY - minimumY;
+          const localCenter = (minimumX + maximumX) / 2;
+          const center = start.clone().addScaledVector(tangent, localCenter);
+          const geometry = applyWorldAlignedBrickUvs(new THREE.BoxGeometry(
+            pieceWidth + 0.002,
+            pieceHeight,
+            skirtThickness,
+          ));
+          const panel = new THREE.Mesh(geometry, skirtMaterial);
+          panel.name = `Independent stone skirt ${stoneSkirtPlanShape} panel ${index + 1} piece ${pieceIndex + 1}`;
+          panel.position.set(
+            center.x - outward.x * skirtThickness / 2,
+            minimumY + pieceHeight / 2,
+            center.y - outward.y * skirtThickness / 2,
+          );
+          panel.rotation.y = Math.atan2(-tangent.y, tangent.x);
+          panel.castShadow = walls.shadows;
+          panel.receiveShadow = walls.shadows;
+          panel.userData.isIndependentStoneSkirt = true;
+          panel.userData.stoneSkirtPlanShape = stoneSkirtPlanShape;
+          panel.userData.stoneSkirtSegmentIndex = index;
+          panel.userData.stoneSkirtPieceIndex = pieceIndex;
+          panel.userData.stoneSkirtBoundaryStart = [start.x, start.y];
+          panel.userData.stoneSkirtBoundaryEnd = [end.x, end.y];
+          panel.userData.stoneSkirtHeight = skirtHeight;
+          panel.userData.stoneSkirtThickness = skirtThickness;
+          panel.userData.stoneSkirtDoorOpeningIds = cuts.map((cut) => cut.id);
+          skirtGroup.add(panel);
+          meshes.push(panel);
+          pieceIndex += 1;
+        });
+      }
+    });
+    skirtGroup.userData.isIndependentStoneSkirtAssembly = true;
+    skirtGroup.userData.stoneSkirtPlanShape = stoneSkirtPlanShape;
+    skirtGroup.userData.stoneSkirtSideCount = skirtSideCount;
+    skirtGroup.userData.stoneSkirtPolygonSides = walls.stoneBase.polygonSides;
+    skirtGroup.userData.stoneSkirtBoundaryRadius = boundaryRadius;
+    skirtGroup.userData.stoneSkirtBoundaryRule = circumscribesCircleRoom
+      ? `${stoneSkirtPlanShape}-sides-circumscribed-tangent-around-circle-room-exterior`
+      : 'inscribed-within-main-building-exterior-bounds';
+    skirtGroup.userData.stoneSkirtBoundaryVertices = skirtVertices.map((point) => [point.x, point.y]);
+    skirtGroup.userData.stoneSkirtHeight = skirtHeight;
+    skirtGroup.userData.stoneSkirtThickness = skirtThickness;
+    skirtGroup.userData.stoneSkirtConstruction = 'full-depth-lower-building-masonry-tier';
+    skirtGroup.userData.stoneSkirtControlsBuildingMasonryBelowHeight = skirtHeight;
+    skirtGroup.userData.stoneSkirtDoorOpeningIds = skirtDoors.map((door) => door.id);
+    skirtGroup.userData.stoneSkirtDoorCutPolicy = 'doors-cut-through-lower-masonry-tier-at-current-sill';
+    group.add(skirtGroup);
+  }
 
   if (roomMode && building.roomExteriorColumnsEnabled === true) {
     const planShape = building.roomPlanShape || 'square';
@@ -13227,7 +18435,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
           opening.arch?.greenOffset,
           opening.arch?.greenHeight,
           36,
-          { redOffset: opening.arch?.redOffset },
+          { archType: opening.arch?.archType, redOffset: opening.arch?.redOffset },
         )
         : [];
       openingRegions.push({
@@ -13303,6 +18511,9 @@ export function buildWallSystem(building, value = {}, zones = []) {
         );
       });
     }
+    const circleColumnBoundaryMode = building.roomExteriorCircleColumnBoundaryMode === 'building'
+      ? 'building'
+      : 'columns';
     let placements;
     if (planShape === 'square') {
       placements = [
@@ -13321,12 +18532,24 @@ export function buildWallSystem(building, value = {}, zones = []) {
       placements = Array.from({ length: count }, (_, index) => {
         const angle = Math.PI / 2 + index * Math.PI * 2 / count;
         const cycleAngle = ((angle - angleOffset) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+        const columnRotation = squareRotation + Math.PI / 2 - angle;
+        const radial = new THREE.Vector2(Math.cos(angle), Math.sin(angle));
+        const localX = new THREE.Vector2(Math.cos(columnRotation), -Math.sin(columnRotation));
+        const localZ = new THREE.Vector2(Math.sin(columnRotation), Math.cos(columnRotation));
+        const radialExtent = columnProfile === 'square'
+          ? columnRadius * (Math.abs(radial.dot(localX)) + Math.abs(radial.dot(localZ)))
+          : columnRadius;
+        const centerRadius = exteriorFaceRadius;
         return {
           center: [
-            centerX + Math.cos(angle) * exteriorFaceRadius,
-            centerZ + Math.sin(angle) * exteriorFaceRadius,
+            centerX + Math.cos(angle) * centerRadius,
+            centerZ + Math.sin(angle) * centerRadius,
           ],
           phase: cycleAngle / (Math.PI * 2) * exteriorCycle,
+          radialExtent,
+          boundaryRadius: circleColumnBoundaryMode === 'building'
+            ? requestedCircleBoundaryRadius
+            : exteriorFaceRadius,
         };
       });
     } else {
@@ -13348,14 +18571,20 @@ export function buildWallSystem(building, value = {}, zones = []) {
     columnGroup.userData.roomExteriorColumnRadius = columnRadius;
     columnGroup.userData.roomExteriorSquareColumnRotation = squareRotationDegrees;
     columnGroup.userData.roomExteriorSquareColumnRotationReference = 'north-column-relative-to-local-exterior-tangent';
-    columnGroup.userData.roomExteriorColumnCenterAlignment = 'center-on-room-exterior-edge';
+    columnGroup.userData.roomExteriorCircleColumnBoundaryMode = circleColumnBoundaryMode;
+    columnGroup.userData.roomExteriorCircleColumnCircumscribedRule = circleColumnBoundaryMode === 'building'
+      ? 'building-defines-boundary-and-full-column-profile-is-contained'
+      : 'column-centerline-defines-building-circumscribed-circumference';
+    columnGroup.userData.roomExteriorColumnCenterAlignment = planShape === 'circle' && circleColumnBoundaryMode === 'building'
+      ? 'inset-by-column-radial-extent-from-room-exterior-edge'
+      : 'center-on-room-exterior-edge';
     columnGroup.userData.roomExteriorBondCycle = exteriorCycle;
     columnGroup.userData.roomExteriorBondContinuity = 'shared-with-developed-exterior-wall-perimeter';
     columnGroup.userData.roomExteriorColumnOpeningPolicy = 'doors-and-windows-cut-through-overlapping-columns';
     const columnPerimeter = columnProfile === 'square'
       ? columnRadius * 8
       : Math.PI * 2 * columnRadius;
-    placements.forEach(({ center: [x, z], phase }, index) => {
+    placements.forEach(({ center: [x, z], phase, radialExtent = null, boundaryRadius = null }, index) => {
       const columnCenter = new THREE.Vector2(x, z);
       const polarAngle = Math.atan2(z - centerZ, x - centerX);
       const columnRotation = squareRotation + Math.PI / 2 - polarAngle;
@@ -13425,7 +18654,10 @@ export function buildWallSystem(building, value = {}, zones = []) {
           ? 'developed-square-perimeter-world-height-metres'
           : 'developed-cylinder-world-height-metres';
         const columnMaterial = directRoomWallFaceMaterial(
-          walls,
+          {
+            ...walls,
+            stoneBase: { ...walls.stoneBase, planShape: 'follow' },
+          },
           'room_plan_exterior',
           columnPerimeter,
           columnHeight,
@@ -13449,7 +18681,12 @@ export function buildWallSystem(building, value = {}, zones = []) {
         column.userData.roomExteriorSquareColumnEffectiveRotation = THREE.MathUtils.radToDeg(columnRotation);
         column.userData.roomExteriorSquareColumnRotationReference = 'north-column-relative-to-local-exterior-tangent';
         column.userData.roomExteriorColumnCenter = [x, z];
-        column.userData.roomExteriorColumnCenterAlignment = 'center-on-room-exterior-edge';
+        column.userData.roomExteriorCircleColumnBoundaryMode = circleColumnBoundaryMode;
+        column.userData.roomExteriorColumnRadialExtent = radialExtent;
+        column.userData.roomExteriorColumnBoundaryRadius = boundaryRadius;
+        column.userData.roomExteriorColumnCenterAlignment = planShape === 'circle' && circleColumnBoundaryMode === 'building'
+          ? 'inset-by-column-radial-extent-from-room-exterior-edge'
+          : 'center-on-room-exterior-edge';
         column.userData.roomExteriorBondPhase = phase;
         column.userData.roomExteriorBondCycle = exteriorCycle;
         column.userData.roomExteriorBondContinuity = 'shared-with-developed-exterior-wall-perimeter';
@@ -13503,6 +18740,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
   const greenOffset = walls.pointedArch.greenOffset ?? archHalfSpan;
   const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - archHalfSpan * 0.6);
   const archCircleOptions = {
+    archType: walls.pointedArch.archType,
     redOffset: walls.pointedArch.redOffset,
     redRadius: walls.pointedArch.redRadius,
   };
@@ -13521,10 +18759,26 @@ export function buildWallSystem(building, value = {}, zones = []) {
     : Math.max(sideTop + 0.2, Number(building.openingHeight) || sideTop + archHalfSpan);
   const ahangEnabled = !roomMode && walls.ahang.enabled && pointedArchActive;
   const archBand = thickness;
+  const ahangArchHalfSpan = width / 2;
+  const ahangArchPoints = ahangEnabled
+    ? archCurve(
+      centerX,
+      ahangArchHalfSpan,
+      sideTop,
+      sideTop,
+      greenOffset,
+      greenHeight,
+      36,
+      archCircleOptions,
+    )
+    : [];
+  const ahangArchApex = ahangArchPoints.length
+    ? Math.max(...ahangArchPoints.map((point) => point.y))
+    : archApex;
   const outerArchPoints = ahangEnabled
     ? archCurve(
       centerX,
-      archHalfSpan + archBand,
+      ahangArchHalfSpan + archBand,
       sideTop,
       sideTop,
       greenOffset,
@@ -13540,13 +18794,15 @@ export function buildWallSystem(building, value = {}, zones = []) {
     ? Math.max(...outerArchPoints.map((point) => point.y))
     : archApex;
   const southBaseHeight = verticalWallHeight('south');
-  const southWallHeight = ahangEnabled ? Math.max(southBaseHeight, archApex, outerArchApex) : southBaseHeight;
+  const southWallHeight = ahangEnabled ? Math.max(southBaseHeight, ahangArchApex, outerArchApex) : southBaseHeight;
   const southHoles = [];
   const openingRects = {};
   const southBaseOpeningRects = {};
   if (walls.southOpenings.door.enabled) {
-    openingRects.door = southOpeningProfile(walls.southOpenings.door, centerX, width, southWallHeight, 0);
-    southBaseOpeningRects.door = southOpeningProfile(walls.southOpenings.door, centerX, width, southBaseHeight, 0);
+    const sill = Math.max(0, Number(walls.southOpenings.door.sillHeight) || 0);
+    openingRects.door = southOpeningProfile(walls.southOpenings.door, centerX, width, southWallHeight, sill);
+    southBaseOpeningRects.door = southOpeningProfile(walls.southOpenings.door, centerX, width, southBaseHeight, sill);
+    if (sill > 0.000001) southHoles.push(openingHole(southBaseOpeningRects.door));
   }
   if (walls.southOpenings.window.enabled) {
     const sill = Math.max(0, walls.southOpenings.window.sillHeight);
@@ -13556,14 +18812,15 @@ export function buildWallSystem(building, value = {}, zones = []) {
       southHoles.push(openingHole(southBaseOpeningRects.window));
     }
   }
-  const southShape = rectangleShapeWithDoorNotch(westX - thickness, eastX + thickness, southBaseHeight, southBaseOpeningRects.door, southHoles);
+  const southDoorNotch = southBaseOpeningRects.door?.bottom > 0.000001 ? null : southBaseOpeningRects.door;
+  const southShape = rectangleShapeWithDoorNotch(westX - thickness, eastX + thickness, southBaseHeight, southDoorNotch, southHoles);
   const southSoldierCutouts = openingSoldierCutouts(southBaseOpeningRects, walls, gypsumBaseTop);
   const southZoneCutouts = gypsumZoneCutouts(zones, 'south', walls);
   if (!roomMode && !portalRegularPlan && !walls.openSides.includes('south')) {
     const mesh = extrudedShape(southShape, thickness, southZ, wallMaterial(walls, 'south', width + thickness * 2, southBaseHeight, true, bondPhase.south), 'south');
     group.add(mesh);
     meshes.push(mesh);
-    const southDecorShape = rectangleShapeWithDoorNotch(westX, eastX, southBaseHeight, southBaseOpeningRects.door, southHoles);
+    const southDecorShape = rectangleShapeWithDoorNotch(westX, eastX, southBaseHeight, southDoorNotch, southHoles);
     addBrickFace(group, southDecorShape, 'south', width, southBaseHeight, [0, 0, southZ - 0.015], [0, 0, 0], walls, bondPhase.south);
     addInteriorGypsumFace(group, southDecorShape, 'south', [0, 0, southZ - 0.02], [0, 0, 0], walls, gypsumBaseTop, southSoldierCutouts, southZoneCutouts);
     if (ahangEnabled && outerArchPoints.length) {
@@ -13615,7 +18872,10 @@ export function buildWallSystem(building, value = {}, zones = []) {
           walls,
         );
       }
-      const doorJambBottom = walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0;
+      const doorJambBottom = Math.max(
+        openingRects.door.bottom,
+        walls.stoneBase.enabled ? Math.max(0, walls.stoneBase.height) : 0,
+      );
       addRaisedOpeningJambCourses(group, 'door', openingRects.door, doorJambBottom, soldierHeight, southTrimZ, walls);
     }
     if (openingRects.window) {
@@ -13883,7 +19143,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
     const shape = new THREE.Shape();
     shape.moveTo(outerArchPoints[0].x, outerArchPoints[0].y);
     outerArchPoints.slice(1).forEach((point) => shape.lineTo(point.x, point.y));
-    [...archPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
+    [...ahangArchPoints].reverse().forEach((point) => shape.lineTo(point.x, point.y));
     shape.closePath();
     // The vault meets both end walls at their inside faces instead of
     // extending into either wall's structural volume.
@@ -13891,16 +19151,34 @@ export function buildWallSystem(building, value = {}, zones = []) {
     const geometry = new THREE.ExtrudeGeometry(shape, { depth: archDepth, steps: 1, bevelEnabled: false, curveSegments: 48 });
     geometry.translate(0, 0, northZ);
     geometry.computeVertexNormals();
-    applyBentArchBrickUvs(geometry, archPoints, sideTop);
-    const mesh = new THREE.Mesh(geometry, wallMaterial(walls, 'south', archHalfSpan * 2 + archBand * 2, outerArchApex, true, bondPhase.south));
+    applyBentArchBrickUvs(geometry, ahangArchPoints, sideTop);
+    const mesh = new THREE.Mesh(geometry, wallMaterial(walls, 'south', width + archBand * 2, outerArchApex, true, bondPhase.south));
     mesh.userData.wallSide = 'arch';
     mesh.userData.isPointedArch = true;
     mesh.userData.archBrickMapping = 'constant-height-bent-courses';
+    mesh.userData.ahangInteriorArchSpan = width;
+    mesh.userData.ahangInteriorArchSpringFaces = [westX, eastX];
+    mesh.userData.ahangInteriorArchBearingRule = 'flush-with-west-and-east-wall-interior-faces';
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
     meshes.push(mesh);
-    addAhangSoffitGypsum(group, archPoints, northZ, southZ, walls);
+    addAhangSoffitGypsum(group, ahangArchPoints, northZ, southZ, walls);
+  }
+
+  if (!roomMode && walls.portalTransition === 'none') {
+    addPortalHalfHallRibVault(group, building, walls, {
+      centerX,
+      northZ,
+      depth,
+      sideTop,
+      thickness,
+      westX,
+      eastX,
+      archHalfSpan,
+      greenOffset,
+      greenHeight,
+    });
   }
 
   let portalKarbandiGenerated = [];
@@ -13928,6 +19206,12 @@ export function buildWallSystem(building, value = {}, zones = []) {
         southZ,
         sideTop,
         thickness,
+        northArchPoints: pointedArchActive ? northArchPoints : [],
+        northWallLeft: northLeft,
+        northWallRight: northRight,
+        northWallHeight: northHeight,
+        northOpeningLeft,
+        northOpeningRight,
         wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, height(side)])),
       });
     } else {
@@ -14053,6 +19337,45 @@ export function buildWallSystem(building, value = {}, zones = []) {
     walls.portalTransition === 'squinch'
     || walls.portalCover === 'dome'
   )) {
+    const portalSquinchWallFaceSources = Object.fromEntries(['south', 'east', 'west'].map((side) => {
+      const structuralWall = group.children.find((child) => (
+        child.isMesh
+        && child.userData?.wallSide === side
+        && child.userData?.isBrickFace !== true
+        && child.userData?.roomDomePart == null
+        && child.userData?.isKarbandi !== true
+      ));
+      const visibleBondFace = group.children.find((child) => (
+        child.isMesh
+        && child.userData?.wallSide === side
+        && child.userData?.isBrickFace === true
+        && child.userData?.wallFace !== 'exterior'
+      ));
+      const structuralMaterials = Array.isArray(structuralWall?.material)
+        ? structuralWall.material
+        : [structuralWall?.material].filter(Boolean);
+      const interiorMaterial = side === 'east'
+        ? structuralMaterials[1]
+        : side === 'west'
+          ? structuralMaterials[0]
+          : structuralMaterials[0];
+      const exteriorMaterial = side === 'east'
+        ? structuralMaterials[0]
+        : side === 'west'
+          ? structuralMaterials[1]
+          : structuralMaterials[0];
+      const returnMaterial = structuralMaterials[4] || structuralMaterials[2] || interiorMaterial;
+      return [side, {
+        materials: [visibleBondFace?.material || interiorMaterial, exteriorMaterial, returnMaterial],
+        uvMapping: side === 'south'
+          ? { axis: 'x', origin: 0, sign: 1 }
+          : {
+            axis: 'z',
+            origin: sideWallCenterZ,
+            sign: side === 'west' && visibleBondFace ? -1 : 1,
+          },
+      }];
+    }));
     addPortalHalfSquinch(group, meshes, building, walls, {
       centerX,
       centerZ,
@@ -14098,6 +19421,7 @@ export function buildWallSystem(building, value = {}, zones = []) {
       usesSharedKarbandi: usesSharedPortalKarbandi,
       wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, height(side)])),
       wallThicknesses: Object.fromEntries(WALL_SIDES.map((side) => [side, thickness])),
+      squinchWallFaceSources: portalSquinchWallFaceSources,
     });
   }
 
@@ -14197,7 +19521,230 @@ export function buildWallSystem(building, value = {}, zones = []) {
     wallHeights: Object.fromEntries(WALL_SIDES.map((side) => [side, height(side)])),
     wallThicknesses: Object.fromEntries(WALL_SIDES.map((side) => [side, wallThicknessFor(side)])),
     usesSharedKarbandi: usesSharedRoomKarbandi,
+    exteriorCoverBoundaryRadius: circleBuildingDefinesBoundary
+      ? requestedCircleBoundaryRadius
+      : null,
   });
+
+  const maximumDoorStepRiser = 0.18;
+  const standardDoorStepTread = 0.3;
+  const addDoorSteps = ({ id, wallSide, opening, threshold, outward }) => {
+    const sillHeight = Math.max(0, Number(opening?.sillHeight) || 0);
+    if (opening?.enabled === false || sillHeight <= 0.000001) return;
+    const doorWidth = Math.max(0.3, Number(opening.width) || 1);
+    const stepCount = Math.max(1, Math.ceil(sillHeight / maximumDoorStepRiser));
+    const riserHeight = sillHeight / stepCount;
+    const outwardDirection = outward.clone().normalize();
+    const assembly = new THREE.Group();
+    assembly.name = `${wallSide} door stone steps`;
+    assembly.userData.wallSide = wallSide;
+    assembly.userData.isDoorStepAssembly = true;
+    assembly.userData.doorOpeningId = id;
+    assembly.userData.doorSillHeight = sillHeight;
+    assembly.userData.doorStepCount = stepCount;
+    assembly.userData.doorStepRiserHeight = riserHeight;
+    assembly.userData.doorStepMaximumStandardRiser = maximumDoorStepRiser;
+    assembly.userData.doorStepTreadDepth = standardDoorStepTread;
+    assembly.userData.doorStepWidth = doorWidth;
+    assembly.userData.doorStepFinish = 'building-skirt-stone';
+    const stoneMaterial = new THREE.MeshStandardMaterial({
+      color: walls.stoneBase.color,
+      roughness: 0.92,
+      metalness: 0,
+    });
+    configureStoneBaseMaterial(stoneMaterial, {
+      ...walls,
+      stoneBase: {
+        ...walls.stoneBase,
+        enabled: true,
+        height: Math.max(20, sillHeight + 1),
+      },
+    }, { independent: true });
+    stoneMaterial.userData.isDoorStepStoneMaterial = true;
+    stoneMaterial.userData.doorStepStoneSource = 'building-skirt';
+    const rotationY = Math.atan2(outwardDirection.x, outwardDirection.y);
+    for (let level = 1; level <= stepCount; level += 1) {
+      const runDepth = (stepCount - level + 1) * standardDoorStepTread;
+      const geometry = new THREE.BoxGeometry(doorWidth, riserHeight, runDepth);
+      const step = new THREE.Mesh(geometry, stoneMaterial);
+      step.name = `${wallSide} door stone step ${level}`;
+      step.position.set(
+        threshold.x + outwardDirection.x * runDepth / 2,
+        (level - 0.5) * riserHeight,
+        threshold.y + outwardDirection.y * runDepth / 2,
+      );
+      step.rotation.y = rotationY;
+      step.userData.wallSide = wallSide;
+      step.userData.isDoorStep = true;
+      step.userData.doorOpeningId = id;
+      step.userData.doorStepNumber = level;
+      step.userData.doorStepCount = stepCount;
+      step.userData.doorStepTopY = level * riserHeight;
+      step.userData.doorStepWidth = doorWidth;
+      step.userData.doorStepTreadDepth = standardDoorStepTread;
+      step.userData.doorStepFinish = 'building-skirt-stone';
+      step.castShadow = true;
+      step.receiveShadow = true;
+      assembly.add(step);
+      meshes.push(step);
+    }
+    group.add(assembly);
+  };
+
+  const raisedInteriorFloorHeight = (() => {
+    if (!roomMode) {
+      return walls.southOpenings.door.enabled
+        ? Math.max(0, Number(walls.southOpenings.door.sillHeight) || 0)
+        : 0;
+    }
+    if ((building.roomPlanShape || 'square') === 'square') {
+      return Math.max(0, ...WALL_SIDES.map((side) => {
+        const door = walls.roomWallOpenings?.[side]?.door;
+        return door?.enabled ? Number(door.sillHeight) || 0 : 0;
+      }));
+    }
+    return Math.max(0, ...(walls.roomPlanOpenings || [])
+      .filter((opening) => opening.type === 'door')
+      .map((opening) => Number(opening.sillHeight) || 0));
+  })();
+  if (raisedInteriorFloorHeight > 0.000001) {
+    const floorMaterial = new THREE.MeshStandardMaterial({
+      color: building.groundColor || '#f4e7c2',
+      roughness: 0.9,
+      metalness: 0,
+    });
+    floorMaterial.userData.isRaisedInteriorFloorMaterial = true;
+    floorMaterial.userData.raisedInteriorFloorSource = 'highest-enabled-door-sill';
+    let floorGeometry;
+    if (roomMode && (building.roomPlanShape || 'square') !== 'square') {
+      const footprint = (group.userData.roomPlanVertices || []).map(([x, z]) => new THREE.Vector2(x, -z));
+      if (footprint.length >= 3) {
+        const floorShape = new THREE.Shape(footprint);
+        floorGeometry = new THREE.ExtrudeGeometry(floorShape, {
+          depth: raisedInteriorFloorHeight,
+          bevelEnabled: false,
+          curveSegments: 1,
+          steps: 1,
+        });
+        floorGeometry.rotateX(-Math.PI / 2);
+      }
+    } else {
+      floorGeometry = new THREE.BoxGeometry(width, raisedInteriorFloorHeight, depth);
+      floorGeometry.translate(centerX, raisedInteriorFloorHeight / 2, centerZ);
+    }
+    if (floorGeometry) {
+      const raisedFloor = new THREE.Mesh(floorGeometry, floorMaterial);
+      raisedFloor.name = 'Building interior fill and raised floor';
+      raisedFloor.userData.wallSide = 'floor';
+      raisedFloor.userData.isRaisedInteriorFloor = true;
+      raisedFloor.userData.raisedInteriorFloorHeight = raisedInteriorFloorHeight;
+      raisedFloor.userData.raisedInteriorFloorTopY = raisedInteriorFloorHeight;
+      raisedFloor.userData.raisedInteriorFloorConstruction = 'solid-fill-to-highest-enabled-door-sill';
+      raisedFloor.userData.raisedInteriorFloorPlanShape = roomMode
+        ? building.roomPlanShape || 'square'
+        : portalPlanShape;
+      raisedFloor.castShadow = true;
+      raisedFloor.receiveShadow = true;
+      group.add(raisedFloor);
+      meshes.push(raisedFloor);
+      group.userData.raisedInteriorFloorHeight = raisedInteriorFloorHeight;
+      group.userData.raisedInteriorFloorSource = 'highest-enabled-door-sill';
+    }
+  }
+
+  if (!roomMode && !portalRegularPlan && walls.southOpenings.door.enabled) {
+    const door = walls.southOpenings.door;
+    const profile = southOpeningProfile(door, centerX, width, southBaseHeight, door.sillHeight);
+    addDoorSteps({
+      id: 'portal-south-door',
+      wallSide: 'south',
+      opening: door,
+      threshold: new THREE.Vector2(profile.center, southExteriorZ),
+      outward: new THREE.Vector2(0, 1),
+    });
+  }
+
+  if (roomMode && (building.roomPlanShape || 'square') === 'square') {
+    WALL_SIDES.forEach((side) => {
+      if (walls.openSides.includes(side)) return;
+      const door = walls.roomWallOpenings?.[side]?.door;
+      if (!door?.enabled) return;
+      const clearSpan = side === 'north' || side === 'south' ? width : depth;
+      const profile = southOpeningProfile(door, 0, clearSpan, height(side), door.sillHeight);
+      const frames = {
+        south: {
+          threshold: new THREE.Vector2(centerX + profile.center, southExteriorZ),
+          outward: new THREE.Vector2(0, 1),
+        },
+        north: {
+          threshold: new THREE.Vector2(centerX - profile.center, northExteriorZ),
+          outward: new THREE.Vector2(0, -1),
+        },
+        east: {
+          threshold: new THREE.Vector2(eastExteriorX, centerZ - profile.center),
+          outward: new THREE.Vector2(1, 0),
+        },
+        west: {
+          threshold: new THREE.Vector2(westExteriorX, centerZ + profile.center),
+          outward: new THREE.Vector2(-1, 0),
+        },
+      };
+      addDoorSteps({
+        id: `room-${side}-door`,
+        wallSide: side,
+        opening: door,
+        ...frames[side],
+      });
+    });
+  }
+
+  if (roomMode && (building.roomPlanShape || 'square') !== 'square') {
+    const innerVertices = (group.userData.roomPlanVertices || []).map(([x, z]) => new THREE.Vector2(x, z));
+    const outerVertices = (group.userData.roomPlanOuterVertices || []).map(([x, z]) => new THREE.Vector2(x, z));
+    if (innerVertices.length > 2 && innerVertices.length === outerVertices.length) {
+      const segmentLengths = innerVertices.map((point, index) => (
+        point.distanceTo(innerVertices[(index + 1) % innerVertices.length])
+      ));
+      const segmentStarts = segmentLengths.reduce((starts, length) => [...starts, starts.at(-1) + length], [0]);
+      const perimeter = segmentStarts.at(-1);
+      const northSegmentIndex = innerVertices.reduce((northIndex, point, candidateIndex) => {
+        const midpoint = point.clone().add(innerVertices[(candidateIndex + 1) % innerVertices.length]).multiplyScalar(0.5);
+        const northPoint = innerVertices[northIndex].clone().add(innerVertices[(northIndex + 1) % innerVertices.length]).multiplyScalar(0.5);
+        return midpoint.y < northPoint.y ? candidateIndex : northIndex;
+      }, 0);
+      const northPhase = segmentStarts[northSegmentIndex] + segmentLengths[northSegmentIndex] / 2;
+      (walls.roomPlanOpenings || []).filter((opening) => opening.type === 'door').forEach((door) => {
+        const centerPhase = ((northPhase + door.rotation / 360 * perimeter) % perimeter + perimeter) % perimeter;
+        const foundSegmentIndex = segmentLengths.findIndex((length, index) => (
+          centerPhase < segmentStarts[index] + length - 0.000001
+        ));
+        const segmentIndex = foundSegmentIndex < 0 ? innerVertices.length - 1 : foundSegmentIndex;
+        const localDistance = centerPhase - segmentStarts[segmentIndex];
+        const progress = THREE.MathUtils.clamp(localDistance / segmentLengths[segmentIndex], 0, 1);
+        const innerPoint = innerVertices[segmentIndex].clone().lerp(
+          innerVertices[(segmentIndex + 1) % innerVertices.length],
+          progress,
+        );
+        const outerPoint = outerVertices[segmentIndex].clone().lerp(
+          outerVertices[(segmentIndex + 1) % outerVertices.length],
+          progress,
+        );
+        const outward = outerPoint.clone().sub(innerPoint).normalize();
+        const radial = innerPoint.clone().sub(new THREE.Vector2(centerX, centerZ)).normalize();
+        const side = Math.abs(radial.x) > Math.abs(radial.y)
+          ? radial.x > 0 ? 'east' : 'west'
+          : radial.y > 0 ? 'south' : 'north';
+        if (walls.openSides.includes(side)) return;
+        addDoorSteps({
+          id: door.id,
+          wallSide: side,
+          opening: { ...door, enabled: true },
+          threshold: outerPoint,
+          outward,
+        });
+      });
+    }
+  }
 
   group.userData.wallJunctionPolicy = 'butt-joints-no-volume-overlap';
 
@@ -14222,6 +19769,7 @@ export function wallArchHeightAtX(building, value, x) {
   const greenOffset = walls.pointedArch.greenOffset ?? halfSpan;
   const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - halfSpan * 0.6);
   const curve = archCurve(centerX, halfSpan, sideTop, sideTop, greenOffset, greenHeight, 36, {
+    archType: walls.pointedArch.archType,
     redOffset: walls.pointedArch.redOffset,
     redRadius: walls.pointedArch.redRadius,
   });

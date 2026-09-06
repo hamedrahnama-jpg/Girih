@@ -35,12 +35,27 @@ const VIDEO_FPS = 30;
 const VIDEO_BITRATE = 20000000;
 export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'empty', title: 'Site / empty stage', detail: 'Start with the ground and layout only.' },
+  { id: 'room-skirt', title: 'Room skirt, floor fill, and steps', detail: 'Raise the stone skirt and raised-door interior fill together, placing each access step in sequence.' },
   { id: 'lower-walls', title: 'Lower vertical walls', detail: 'Raise the south, east, west, and north-side walls together to the arch spring line.' },
+  { id: 'hall-vaults', title: 'Hall bearing vaults', detail: 'After the columns, build every X- and Y-axis vault in one bay before advancing to the next bay.' },
+  { id: 'hall-transverse-vaults', title: 'Lower transverse vaults', detail: 'For a Barrel cover, construct the lowered vaults perpendicular to the selected Barrel axis.' },
+  { id: 'hall-barrel-spandrels', title: 'Walls above lower vaults', detail: 'Raise the continuous masonry between each lower transverse vault extrados and the Barrel spring line.' },
+  { id: 'hall-barrel-axis-vaults', title: 'Higher Barrel-axis vaults', detail: 'Construct the higher vaults running in the selected Barrel direction.' },
+  { id: 'hall-barrel-surrounding-walls', title: 'Surrounding walls', detail: 'Raise the Hall or Grid perimeter walls after both vault families are complete.' },
+  { id: 'hall-barrel-under-vault-walls', title: 'Walls beneath higher vaults', detail: 'Continue the surrounding masonry upward beneath the higher boundary vaults.' },
+  { id: 'hall-walls', title: 'Hall vertical and under-vault walls', detail: 'After all vault bays are complete, raise the perimeter walls and masonry beneath the boundary vaults.' },
+  { id: 'hall-transition', title: 'Hall cover transition', detail: 'Construct the transition walls and shell one complete bay at a time above the finished walls.' },
+  { id: 'hall-cover', title: 'Hall covers', detail: 'Build the selected dome, directional Barrel, or rib-vault cover one complete bay at a time.' },
   { id: 'room-karbandi-ribs', title: 'Room Karbandi ribs', detail: 'Construct every Room Karbandi rib one by one without a Portal guide arch.' },
-  { id: 'room-karbandi-roof', title: 'Room Karbandi roof', detail: 'Cover the completed Room rib network panel by panel.' },
+  { id: 'room-squinch-arches', title: 'Room Squinch arches', detail: 'Construct each Squinch arch individually from both springing feet to its crown.' },
+  { id: 'room-squinch-under-arch-walls', title: 'Walls beneath Squinch arches', detail: 'After every arch is complete, raise the attached masonry beneath the arches in aligned brick courses.' },
+  { id: 'room-transition-structure', title: 'Room transition walls', detail: 'Raise every transition and wall-continuation course before any transition or upper cover.' },
+  { id: 'room-karbandi-roof', title: 'Room Karbandi roof', detail: 'Cover the completed Room rib network panel by panel after its adjacent walls.' },
   { id: 'room-transition-cover', title: 'Transition cover', detail: 'Cover the completed Room rib network up to the drum.' },
-  { id: 'room-drum', title: 'Raise the drum', detail: 'Raise the cylindrical dome drum vertically.' },
-  { id: 'room-dome', title: 'Construct the dome', detail: 'Build the dome upward, one brick-height layer at a time.' },
+  { id: 'room-drum', title: 'Raise the drum', detail: 'Lay the drum brick by brick around each course, then advance upward.' },
+  { id: 'room-extra-leg', title: 'Raise the extended dome leg', detail: 'Build the independent extended leg after the drum and before the upper cover.' },
+  { id: 'room-outer-ring', title: 'Construct the outer ring', detail: 'Lay the complete dome springing ring in rotation before beginning the upper cover.' },
+  { id: 'room-dome', title: 'Construct the upper cover', detail: 'Lay every dome course in rotation, completing one brick-height layer before the next.' },
   { id: 'room-decoration', title: 'Room brick and pattern decoration', detail: 'Apply the configured Room wall, transition, drum, and dome decoration after construction.' },
   { id: 'south-arch-guide', title: 'South arch guide rib', detail: 'Place a narrow guide segment above the south wall.' },
   { id: 'north-arch-guide', title: 'North arch guide rib', detail: 'Place the matching narrow guide segment above the north wall.' },
@@ -50,6 +65,11 @@ export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'karbandi-ribs', title: 'Karbandi rib network', detail: 'Construct the remaining visible clipped ribs one by one.' },
   { id: 'karbandi-roof', title: 'Karbandi roof cover', detail: 'Cover the completed rib network using the configured roof thickness.' },
   { id: 'north-upper-wall', title: 'North upper wall', detail: 'Complete the north side walls and north top wall together, layer by layer.' },
+  { id: 'portal-transition', title: 'Portal dome transition', detail: 'Build the selected Portal Squinch or Muqarnas transition above the completed walls.' },
+  { id: 'portal-drum', title: 'Raise the Portal drum', detail: 'Lay the Portal drum in rotating brick courses after all transition walls.' },
+  { id: 'portal-extra-leg', title: 'Raise the Portal extended leg', detail: 'Build the independent extended leg above the drum.' },
+  { id: 'portal-outer-ring', title: 'Construct the Portal outer ring', detail: 'Lay the dome springing ring in rotation before beginning the Portal cover.' },
+  { id: 'portal-cover', title: 'Portal upper cover', detail: 'Lay the Portal dome upward in rotating brick courses after its drum and extended leg.' },
   { id: 'muqarnas-tiers', title: 'Muqarnas tiers', detail: 'Place Muqarnas modules tier by tier after the arch structure is complete.' },
   { id: 'decorate-south', title: 'South wall decoration', detail: 'Apply imported bonding or Girih pattern to the south wall after structure is built.' },
   { id: 'decorate-east', title: 'East wall decoration', detail: 'Apply imported bonding or Girih pattern to the east wall.' },
@@ -60,45 +80,227 @@ export const CONSTRUCTION_STEPS = Object.freeze([
   { id: 'complete', title: 'Complete training model', detail: 'Show the finished wall, arch, Muqarnas, and library decorations.' },
 ]);
 
-const ROOM_CONSTRUCTION_STEP_IDS = new Set([
-  'empty',
-  'lower-walls',
-  'room-karbandi-ribs',
-  'room-karbandi-roof',
-  'room-transition-cover',
-  'room-drum',
-  'room-dome',
-  'room-decoration',
-  'complete',
-]);
+export function normalizeConstructionStepOrder(value = []) {
+  const knownIds = CONSTRUCTION_STEPS.map((step) => step.id);
+  const known = new Set(knownIds);
+  const ordered = [];
+  (Array.isArray(value) ? value : []).forEach((id) => {
+    if (known.has(id) && id !== 'empty' && id !== 'complete' && !ordered.includes(id)) ordered.push(id);
+  });
+  const canonicalInterior = knownIds.filter((id) => id !== 'empty' && id !== 'complete');
+  const newlyIntroducedPhases = new Set([
+    'hall-transverse-vaults', 'hall-barrel-spandrels', 'hall-barrel-axis-vaults',
+    'hall-barrel-surrounding-walls', 'hall-barrel-under-vault-walls', 'hall-walls',
+    'room-skirt', 'room-squinch-arches', 'room-squinch-under-arch-walls',
+    'room-extra-leg', 'room-outer-ring',
+    'portal-drum', 'portal-extra-leg', 'portal-outer-ring',
+  ]);
+  const previousCanonicalInterior = canonicalInterior.filter((id) => !newlyIntroducedPhases.has(id));
+  const previousTransitionIndex = previousCanonicalInterior.indexOf('room-transition-structure');
+  const previousRoofIndex = previousCanonicalInterior.indexOf('room-karbandi-roof');
+  if (previousTransitionIndex >= 0 && previousRoofIndex >= 0) {
+    [previousCanonicalInterior[previousTransitionIndex], previousCanonicalInterior[previousRoofIndex]]
+      = [previousCanonicalInterior[previousRoofIndex], previousCanonicalInterior[previousTransitionIndex]];
+  }
+  const isPreviousDefault = ordered.length === previousCanonicalInterior.length
+    && ordered.every((id, index) => id === previousCanonicalInterior[index]);
+  if (!ordered.length || isPreviousDefault) return ['empty', ...canonicalInterior, 'complete'];
+  // Preserve a user's drag order, but insert newly introduced component
+  // phases beside their canonical neighbors rather than appending them after
+  // decoration. This safely migrates saved training sequences.
+  canonicalInterior.forEach((id, canonicalIndex) => {
+    if (ordered.includes(id)) return;
+    const nextKnown = canonicalInterior.slice(canonicalIndex + 1).find((candidate) => ordered.includes(candidate));
+    if (nextKnown) ordered.splice(ordered.indexOf(nextKnown), 0, id);
+    else ordered.push(id);
+  });
+  return ['empty', ...ordered, 'complete'];
+}
+
 const ROOM_ONLY_CONSTRUCTION_STEP_IDS = new Set([
+  'room-skirt',
   'room-karbandi-ribs',
+  'room-squinch-arches',
+  'room-squinch-under-arch-walls',
   'room-karbandi-roof',
+  'room-transition-structure',
   'room-transition-cover',
   'room-drum',
+  'room-extra-leg',
+  'room-outer-ring',
   'room-dome',
   'room-decoration',
 ]);
 
-export function constructionStepsForBuilding(buildingType = 'iwan') {
+const PORTAL_ONLY_CONSTRUCTION_STEP_IDS = new Set([
+  'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill',
+  'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'north-upper-wall',
+  'portal-transition', 'portal-drum', 'portal-extra-leg', 'portal-outer-ring', 'portal-cover', 'muqarnas-tiers',
+  'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides',
+  'decorate-north-top', 'decorate-arch',
+]);
+const HALL_ONLY_CONSTRUCTION_STEP_IDS = new Set([
+  'hall-vaults', 'hall-transverse-vaults', 'hall-barrel-spandrels',
+  'hall-barrel-axis-vaults', 'hall-barrel-surrounding-walls',
+  'hall-barrel-under-vault-walls', 'hall-walls',
+  'hall-transition', 'hall-cover',
+]);
+
+export const ANIMATED_CONSTRUCTION_STEP_IDS = new Set([
+  'south-wall', 'arch-fill', 'north-arch-guide', 'room-skirt', 'lower-walls',
+  'hall-vaults', 'hall-transverse-vaults', 'hall-barrel-spandrels',
+  'hall-barrel-axis-vaults', 'hall-barrel-surrounding-walls',
+  'hall-barrel-under-vault-walls', 'hall-walls', 'hall-transition', 'hall-cover',
+  'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof',
+  'room-karbandi-ribs', 'room-squinch-arches', 'room-squinch-under-arch-walls',
+  'room-karbandi-roof', 'room-transition-structure',
+  'room-transition-cover', 'room-drum', 'room-extra-leg', 'room-outer-ring', 'room-dome', 'room-decoration',
+  'north-upper-wall', 'portal-transition', 'portal-drum', 'portal-extra-leg',
+  'portal-outer-ring', 'portal-cover', 'muqarnas-tiers',
+  'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides',
+  'decorate-north-top', 'decorate-arch',
+]);
+
+export function constructionStepsForBuilding(buildingOrType = 'iwan', wallOptions = {}) {
+  const legacyTypeOnly = typeof buildingOrType !== 'object' || !buildingOrType;
+  const building = !legacyTypeOnly
+    ? buildingOrType
+    : buildingOrType === 'room'
+      ? {
+        type: 'room', buildingType: 'room', roomPlanShape: 'square', domeTransition: 'none',
+        domeTransitionCoverEnabled: false, domeEnabled: false, domeDrumHeight: 0.5,
+      }
+      : { type: buildingOrType, buildingType: 'portal' };
+  const buildingType = building.buildingType
+    || (building.type === 'room' ? 'room' : 'portal');
+  const isPortal = buildingType === 'portal' || building.type === 'iwan';
+  const isHall = ['hall', 'grid'].includes(buildingType);
+  const isRoomFamily = !isPortal;
+  const roomShape = building.roomPlanShape || 'square';
+  const transitionType = building.domeTransition || 'none';
+  const roomTransitionAvailable = roomShape === 'square' || buildingType === 'vestibule';
+  const portalTransition = wallOptions.portalTransition || wallOptions.karbandi?.enabled && 'karbandi';
+  const portalCover = wallOptions.portalCover || wallOptions.ahang?.enabled && 'ahang'
+    || legacyTypeOnly && isPortal && 'ahang';
+  const hallCover = building.hallCoverType || 'none';
+  const domeCoverType = building.domeCoverType || 'none';
+  const outerRingEnabledFor = (coverType) => (
+    building.domeOuterRingEnabledByCoverType?.[coverType] !== false
+  );
+  const domeExtraLegHeight = Number(
+    building.domeOuterLegExtensionByTransitionAndCoverType?.[transitionType]?.[domeCoverType]
+      ?? building.domeOuterLegExtensionByCoverType?.[domeCoverType]
+      ?? 0,
+  );
+  const raisedRoomDoorExists = [
+    ...Object.values(wallOptions.roomWallOpenings || {}).map((openings) => openings?.door),
+    ...(wallOptions.roomPlanOpenings || []).filter((opening) => opening?.type === 'door'),
+  ].some((door) => door?.enabled !== false && Number(door?.sillHeight) > 0.000001);
+  const selected = new Set(['empty', 'lower-walls', 'complete']);
+
+  if (isHall) {
+    if (hallCover === 'barrel') {
+      selected.add('hall-transverse-vaults');
+      selected.add('hall-barrel-spandrels');
+      selected.add('hall-barrel-axis-vaults');
+      selected.add('hall-barrel-surrounding-walls');
+      selected.add('hall-barrel-under-vault-walls');
+    } else {
+      selected.add('hall-vaults');
+      selected.add('hall-walls');
+    }
+    const transitionEnabled = hallCover === 'raised-rib-vault'
+      || (!['barrel', 'rib-vault', 'raised-rib-vault'].includes(hallCover)
+        && building.hallTransitionEnabled !== false);
+    if (transitionEnabled) selected.add('hall-transition');
+    if (hallCover !== 'none') selected.add('hall-cover');
+    selected.add('room-decoration');
+  } else if (isRoomFamily) {
+    if ((wallOptions.stoneBase?.enabled === true
+      && Number(wallOptions.stoneBase?.height) > 0.000001) || raisedRoomDoorExists) selected.add('room-skirt');
+    if (roomTransitionAvailable && transitionType === 'karbandi') {
+      selected.add('room-karbandi-ribs');
+      selected.add('room-transition-structure');
+      selected.add('room-karbandi-roof');
+    } else if (roomTransitionAvailable && transitionType === 'squinch') {
+      selected.add('room-squinch-arches');
+      selected.add('room-squinch-under-arch-walls');
+    } else if (roomTransitionAvailable && ['pendentive', 'muqarnas'].includes(transitionType)) {
+      selected.add('room-transition-structure');
+    }
+    if (roomTransitionAvailable && building.domeTransitionCoverEnabled === true) selected.add('room-transition-cover');
+    const drumHeight = Number(building.domeDrumHeightByTransition?.[transitionType]
+      ?? building.domeDrumHeight);
+    if (building.domeEnabled !== false && drumHeight > 0.000001) selected.add('room-drum');
+    if (building.domeEnabled !== false) {
+      if (domeExtraLegHeight > 0.000001) selected.add('room-extra-leg');
+      if (domeCoverType !== 'none' && outerRingEnabledFor(domeCoverType)) selected.add('room-outer-ring');
+      selected.add('room-dome');
+    }
+    selected.add('room-decoration');
+  } else {
+    const usesKarbandi = portalTransition === 'karbandi' || wallOptions.karbandi?.enabled === true;
+    const usesAhang = portalCover === 'ahang' || wallOptions.ahang?.enabled === true;
+    if (legacyTypeOnly) {
+      ['south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill',
+        'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'north-upper-wall']
+        .forEach((id) => selected.add(id));
+    } else if (usesKarbandi) {
+      selected.add('north-arch-guide');
+      selected.add('karbandi-reference-rib');
+      selected.add('karbandi-ribs');
+      selected.add('karbandi-roof');
+      selected.add('north-upper-wall');
+    } else if (usesAhang) {
+      ['south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill', 'north-upper-wall']
+        .forEach((id) => selected.add(id));
+    } else selected.add('north-upper-wall');
+    if (portalTransition === 'squinch') selected.add('portal-transition');
+    if (portalCover === 'dome') {
+      const portalDrumHeight = Number(building.domeDrumHeightByTransition?.[portalTransition]
+        ?? building.domeDrumHeight);
+      const portalExtraLegHeight = Number(
+        building.domeOuterLegExtensionByTransitionAndCoverType?.[portalTransition]?.dome
+          ?? building.domeOuterLegExtensionByCoverType?.dome
+          ?? 0,
+      );
+      if (portalDrumHeight > 0.000001) selected.add('portal-drum');
+      if (portalExtraLegHeight > 0.000001) selected.add('portal-extra-leg');
+      if (outerRingEnabledFor('dome')) selected.add('portal-outer-ring');
+      selected.add('portal-cover');
+    } else if (portalCover === 'raised-rib-vault') selected.add('portal-cover');
+    if (portalTransition === 'muqarnas') selected.add('muqarnas-tiers');
+    ['decorate-south', 'decorate-east', 'decorate-west',
+      'decorate-north-sides', 'decorate-north-top', 'decorate-arch']
+      .forEach((id) => selected.add(id));
+  }
+
   return CONSTRUCTION_STEPS
     .map((step, index) => ({ ...step, index }))
-    .filter((entry) => (
-      buildingType === 'room'
-        ? ROOM_CONSTRUCTION_STEP_IDS.has(entry.id)
-        : !ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(entry.id)
-    ))
+    .filter((entry) => selected.has(entry.id))
     .map((entry) => {
-      if (buildingType !== 'room') return entry;
+      if (isPortal && entry.id === 'portal-cover' && portalCover === 'raised-rib-vault') return {
+        ...entry,
+        title: 'Construct the Raised rib vault',
+        detail: 'After the north wall is complete, raise the Portal vault from its wall bearings to the crown in horizontal brick courses.',
+      };
+      if (!isRoomFamily) return entry;
       if (entry.id === 'lower-walls') return {
         ...entry,
-        title: 'Stone base and vertical walls',
-        detail: 'Construct the stone base first, then raise all four Room walls with their door and window openings.',
+        title: isHall ? 'Hall bearing columns' : 'Vertical walls and exterior columns',
+        detail: isHall
+          ? 'Raise every grid-bearing column before beginning the first bay of vault arches.'
+          : 'Raise all walls, exterior columns, and attached opening soldier courses together at the same world-height brick course.',
+      };
+      if (entry.id === 'room-transition-cover' && transitionType === 'squinch') return {
+        ...entry,
+        title: 'Masonry above Squinch arches',
+        detail: 'After the under-arch walls, raise the eight infill faces between the completed arches and the drum, course by course.',
       };
       if (entry.id === 'complete') return {
         ...entry,
-        title: 'Complete Room model',
-        detail: 'Show the finished Room walls, Karbandi transition, drum, dome, and configured decoration.',
+        title: `Complete ${buildingType === 'vestibule' ? 'Vestibule' : isHall ? 'Hall' : 'Room'} model`,
+        detail: `Show the finished ${buildingType === 'vestibule' ? 'Vestibule' : isHall ? 'Hall' : 'Room'} structure, cover, openings, and configured decoration.`,
       };
       return entry;
     });
@@ -331,6 +533,66 @@ const DEFAULT_BUILDING = Object.freeze({
   roomExteriorColumnRadius: 0.2,
   roomExteriorSquareColumnRotation: 0,
   roomExteriorCircleColumnCount: 8,
+  roomExteriorCircleColumnBoundaryMode: 'columns',
+  hallGridX: 3,
+  hallGridY: 3,
+  hallBayWidth: 4,
+  hallBayDepth: 4,
+  gridBaySpansX: [4, 4, 4],
+  gridBaySpansY: [4, 4, 4],
+  gridBayCovers: {},
+  gridBayTransitions: {},
+  gridElementColors: {},
+  gridRemovedBays: [],
+  gridRemovedWalls: [],
+  gridRemovedVaults: [],
+  gridRemovedDomes: [],
+  gridRemovedTransitions: [],
+  gridStageEditEnabled: true,
+  hallColumnProfile: 'square',
+  hallColumnDimension: null,
+  hallColumnRadius: null,
+  hallColumnDimensionFollowsWallThickness: true,
+  hallArchRibWidth: 0.7,
+  hallArchRibHeight: 0.35,
+  hallVaultConvergenceAdjusted: false,
+  hallVaultFinish: 'bricks',
+  hallVaultColor: '#b78b5d',
+  hallTransitionEnabled: false,
+  hallTransitionType: 'none',
+  hallCoverType: 'none',
+  hallBarrelAxis: 'x',
+  hallRibVaultEdgeColors: {
+    'rib-vault': '#3aa1bb',
+    'raised-rib-vault': '#3aa1bb',
+  },
+  hallRibVaultCenterOpeningEnabledByCoverType: {
+    'rib-vault': false,
+    'raised-rib-vault': false,
+  },
+  hallRibVaultCoverageByCoverType: {
+    'rib-vault': 85,
+    'raised-rib-vault': 85,
+  },
+  hallArchGuideVisible: false,
+  hallDomeGuideVisible: false,
+  hallArch: {
+    archType: 'two-point',
+    redOffset: 0,
+    redRadius: null,
+    greenOffset: 1,
+    greenHeightOffset: -1,
+  },
+  hallDomeArch: {
+    archType: 'one-point',
+    redOffset: -1.95,
+    redRadius: 0.0001,
+    greenOffset: 0.05,
+    greenHeight: 4,
+    greenHeightOffset: -2,
+    greenOffsetAuto: true,
+    greenHeightAuto: true,
+  },
   width: 4,
   depth: 2,
   iwanDepth: 2,
@@ -338,10 +600,10 @@ const DEFAULT_BUILDING = Object.freeze({
   height: 6,
   wallThickness: 0.35,
   openingWidth: 4,
-  domeEnabled: true,
-  domeCoverType: 'dome',
+  domeEnabled: false,
+  domeCoverType: 'none',
   domeCoverHeight: 5,
-  domeTransition: 'karbandi',
+  domeTransition: 'none',
   domeTransitionHeight: 1.2,
   domeTransitionCoverEnabled: false,
   domeDrumHeight: 0.5,
@@ -355,17 +617,41 @@ const DEFAULT_BUILDING = Object.freeze({
     pyramid: true,
   },
   domeOuterLegExtensionByCoverType: {
-    dome: 0,
-    cone: 1,
-    pyramid: 1,
+    dome: 0.5,
+    cone: 0.5,
+    pyramid: 0.5,
+  },
+  domeDrumHeightByTransition: {
+    karbandi: 0,
+    squinch: 0.5,
+    pendentive: 0.5,
+    muqarnas: 0.5,
+    direct: 0.5,
+  },
+  domeOuterRingEnabledByTransitionAndCoverType: {
+    karbandi: { dome: false, cone: false, pyramid: false },
+    squinch: { dome: true, cone: true, pyramid: true },
+    pendentive: { dome: true, cone: true, pyramid: true },
+    muqarnas: { dome: true, cone: true, pyramid: true },
+    direct: { dome: true, cone: true, pyramid: true },
+  },
+  domeOuterLegExtensionByTransitionAndCoverType: {
+    karbandi: { dome: 0, cone: 0, pyramid: 0 },
+    squinch: { dome: 0.5, cone: 0.5, pyramid: 0.5 },
+    pendentive: { dome: 0.5, cone: 0.5, pyramid: 0.5 },
+    muqarnas: { dome: 0.5, cone: 0.5, pyramid: 0.5 },
+    direct: { dome: 0.5, cone: 0.5, pyramid: 0.5 },
   },
   domePatternCoverage: 85,
+  domeCenterOpeningEnabled: false,
   innerDomeEnabled: false,
   innerDomeEnabledByTransition: {
     karbandi: false,
     squinch: true,
     pendentive: false,
     muqarnas: false,
+    direct: false,
+    none: false,
   },
   innerDomeColor: '#b88b5f',
   innerDomePatternCoverage: 85,
@@ -373,13 +659,15 @@ const DEFAULT_BUILDING = Object.freeze({
   betweenDomeSupportWallsCoverage: 60,
   domeDrumColor: '#b3a62c',
   domeArch: {
+    archType: 'one-point',
     redOffset: 0,
     redRadius: null,
-    greenOffset: 2,
-    greenHeightOffset: -3.7,
+    greenOffset: 0.75,
+    greenHeightOffset: -2,
     legExtension: 0,
   },
   innerDomeArch: {
+    archType: 'two-point',
     redOffset: -0.75,
     redRadius: null,
     greenOffset: 0.95,
@@ -388,6 +676,7 @@ const DEFAULT_BUILDING = Object.freeze({
   domeTransitionSettings: {
     karbandi: { ribCount: 16, ribWidth: 0.04 },
     squinch: {
+      archType: 'two-point',
       archCount: 8,
       ribWidth: 0.1,
       ribDepth: 0.46,
@@ -408,10 +697,12 @@ const DEFAULT_BUILDING = Object.freeze({
 });
 
 export function normalizeBuilding(value = {}) {
-  const buildingTypes = new Set(['portal', 'room', 'vestibule']);
+  const buildingTypes = new Set(['portal', 'room', 'vestibule', 'hall', 'grid']);
   const savedBuildingType = buildingTypes.has(value.buildingType) ? value.buildingType : null;
   const buildingType = value.type === 'vestibule' || (value.type === 'room' && savedBuildingType === 'vestibule')
     ? 'vestibule'
+    : value.type === 'hall' || (value.type === 'room' && ['hall', 'grid'].includes(savedBuildingType))
+      ? savedBuildingType || 'hall'
     : value.type === 'room'
       ? 'room'
       : value.type === 'iwan'
@@ -425,53 +716,203 @@ export function normalizeBuilding(value = {}) {
     : DEFAULT_BUILDING.portalPlanShape;
   const roomPlanShape = buildingType === 'vestibule'
     ? 'octagon'
+    : ['hall', 'grid'].includes(buildingType)
+      ? 'square'
     : roomPlanShapes.has(value.roomPlanShape)
       ? value.roomPlanShape
       : DEFAULT_BUILDING.roomPlanShape;
-  const domeCoverTypes = new Set(['dome', 'cone', 'pyramid']);
+  const domeCoverTypes = new Set(['none', 'dome', 'cone', 'pyramid']);
+  const configurableDomeCoverTypes = ['dome', 'cone', 'pyramid'];
   let domeCoverType = domeCoverTypes.has(value.domeCoverType) ? value.domeCoverType : DEFAULT_BUILDING.domeCoverType;
   if (roomPlanShape === 'circle' && domeCoverType === 'pyramid') domeCoverType = 'dome';
-  const domeOuterRingEnabledByCoverType = Object.fromEntries([...domeCoverTypes].map((coverType) => [
+  const legacyDomeOuterRingEnabledByCoverType = Object.fromEntries(configurableDomeCoverTypes.map((coverType) => [
     coverType,
     value.domeOuterRingEnabledByCoverType?.[coverType] == null
-      ? DEFAULT_BUILDING.domeOuterRingEnabledByCoverType[coverType]
+      ? DEFAULT_BUILDING.domeOuterRingEnabledByCoverType[coverType] ?? false
       : value.domeOuterRingEnabledByCoverType[coverType] === true,
   ]));
-  const domeTransitions = new Set(['karbandi', 'squinch', 'pendentive', 'muqarnas']);
+  const domeTransitions = new Set(['none', 'direct', 'karbandi', 'squinch', 'pendentive', 'muqarnas']);
+  const configurableDomeTransitions = ['karbandi', 'squinch', 'pendentive', 'muqarnas'];
+  const hallTransitionType = ['none', 'pendentive', 'karbandi'].includes(value.hallTransitionType)
+    ? value.hallTransitionType
+    : ['none', 'pendentive', 'karbandi'].includes(value.domeTransition)
+      ? value.domeTransition
+      : DEFAULT_BUILDING.hallTransitionType;
+  const hallCoverType = ['none', 'dome', 'barrel', 'rib-vault', 'raised-rib-vault'].includes(value.hallCoverType)
+    ? value.hallCoverType
+    : DEFAULT_BUILDING.hallCoverType;
+  const domeSupportModes = [...configurableDomeTransitions, 'direct'];
   const domeTransition = buildingType === 'vestibule'
-    ? 'karbandi'
+    ? value.domeTransition === 'none' ? 'none' : 'karbandi'
+    : ['hall', 'grid'].includes(buildingType)
+      ? hallTransitionType
     : domeTransitions.has(value.domeTransition) ? value.domeTransition : DEFAULT_BUILDING.domeTransition;
+  const hallGridX = Math.round(Math.max(1, Math.min(12, Number(value.hallGridX) || DEFAULT_BUILDING.hallGridX)));
+  const hallGridY = Math.round(Math.max(1, Math.min(12, Number(value.hallGridY) || DEFAULT_BUILDING.hallGridY)));
+  const rawHallBayWidth = Number(value.hallBayWidth) || DEFAULT_BUILDING.hallBayWidth;
+  const rawHallBayDepth = Number(value.hallBayDepth) || DEFAULT_BUILDING.hallBayDepth;
+  const hallArchRibWidth = Math.max(0.03, Math.min(0.8,
+    Number(value.hallArchRibWidth) || DEFAULT_BUILDING.hallArchRibWidth));
+  const hallArchRibHeight = Math.max(0.03, Math.min(0.8,
+    Number(value.hallArchRibHeight)
+    || (Number(value.hallArchRibWidth) ? Number(value.hallArchRibWidth) : DEFAULT_BUILDING.hallArchRibHeight)));
+  const usesUnadjustedDefaultHallBay = ['hall', 'grid'].includes(buildingType)
+    && value.hallVaultConvergenceAdjusted !== true
+    && Math.abs(rawHallBayWidth - DEFAULT_BUILDING.hallBayWidth) < 0.000001
+    && Math.abs(rawHallBayDepth - DEFAULT_BUILDING.hallBayDepth) < 0.000001;
+  const hallVaultConvergenceCorrection = usesUnadjustedDefaultHallBay
+    ? Math.max(0, hallArchRibWidth - hallArchRibHeight)
+    : 0;
+  const hallBayWidth = Math.max(2, Math.min(12, rawHallBayWidth + hallVaultConvergenceCorrection));
+  const hallBayDepth = Math.max(2, Math.min(12, rawHallBayDepth + hallVaultConvergenceCorrection));
+  const normalizeGridSpans = (saved, count, fallback) => Array.from({ length: count }, (_, index) => (
+    Math.max(2, Math.min(12, Number(saved?.[index]) || fallback))
+  ));
+  const gridBaySpansX = normalizeGridSpans(value.gridBaySpansX, hallGridX, hallBayWidth);
+  const gridBaySpansY = normalizeGridSpans(value.gridBaySpansY, hallGridY, hallBayDepth);
+  const validHallCovers = new Set(['none', 'dome', 'barrel', 'rib-vault', 'raised-rib-vault']);
+  const gridBayCovers = Object.fromEntries(Object.entries(value.gridBayCovers || {}).filter(([key, cover]) => {
+    const [ix, iy, extra] = key.split(':').map(Number);
+    return extra == null && Number.isInteger(ix) && Number.isInteger(iy)
+      && ix >= 0 && ix < hallGridX && iy >= 0 && iy < hallGridY && validHallCovers.has(cover);
+  }));
+  const gridBayTransitions = Object.fromEntries(Object.entries(value.gridBayTransitions || {}).filter(([key, transition]) => {
+    const [ix, iy, extra] = key.split(':').map(Number);
+    return extra == null && Number.isInteger(ix) && Number.isInteger(iy)
+      && ix >= 0 && ix < hallGridX && iy >= 0 && iy < hallGridY
+      && ['none', 'pendentive', 'karbandi'].includes(transition);
+  }));
+  const gridElementColors = Object.fromEntries(Object.entries(value.gridElementColors || {}).filter(([id, color]) => (
+    typeof id === 'string' && id.length <= 80 && /^#[0-9a-f]{6}$/i.test(color || '')
+  )));
+  const normalizeGridElementIds = (saved) => [...new Set((Array.isArray(saved) ? saved : [])
+    .filter((id) => typeof id === 'string' && id.length <= 80))];
+  const hallArch = value.hallArch || {};
+  const hallDomeArch = value.hallDomeArch || {};
+  const hallRibVaultEdgeColors = Object.fromEntries(['rib-vault', 'raised-rib-vault'].map((coverType) => {
+    const savedColor = value.hallRibVaultEdgeColors?.[coverType]
+      ?? (value.hallCoverType === coverType ? value.hallRibVaultEdgeColor : null);
+    return [
+      coverType,
+      /^#[0-9a-f]{6}$/i.test(savedColor || '')
+        ? savedColor
+        : DEFAULT_BUILDING.hallRibVaultEdgeColors[coverType],
+    ];
+  }));
+  const hallRibVaultCenterOpeningEnabledByCoverType = Object.fromEntries(
+    ['rib-vault', 'raised-rib-vault'].map((coverType) => [
+      coverType,
+      value.hallRibVaultCenterOpeningEnabledByCoverType?.[coverType] === true,
+    ]),
+  );
+  const hallRibVaultCoverageByCoverType = Object.fromEntries(
+    ['rib-vault', 'raised-rib-vault'].map((coverType) => [
+      coverType,
+      Math.max(0, Math.min(100, Number.isFinite(Number(value.hallRibVaultCoverageByCoverType?.[coverType]))
+        ? Number(value.hallRibVaultCoverageByCoverType[coverType])
+        : DEFAULT_BUILDING.hallRibVaultCoverageByCoverType[coverType])),
+    ]),
+  );
+  const normalizedWallThickness = Math.max(0.1, Math.min(1.5,
+    Number(value.wallThickness) || (['hall', 'grid'].includes(buildingType) ? 0.5 : DEFAULT_BUILDING.wallThickness)));
+  const savedHallColumnDimension = Number(value.hallColumnDimension)
+    || (Number(value.hallColumnRadius) ? Number(value.hallColumnRadius) * 2 : null);
+  const hallColumnDimensionFollowsWallThickness = value.hallColumnDimensionFollowsWallThickness == null
+    ? !Number.isFinite(savedHallColumnDimension) || Math.abs(savedHallColumnDimension - 0.44) < 0.000001
+    : value.hallColumnDimensionFollowsWallThickness === true;
+  const hallColumnDimension = Math.max(0.1, Math.min(2,
+    hallColumnDimensionFollowsWallThickness
+      ? normalizedWallThickness
+      : savedHallColumnDimension || normalizedWallThickness));
   const roomLength = Math.max(2, Math.min(30, Number(value.length ?? (type === 'room' ? value.depth : null)) || DEFAULT_BUILDING.length));
   const iwanDepth = Math.max(2, Math.min(30, Number(value.iwanDepth ?? (type === 'iwan' ? value.depth : null)) || DEFAULT_BUILDING.iwanDepth));
   const domeArch = value.domeArch || {};
   const hasPerCoverOuterLegSettings = value.domeOuterLegExtensionByCoverType
     && typeof value.domeOuterLegExtensionByCoverType === 'object';
-  const domeOuterLegExtensionByCoverType = Object.fromEntries([...domeCoverTypes].map((coverType) => [
+  const legacyDomeOuterLegExtensionByCoverType = Object.fromEntries(configurableDomeCoverTypes.map((coverType) => [
     coverType,
     Math.max(0, Math.min(10, Number.isFinite(Number(value.domeOuterLegExtensionByCoverType?.[coverType]))
       ? Number(value.domeOuterLegExtensionByCoverType[coverType])
-      : DEFAULT_BUILDING.domeOuterLegExtensionByCoverType[coverType])),
+      : DEFAULT_BUILDING.domeOuterLegExtensionByCoverType[coverType] ?? 0)),
   ]));
   // Migrate the former shared input to the cover type active in that project.
   if (!hasPerCoverOuterLegSettings && Number.isFinite(Number(domeArch.legExtension))) {
-    domeOuterLegExtensionByCoverType[domeCoverType] = Math.max(0, Math.min(10, Number(domeArch.legExtension)));
+    legacyDomeOuterLegExtensionByCoverType[domeCoverType] = Math.max(0, Math.min(10, Number(domeArch.legExtension)));
   }
+  const domeSupportMode = buildingType === 'room' && roomPlanShape !== 'square'
+    ? 'direct'
+    : domeTransition;
+  const configurableDomeSupportMode = domeSupportMode === 'none' ? 'karbandi' : domeSupportMode;
+  const hasTransitionDrumSettings = value.domeDrumHeightByTransition
+    && typeof value.domeDrumHeightByTransition === 'object';
+  const hasTransitionRingSettings = value.domeOuterRingEnabledByTransitionAndCoverType
+    && typeof value.domeOuterRingEnabledByTransitionAndCoverType === 'object';
+  const hasTransitionLegSettings = value.domeOuterLegExtensionByTransitionAndCoverType
+    && typeof value.domeOuterLegExtensionByTransitionAndCoverType === 'object';
+  const legacyDrumHeight = Math.max(0, Math.min(10,
+    Number.isFinite(Number(value.domeDrumHeight)) ? Number(value.domeDrumHeight) : DEFAULT_BUILDING.domeDrumHeight));
+  const domeDrumHeightByTransition = Object.fromEntries(domeSupportModes.map((mode) => [
+    mode,
+    Math.max(0, Math.min(10, Number.isFinite(Number(value.domeDrumHeightByTransition?.[mode]))
+      ? Number(value.domeDrumHeightByTransition[mode])
+      : !hasTransitionDrumSettings && mode === configurableDomeSupportMode && mode !== 'karbandi'
+        ? legacyDrumHeight
+        : DEFAULT_BUILDING.domeDrumHeightByTransition[mode] ?? 0)),
+  ]));
+  const domeOuterRingEnabledByTransitionAndCoverType = Object.fromEntries(domeSupportModes.map((mode) => [
+    mode,
+    Object.fromEntries(configurableDomeCoverTypes.map((coverType) => [
+      coverType,
+      value.domeOuterRingEnabledByTransitionAndCoverType?.[mode]?.[coverType] == null
+        ? !hasTransitionRingSettings && mode === configurableDomeSupportMode && mode !== 'karbandi'
+          ? legacyDomeOuterRingEnabledByCoverType[coverType]
+          : DEFAULT_BUILDING.domeOuterRingEnabledByTransitionAndCoverType[mode]?.[coverType] ?? false
+        : value.domeOuterRingEnabledByTransitionAndCoverType[mode][coverType] === true,
+    ])),
+  ]));
+  const domeOuterLegExtensionByTransitionAndCoverType = Object.fromEntries(domeSupportModes.map((mode) => [
+    mode,
+    Object.fromEntries(configurableDomeCoverTypes.map((coverType) => [
+      coverType,
+      Math.max(0, Math.min(10, Number.isFinite(Number(
+        value.domeOuterLegExtensionByTransitionAndCoverType?.[mode]?.[coverType],
+      ))
+        ? Number(value.domeOuterLegExtensionByTransitionAndCoverType[mode][coverType])
+        : !hasTransitionLegSettings && mode === configurableDomeSupportMode && mode !== 'karbandi'
+          ? legacyDomeOuterLegExtensionByCoverType[coverType]
+          : DEFAULT_BUILDING.domeOuterLegExtensionByTransitionAndCoverType[mode]?.[coverType] ?? 0)),
+    ])),
+  ]));
+  const domeDrumHeight = domeDrumHeightByTransition[configurableDomeSupportMode];
+  const domeOuterRingEnabledByCoverType = domeOuterRingEnabledByTransitionAndCoverType[configurableDomeSupportMode];
+  const domeOuterLegExtensionByCoverType = domeOuterLegExtensionByTransitionAndCoverType[configurableDomeSupportMode];
   const innerDomeArch = value.innerDomeArch || {};
   const domeTransitionSettings = value.domeTransitionSettings || {};
   const hasPerTransitionInnerDomeSettings = value.innerDomeEnabledByTransition
     && typeof value.innerDomeEnabledByTransition === 'object';
-  const innerDomeEnabledByTransition = Object.fromEntries([...domeTransitions].map((transition) => [
-    transition,
+  const innerDomeSupportModes = [...configurableDomeTransitions, 'direct', 'none'];
+  const innerDomeEnabledByTransition = Object.fromEntries(innerDomeSupportModes.map((supportMode) => [
+    supportMode,
     hasPerTransitionInnerDomeSettings
-      && value.innerDomeEnabledByTransition[transition] != null
-      ? value.innerDomeEnabledByTransition[transition] === true
-      : DEFAULT_BUILDING.innerDomeEnabledByTransition[transition] === true,
+      && value.innerDomeEnabledByTransition[supportMode] != null
+      ? value.innerDomeEnabledByTransition[supportMode] === true
+      : DEFAULT_BUILDING.innerDomeEnabledByTransition[supportMode] === true,
   ]));
   // Migrate the former single checkbox without coupling future transition
   // choices: its saved value belongs only to the transition active in that file.
   if (!hasPerTransitionInnerDomeSettings && value.innerDomeEnabled != null) {
-    innerDomeEnabledByTransition[domeTransition] = value.innerDomeEnabled === true;
+    innerDomeEnabledByTransition[domeSupportMode] = value.innerDomeEnabled === true;
   }
+  const innerDomeEnabled = innerDomeEnabledByTransition[domeSupportMode] === true;
+  const hasTwoLayerDome = domeCoverType === 'dome' && innerDomeEnabled;
+  const usesDefaultDirectBearingDome = buildingType === 'room'
+    && roomPlanShape !== 'square'
+    && value.domeArch == null;
+  const usesFixedMainDomeProfile = hasTwoLayerDome || usesDefaultDirectBearingDome;
+  const usesRoundRoomMainDomeDefault = buildingType === 'room'
+    && ['circle', 'octagon'].includes(roomPlanShape);
+  const fixedMainDomeGreenOffset = usesRoundRoomMainDomeDefault ? 1.4 : 2;
+  const fixedMainDomeGreenHeightOffset = usesRoundRoomMainDomeDefault ? -1.45 : -2;
   const normalized = {
     ...DEFAULT_BUILDING,
     ...value,
@@ -489,24 +930,111 @@ export function normalizeBuilding(value = {}) {
       Number(value.roomExteriorSquareColumnRotation) || DEFAULT_BUILDING.roomExteriorSquareColumnRotation)),
     roomExteriorCircleColumnCount: Math.round(Math.max(3, Math.min(64,
       Number(value.roomExteriorCircleColumnCount) || DEFAULT_BUILDING.roomExteriorCircleColumnCount))),
-    width: Math.max(2, Math.min(30, Number(value.width) || DEFAULT_BUILDING.width)),
-    depth: type === 'room' ? roomLength : iwanDepth,
+    roomExteriorCircleColumnBoundaryMode: value.roomExteriorCircleColumnBoundaryMode === 'building'
+      ? 'building'
+      : 'columns',
+    hallGridX,
+    hallGridY,
+    hallBayWidth,
+    hallBayDepth,
+    gridBaySpansX,
+    gridBaySpansY,
+    gridBayCovers,
+    gridBayTransitions,
+    gridElementColors,
+    gridRemovedBays: normalizeGridElementIds(value.gridRemovedBays)
+      .filter((key) => {
+        const [ix, iy, extra] = key.split(':').map(Number);
+        return extra == null && Number.isInteger(ix) && Number.isInteger(iy)
+          && ix >= 0 && ix < hallGridX && iy >= 0 && iy < hallGridY;
+      }),
+    gridRemovedWalls: normalizeGridElementIds(value.gridRemovedWalls),
+    gridRemovedVaults: normalizeGridElementIds(value.gridRemovedVaults),
+    gridRemovedDomes: normalizeGridElementIds(value.gridRemovedDomes),
+    gridRemovedTransitions: normalizeGridElementIds(value.gridRemovedTransitions),
+    gridStageEditEnabled: value.gridStageEditEnabled == null
+      ? buildingType === 'grid'
+      : value.gridStageEditEnabled === true,
+    hallColumnProfile: value.hallColumnProfile === 'circle' ? 'circle' : 'square',
+    hallColumnDimension,
+    hallColumnRadius: hallColumnDimension / 2,
+    hallColumnDimensionFollowsWallThickness,
+    hallArchRibWidth,
+    hallArchRibHeight,
+    hallVaultConvergenceAdjusted: ['hall', 'grid'].includes(buildingType)
+      ? true
+      : value.hallVaultConvergenceAdjusted === true,
+    hallVaultFinish: value.hallVaultFinish == null
+      ? DEFAULT_BUILDING.hallVaultFinish
+      : value.hallVaultFinish === 'color' ? 'color' : 'bricks',
+    hallVaultColor: /^#[0-9a-f]{6}$/i.test(value.hallVaultColor || '')
+      ? value.hallVaultColor
+      : DEFAULT_BUILDING.hallVaultColor,
+    hallTransitionEnabled: hallTransitionType === 'none' || ['barrel', 'rib-vault', 'raised-rib-vault'].includes(hallCoverType)
+      ? false
+      : value.hallTransitionEnabled !== false,
+    hallTransitionType,
+    hallCoverType,
+    hallBarrelAxis: value.hallBarrelAxis === 'y' ? 'y' : 'x',
+    hallRibVaultEdgeColors,
+    hallRibVaultCenterOpeningEnabledByCoverType,
+    hallRibVaultCoverageByCoverType,
+    hallArchGuideVisible: value.hallArchGuideVisible === true,
+    hallDomeGuideVisible: hallCoverType === 'dome' && value.hallDomeGuideVisible === true,
+    hallArch: {
+      archType: hallArch.archType === 'one-point' ? 'one-point' : 'two-point',
+      redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(hallArch.redOffset)) ? Number(hallArch.redOffset) : DEFAULT_BUILDING.hallArch.redOffset)),
+      redRadius: hallArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(hallArch.redRadius) || 1)),
+      greenOffset: Math.max(0.05, Math.min(20, Number(hallArch.greenOffset) || DEFAULT_BUILDING.hallArch.greenOffset)),
+      greenHeightOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(hallArch.greenHeightOffset)) ? Number(hallArch.greenHeightOffset) : DEFAULT_BUILDING.hallArch.greenHeightOffset)),
+    },
+    hallDomeArch: {
+      archType: ['one-point', 'two-point'].includes(hallDomeArch.archType)
+        ? hallDomeArch.archType
+        : DEFAULT_BUILDING.hallDomeArch.archType,
+      redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(hallDomeArch.redOffset)) ? Number(hallDomeArch.redOffset) : DEFAULT_BUILDING.hallDomeArch.redOffset)),
+      redRadius: hallDomeArch.redRadius == null
+        ? DEFAULT_BUILDING.hallDomeArch.redRadius
+        : Math.max(0.0001, Math.min(40, Number(hallDomeArch.redRadius) || DEFAULT_BUILDING.hallDomeArch.redRadius)),
+      greenOffset: Math.max(0.05, Math.min(20, Number(hallDomeArch.greenOffset) || DEFAULT_BUILDING.hallDomeArch.greenOffset)),
+      greenHeight: Math.max(-40, Math.min(40, Number.isFinite(Number(hallDomeArch.greenHeight)) ? Number(hallDomeArch.greenHeight) : DEFAULT_BUILDING.hallDomeArch.greenHeight)),
+      greenHeightOffset: Math.max(-40, Math.min(40, Number.isFinite(Number(hallDomeArch.greenHeightOffset)) ? Number(hallDomeArch.greenHeightOffset) : DEFAULT_BUILDING.hallDomeArch.greenHeightOffset)),
+      greenOffsetAuto: hallDomeArch.greenOffsetAuto == null
+        ? DEFAULT_BUILDING.hallDomeArch.greenOffsetAuto
+        : hallDomeArch.greenOffsetAuto === true,
+      greenHeightAuto: hallDomeArch.greenHeightAuto == null
+        ? DEFAULT_BUILDING.hallDomeArch.greenHeightAuto
+        : hallDomeArch.greenHeightAuto === true,
+    },
+    width: ['hall', 'grid'].includes(buildingType)
+      ? (buildingType === 'grid' ? gridBaySpansX.reduce((sum, span) => sum + span, 0) : hallGridX * hallBayWidth)
+      : Math.max(2, Math.min(30, Number(value.width) || DEFAULT_BUILDING.width)),
+    depth: ['hall', 'grid'].includes(buildingType) ? (buildingType === 'grid' ? gridBaySpansY.reduce((sum, span) => sum + span, 0) : hallGridY * hallBayDepth) : type === 'room' ? roomLength : iwanDepth,
     iwanDepth,
-    length: roomLength,
-    height: Math.max(2, Math.min(20, Number(value.height) || DEFAULT_BUILDING.height)),
-    wallThickness: Math.max(0.1, Math.min(1.5, Number(value.wallThickness) || DEFAULT_BUILDING.wallThickness)),
+    length: ['hall', 'grid'].includes(buildingType) ? (buildingType === 'grid' ? gridBaySpansY.reduce((sum, span) => sum + span, 0) : hallGridY * hallBayDepth) : roomLength,
+    height: Math.max(0.5, Math.min(20, Number(value.height) || (
+      ['hall', 'grid'].includes(buildingType) ? 3 : buildingType === 'vestibule' ? 4 : DEFAULT_BUILDING.height
+    ))),
+    wallThickness: normalizedWallThickness,
     openingWidth: Math.max(1, Math.min(20, Number(value.openingWidth) || DEFAULT_BUILDING.openingWidth)),
-    domeEnabled: value.domeEnabled == null ? DEFAULT_BUILDING.domeEnabled : value.domeEnabled === true,
-    domeCoverType,
+    domeEnabled: ['hall', 'grid'].includes(buildingType)
+      ? hallCoverType === 'dome'
+      : domeCoverType !== 'none' || (type === 'room' && !['none', 'direct'].includes(domeTransition)),
+    domeCoverType: ['hall', 'grid'].includes(buildingType) ? 'dome' : domeCoverType,
     domeCoverHeight: Math.max(0.2, Math.min(20, Number(value.domeCoverHeight) || DEFAULT_BUILDING.domeCoverHeight)),
     domeTransition,
     domeTransitionHeight: Math.max(0.2, Math.min(10, Number(value.domeTransitionHeight) || DEFAULT_BUILDING.domeTransitionHeight)),
-    domeTransitionCoverEnabled: roomPlanShape !== 'square' && buildingType !== 'vestibule'
+    domeTransitionCoverEnabled: domeTransition === 'none'
+      ? false
+      : ['hall', 'grid'].includes(buildingType)
+      ? !['barrel', 'rib-vault', 'raised-rib-vault'].includes(hallCoverType)
+      : roomPlanShape !== 'square' && buildingType !== 'vestibule'
       ? false
       : value.domeTransitionCoverEnabled == null
         ? DEFAULT_BUILDING.domeTransitionCoverEnabled
         : value.domeTransitionCoverEnabled === true,
-    domeDrumHeight: Math.max(0, Math.min(10, Number.isFinite(Number(value.domeDrumHeight)) ? Number(value.domeDrumHeight) : DEFAULT_BUILDING.domeDrumHeight)),
+    domeDrumHeight,
+    domeDrumHeightByTransition,
     domeRise: Math.max(0.2, Math.min(20, Number(value.domeRise) || DEFAULT_BUILDING.domeRise)),
     domeColor: /^#[0-9a-f]{6}$/i.test(value.domeColor || '') ? value.domeColor : DEFAULT_BUILDING.domeColor,
     domeExtraLegColor: /^#[0-9a-f]{6}$/i.test(value.domeExtraLegColor || '')
@@ -517,11 +1045,14 @@ export function normalizeBuilding(value = {}) {
       : DEFAULT_BUILDING.domeRingColor,
     domeOuterRingEnabledByCoverType,
     domeOuterLegExtensionByCoverType,
+    domeOuterRingEnabledByTransitionAndCoverType,
+    domeOuterLegExtensionByTransitionAndCoverType,
     domePatternCoverage: Math.max(0, Math.min(100, Number.isFinite(Number(value.domePatternCoverage))
       ? Number(value.domePatternCoverage)
       : DEFAULT_BUILDING.domePatternCoverage)),
+    domeCenterOpeningEnabled: hasTwoLayerDome ? false : value.domeCenterOpeningEnabled === true,
     innerDomeEnabledByTransition,
-    innerDomeEnabled: innerDomeEnabledByTransition[domeTransition] === true,
+    innerDomeEnabled,
     innerDomeColor: /^#[0-9a-f]{6}$/i.test(value.innerDomeColor || '')
       ? value.innerDomeColor
       : DEFAULT_BUILDING.innerDomeColor,
@@ -536,13 +1067,25 @@ export function normalizeBuilding(value = {}) {
       : DEFAULT_BUILDING.betweenDomeSupportWallsCoverage)),
     domeDrumColor: /^#[0-9a-f]{6}$/i.test(value.domeDrumColor || '') ? value.domeDrumColor : DEFAULT_BUILDING.domeDrumColor,
     domeArch: {
-      redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.redOffset)) ? Number(domeArch.redOffset) : DEFAULT_BUILDING.domeArch.redOffset)),
-      redRadius: domeArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(domeArch.redRadius) || 1)),
-      greenOffset: Math.max(0.05, Math.min(20, Number(domeArch.greenOffset) || DEFAULT_BUILDING.domeArch.greenOffset)),
-      greenHeightOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.greenHeightOffset)) ? Number(domeArch.greenHeightOffset) : DEFAULT_BUILDING.domeArch.greenHeightOffset)),
+      archType: usesFixedMainDomeProfile
+        ? 'two-point'
+        : domeArch.archType === 'two-point' ? 'two-point' : DEFAULT_BUILDING.domeArch.archType,
+      redOffset: usesFixedMainDomeProfile
+        ? 0
+        : Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.redOffset)) ? Number(domeArch.redOffset) : DEFAULT_BUILDING.domeArch.redOffset)),
+      redRadius: usesFixedMainDomeProfile
+        ? null
+        : domeArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(domeArch.redRadius) || 1)),
+      greenOffset: usesFixedMainDomeProfile
+        ? fixedMainDomeGreenOffset
+        : Math.max(0.05, Math.min(20, Number(domeArch.greenOffset) || DEFAULT_BUILDING.domeArch.greenOffset)),
+      greenHeightOffset: usesFixedMainDomeProfile
+        ? fixedMainDomeGreenHeightOffset
+        : Math.max(-20, Math.min(20, Number.isFinite(Number(domeArch.greenHeightOffset)) ? Number(domeArch.greenHeightOffset) : DEFAULT_BUILDING.domeArch.greenHeightOffset)),
       legExtension: domeOuterLegExtensionByCoverType[domeCoverType],
     },
     innerDomeArch: {
+      archType: innerDomeArch.archType === 'one-point' ? 'one-point' : 'two-point',
       redOffset: Math.max(-20, Math.min(20, Number.isFinite(Number(innerDomeArch.redOffset)) ? Number(innerDomeArch.redOffset) : DEFAULT_BUILDING.innerDomeArch.redOffset)),
       redRadius: innerDomeArch.redRadius == null ? null : Math.max(0.05, Math.min(40, Number(innerDomeArch.redRadius) || 1)),
       greenOffset: Math.max(0.05, Math.min(20, Number(innerDomeArch.greenOffset) || DEFAULT_BUILDING.innerDomeArch.greenOffset)),
@@ -554,6 +1097,7 @@ export function normalizeBuilding(value = {}) {
         ribWidth: Math.max(0.01, Math.min(0.25, Number(domeTransitionSettings.karbandi?.ribWidth) || DEFAULT_BUILDING.domeTransitionSettings.karbandi.ribWidth)),
       },
       squinch: {
+        archType: domeTransitionSettings.squinch?.archType === 'one-point' ? 'one-point' : 'two-point',
         // A Squinch transition is always the eight-arch system. Keep the old
         // facetCount alias readable so saved projects migrate without becoming
         // the former generic faceted transition.
@@ -595,50 +1139,113 @@ export function normalizeBuilding(value = {}) {
   return normalized;
 }
 
+export function resizeHallVaultProfileWidth(value, nextWidth) {
+  const currentWidth = Math.max(0.03, Math.min(0.8,
+    Number(value.hallArchRibWidth) || DEFAULT_BUILDING.hallArchRibWidth));
+  const hallArchRibWidth = Math.max(0.03, Math.min(0.8,
+    Number(nextWidth) || DEFAULT_BUILDING.hallArchRibWidth));
+  const widthChange = hallArchRibWidth - currentWidth;
+  const hallBayWidth = (Number(value.hallBayWidth) || DEFAULT_BUILDING.hallBayWidth) + widthChange;
+  const hallBayDepth = (Number(value.hallBayDepth) || DEFAULT_BUILDING.hallBayDepth) + widthChange;
+  return normalizeBuilding({
+    ...value,
+    hallArchRibWidth,
+    hallBayWidth,
+    hallBayDepth,
+  });
+}
+
+export function resizeHallVaultProfileHeight(value, nextHeight) {
+  const hallArchRibWidth = Math.max(0.03, Math.min(0.8,
+    Number(value.hallArchRibWidth) || DEFAULT_BUILDING.hallArchRibWidth));
+  const currentHeight = Math.max(0.03, Math.min(0.8,
+    Number(value.hallArchRibHeight) || DEFAULT_BUILDING.hallArchRibHeight));
+  const hallArchRibHeight = Math.max(0.03, Math.min(0.8,
+    Number(nextHeight) || DEFAULT_BUILDING.hallArchRibHeight));
+  const currentConvergenceAllowance = Math.max(0, hallArchRibWidth - currentHeight);
+  const nextConvergenceAllowance = Math.max(0, hallArchRibWidth - hallArchRibHeight);
+  const allowanceChange = nextConvergenceAllowance - currentConvergenceAllowance;
+  return normalizeBuilding({
+    ...value,
+    hallArchRibHeight,
+    hallBayWidth: (Number(value.hallBayWidth) || DEFAULT_BUILDING.hallBayWidth) + allowanceChange,
+    hallBayDepth: (Number(value.hallBayDepth) || DEFAULT_BUILDING.hallBayDepth) + allowanceChange,
+  });
+}
+
 export function buildingForSelectedType(value, buildingType, wallExtraHeights = {}) {
   const type = buildingType === 'portal' ? 'iwan' : 'room';
   const roomPlanShape = buildingType === 'vestibule'
     ? 'octagon'
-    : buildingType === 'room'
+    : ['room', 'hall', 'grid'].includes(buildingType)
       ? 'square'
       : value.roomPlanShape;
   if (buildingType !== 'vestibule') {
+    const enteringHall = ['hall', 'grid'].includes(buildingType) && value.buildingType !== buildingType;
     return normalizeBuilding({
       ...value,
       type,
       buildingType,
       roomPlanShape,
+      height: enteringHall ? 3 : value.height,
+      wallThickness: enteringHall ? 0.5 : value.wallThickness,
+      hallGridX: enteringHall ? (buildingType === 'grid' ? 9 : DEFAULT_BUILDING.hallGridX) : value.hallGridX,
+      hallGridY: enteringHall ? (buildingType === 'grid' ? 9 : DEFAULT_BUILDING.hallGridY) : value.hallGridY,
+      hallBayWidth: enteringHall ? DEFAULT_BUILDING.hallBayWidth : value.hallBayWidth,
+      hallBayDepth: enteringHall ? DEFAULT_BUILDING.hallBayDepth : value.hallBayDepth,
+      gridBaySpansX: enteringHall ? (buildingType === 'grid' ? Array(9).fill(DEFAULT_BUILDING.hallBayWidth) : DEFAULT_BUILDING.gridBaySpansX) : value.gridBaySpansX,
+      gridBaySpansY: enteringHall ? (buildingType === 'grid' ? Array(9).fill(DEFAULT_BUILDING.hallBayDepth) : DEFAULT_BUILDING.gridBaySpansY) : value.gridBaySpansY,
+      gridBayCovers: enteringHall ? {} : value.gridBayCovers,
+      gridBayTransitions: enteringHall ? {} : value.gridBayTransitions,
+      gridElementColors: enteringHall ? {} : value.gridElementColors,
+      gridRemovedBays: enteringHall ? [] : value.gridRemovedBays,
+      gridRemovedWalls: enteringHall ? [] : value.gridRemovedWalls,
+      gridRemovedVaults: enteringHall ? [] : value.gridRemovedVaults,
+      gridRemovedDomes: enteringHall ? [] : value.gridRemovedDomes,
+      gridRemovedTransitions: enteringHall ? [] : value.gridRemovedTransitions,
+      gridStageEditEnabled: buildingType === 'grid',
+      hallColumnDimension: enteringHall ? null : value.hallColumnDimension,
+      hallColumnRadius: enteringHall ? null : value.hallColumnRadius,
+      hallColumnDimensionFollowsWallThickness: enteringHall ? true : value.hallColumnDimensionFollowsWallThickness,
+      hallArchRibWidth: enteringHall ? DEFAULT_BUILDING.hallArchRibWidth : value.hallArchRibWidth,
+      hallArchRibHeight: enteringHall ? DEFAULT_BUILDING.hallArchRibHeight : value.hallArchRibHeight,
+      hallVaultConvergenceAdjusted: enteringHall ? false : value.hallVaultConvergenceAdjusted,
+      domePatternCoverage: enteringHall ? DEFAULT_BUILDING.domePatternCoverage : value.domePatternCoverage,
+      domeCenterOpeningEnabled: enteringHall ? DEFAULT_BUILDING.domeCenterOpeningEnabled : value.domeCenterOpeningEnabled,
+      domeColor: enteringHall ? DEFAULT_BUILDING.domeColor : value.domeColor,
+      hallDomeArch: enteringHall ? {
+        ...value.hallDomeArch,
+        archType: DEFAULT_BUILDING.hallDomeArch.archType,
+        redOffset: DEFAULT_BUILDING.hallDomeArch.redOffset,
+        redRadius: DEFAULT_BUILDING.hallDomeArch.redRadius,
+        greenOffset: DEFAULT_BUILDING.hallDomeArch.greenOffset,
+        greenHeight: DEFAULT_BUILDING.hallDomeArch.greenHeight,
+        greenHeightOffset: DEFAULT_BUILDING.hallDomeArch.greenHeightOffset,
+        greenOffsetAuto: DEFAULT_BUILDING.hallDomeArch.greenOffsetAuto,
+        greenHeightAuto: DEFAULT_BUILDING.hallDomeArch.greenHeightAuto,
+      } : value.hallDomeArch,
       portalPlanShape: buildingType === 'portal' ? 'square' : value.portalPlanShape,
     });
   }
 
   const coverTypes = ['dome', 'cone', 'pyramid'];
-  let next = normalizeBuilding({
+  const next = normalizeBuilding({
     ...value,
     type,
     buildingType,
     roomPlanShape,
+    width: value.buildingType === 'vestibule' ? value.width : 6,
+    length: value.buildingType === 'vestibule' ? value.length : 6,
+    height: value.buildingType === 'vestibule' ? value.height : 4,
     domeDrumHeight: 0,
     domePatternCoverage: 85,
+    domeCenterOpeningEnabled: false,
     domeOuterRingEnabledByCoverType: Object.fromEntries(coverTypes.map((coverType) => [coverType, false])),
     domeArch: {
       ...value.domeArch,
-      redOffset: -1.2,
-      greenOffset: 1.75,
-    },
-  });
-  const highestWallTop = Math.max(...['north', 'east', 'south', 'west'].map((side) => (
-    next.height + (Number(wallExtraHeights?.[side]) || 0)
-  )));
-  const outerDomeSpringHeight = highestWallTop
-    + next.domeTransitionHeight
-    + next.domeDrumHeight
-    + (next.domeArch.legExtension || 0);
-  next = normalizeBuilding({
-    ...next,
-    domeArch: {
-      ...next.domeArch,
-      greenHeightOffset: 2 - outerDomeSpringHeight,
+      archType: 'one-point',
+      greenOffset: 0.75,
+      greenHeightOffset: -2,
     },
   });
   return next;
@@ -1969,6 +2576,8 @@ export class MehrazScene {
     this.nightLightDrag = null;
     this.constructionStepIndex = CONSTRUCTION_STEPS.length - 1;
     this.constructionStepProgress = 1;
+    this.constructionMaterialsActive = false;
+    this.setConstructionStepOrder();
     this.constructionTimer = null;
     this.constructionAnimationFrame = null;
     this.constructionWatchdog = null;
@@ -1989,6 +2598,8 @@ export class MehrazScene {
     this.karbandiReferenceEditing = false;
     this.karbandiRibArchEditing = false;
     this.squinchArchEditing = false;
+    this.northArchEditing = false;
+    this.roomDomeArchEditing = false;
     this.wallSurfaceHighlight = null;
     this.sectionViewEnabled = false;
     this.sectionViewAxis = 'x';
@@ -1997,6 +2608,9 @@ export class MehrazScene {
     this.sectionClipPlane = null;
     this.sectionCapGroup = new THREE.Group();
     this.sectionCapGroup.name = 'Room section cut faces';
+    this.constructionCapGroup = new THREE.Group();
+    this.constructionCapGroup.name = 'Solid construction reveal caps';
+    this.constructionCapCache = new WeakMap();
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#cfe7f2');
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 160);
@@ -2100,7 +2714,7 @@ export class MehrazScene {
     this.projectInstanceGroup.name = 'Added Mehraz project instances';
     this.nightLightGroup = new THREE.Group();
     this.nightLightGroup.name = 'Night spotlight placement guides';
-    this.scene.add(this.buildingGroup, this.archInfillGroup, this.constructionGuideGroup, this.zoneDecorationGroup, this.zoneGroup, this.placementGroup, this.projectInstanceGroup, this.placementMaskGroup, this.nightLightGroup, this.sectionCapGroup);
+    this.scene.add(this.buildingGroup, this.archInfillGroup, this.constructionGuideGroup, this.zoneDecorationGroup, this.placementGroup, this.projectInstanceGroup, this.placementMaskGroup, this.nightLightGroup, this.sectionCapGroup, this.constructionCapGroup);
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -2116,6 +2730,12 @@ export class MehrazScene {
     window.addEventListener('pointerup', this.onPointerUp);
     window.addEventListener('pointercancel', this.onInteractionCancel);
     window.addEventListener('blur', this.onInteractionCancel);
+    this.selectedGridElementIds = [];
+    this.gridElementHighlight = null;
+    this.selectedGridBayKeys = [];
+    this.gridBayHighlight = null;
+    this.gridBaySelectionEnabled = false;
+    this.gridTemplateCache = { signature: null, templates: new Map() };
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.rebuildBuilding();
@@ -2127,6 +2747,43 @@ export class MehrazScene {
     this.building = normalizeBuilding(building);
     this.walls = normalizeWallSystem(this.walls, this.building);
     this.rebuildBuilding();
+  }
+
+  setArchitectureVisible(visible) {
+    this.architectureVisible = visible === true;
+    const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
+    if (wallSystem) wallSystem.visible = this.architectureVisible;
+    if (!this.architectureVisible) {
+      this.clearGridElementHighlight();
+      this.clearWallSurfaceHighlight();
+    }
+    this.invalidate(true);
+  }
+
+  resetStageContent() {
+    this.stopConstructionSequence();
+    this.setRoomSectionView(false, this.sectionViewAxis);
+    this.transformControls.detach();
+    this.selectedId = null;
+    this.selectedProjectInstanceId = null;
+    this.selectedZoneId = null;
+    this.selectedWallSide = null;
+    this.selectedOpeningGuide = null;
+    this.setGridElementSelection([]);
+    this.setGridBaySelection([]);
+    this.setPlacements([]);
+    this.setProjectInstances([]);
+    this.setZones([]);
+    this.setNightPreview(false);
+    this.setNightLights([]);
+    this.setNightLightGuidesVisible(false);
+    this.clearGroup(this.archInfillGroup);
+    this.clearGroup(this.placementMaskGroup);
+    this.clearGroup(this.sectionCapGroup);
+    this.clearWallSurfaceHighlight();
+    this.renderer.renderLists?.dispose?.();
+    this.updateSelectionOutline();
+    this.invalidate(true);
   }
 
   setArchitecture(building, walls, stageRenderMode = 'textured') {
@@ -2197,10 +2854,10 @@ export class MehrazScene {
   syncConstructionGuides(rank, wallSystem) {
     const karbandiEnabled = this.walls.karbandi?.enabled === true;
     const northArchShiftY = Math.max(0, Number(wallSystem?.userData?.portalKarbandiNorthWallShiftY) || 0);
-    const southGuideRank = CONSTRUCTION_STEP_INDEX['south-arch-guide'];
-    const northGuideRank = CONSTRUCTION_STEP_INDEX['north-arch-guide'];
-    const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
-    const northUpperRank = CONSTRUCTION_STEP_INDEX['north-upper-wall'];
+    const southGuideRank = this.constructionRankFor('south-arch-guide');
+    const northGuideRank = this.constructionRankFor('north-arch-guide');
+    const archFillRank = this.constructionRankFor('arch-fill');
+    const northUpperRank = this.constructionRankFor('north-upper-wall');
     if (karbandiEnabled) {
       const showNorthGuide = rank >= northGuideRank && rank <= northUpperRank;
       const guideKey = showNorthGuide
@@ -2337,13 +2994,18 @@ export class MehrazScene {
   }
 
   restoreConstructionMaterials() {
+    if (this.constructionCapGroup) this.clearGroup(this.constructionCapGroup);
+    this.constructionCapCache = new WeakMap();
+    if (this.constructionMaterialsActive !== true) return;
     const restoreMesh = (child) => {
       if (!child.isMesh || !child.userData?.constructionOriginalMaterial) return;
       const currentMaterials = Array.isArray(child.material) ? child.material : [child.material];
       child.material = child.userData.constructionOriginalMaterial;
       if (Object.hasOwn(child.userData, 'constructionOriginalCustomDepthMaterial')) {
         child.customDepthMaterial?.dispose?.();
-        child.customDepthMaterial = child.userData.constructionOriginalCustomDepthMaterial;
+        const originalCustomDepthMaterial = child.userData.constructionOriginalCustomDepthMaterial;
+        if (originalCustomDepthMaterial == null) delete child.customDepthMaterial;
+        else child.customDepthMaterial = originalCustomDepthMaterial;
         delete child.userData.constructionOriginalCustomDepthMaterial;
       }
       currentMaterials.filter(Boolean).forEach((material) => {
@@ -2355,11 +3017,14 @@ export class MehrazScene {
     this.archInfillGroup.traverse(restoreMesh);
     this.placementGroup.traverse(restoreMesh);
     this.placementMaskGroup.traverse(restoreMesh);
+    this.zoneDecorationGroup.traverse(restoreMesh);
+    this.constructionMaterialsActive = false;
   }
 
   prepareConstructionMaterial(child) {
     if (!child.isMesh || !child.material) return [];
     if (!child.userData.constructionOriginalMaterial) {
+      this.constructionMaterialsActive = true;
       const original = child.material;
       const materials = Array.isArray(original) ? original : [original];
       child.userData.constructionOriginalMaterial = original;
@@ -2386,19 +3051,236 @@ export class MehrazScene {
     return originals[Math.min(index, originals.length - 1)] || null;
   }
 
-  setConstructionClip(child, progress = 1, axis = 'y', minValue = 0, maxValue = null) {
+  beginConstructionCapFrame() {
+    if (!this.constructionCapGroup) return;
+    this.constructionCapGroup.children.forEach((capRoot) => { capRoot.visible = false; });
+  }
+
+  constructionSectionLoops(child, sourcePlane) {
+    const position = child.geometry?.getAttribute?.('position');
+    if (!position || position.count < 3) return { loops: [], origin: null, tangentU: null, tangentV: null };
+    child.updateWorldMatrix(true, false);
+    const plane = sourcePlane.clone().normalize();
+    // Move the sampling cut imperceptibly away from a mesh course boundary.
+    // Otherwise triangles exactly coplanar with the boundary can create duplicate
+    // edges and make an otherwise solid top look uncapped for one frame.
+    plane.constant += 0.00001;
+    const origin = plane.coplanarPoint(new THREE.Vector3());
+    const tangentU = Math.abs(plane.normal.y) > 0.9
+      ? new THREE.Vector3(1, 0, 0)
+      : new THREE.Vector3(0, 1, 0).cross(plane.normal).normalize();
+    const tangentV = plane.normal.clone().cross(tangentU).normalize();
+    const epsilon = 0.0001;
+    const pointKey = (point) => `${Math.round(point.x / epsilon)}:${Math.round(point.y / epsilon)}`;
+    const segments = new Map();
+    const index = child.geometry.index;
+    const triangleCount = index ? index.count / 3 : position.count / 3;
+    const transforms = [];
+    if (child.isInstancedMesh) {
+      const instanceMatrix = new THREE.Matrix4();
+      for (let instance = 0; instance < child.count; instance += 1) {
+        child.getMatrixAt(instance, instanceMatrix);
+        transforms.push(new THREE.Matrix4().multiplyMatrices(child.matrixWorld, instanceMatrix));
+      }
+    } else transforms.push(child.matrixWorld);
+    transforms.forEach((worldMatrix) => {
+      const worldVertex = (vertexIndex) => new THREE.Vector3()
+        .fromBufferAttribute(position, vertexIndex)
+        .applyMatrix4(worldMatrix);
+      for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+        const vertices = [0, 1, 2].map((offset) => worldVertex(
+          index ? index.getX(triangle * 3 + offset) : triangle * 3 + offset,
+        ));
+        const distances = vertices.map((point) => plane.distanceToPoint(point));
+        if (distances.every((distance) => Math.abs(distance) <= epsilon)) continue;
+        const intersections = [];
+        [[0, 1], [1, 2], [2, 0]].forEach(([first, second]) => {
+          const a = vertices[first];
+          const b = vertices[second];
+          const da = distances[first];
+          const db = distances[second];
+          let point = null;
+          if (Math.abs(da) <= epsilon) point = a;
+          else if (Math.abs(db) <= epsilon) point = b;
+          else if (da * db < 0) point = a.clone().lerp(b, da / (da - db));
+          if (!point) return;
+          const relative = point.clone().sub(origin);
+          const projected = new THREE.Vector2(relative.dot(tangentU), relative.dot(tangentV));
+          if (!intersections.some((entry) => entry.distanceToSquared(projected) <= epsilon ** 2)) {
+            intersections.push(projected);
+          }
+        });
+        if (intersections.length < 2) continue;
+        let pair = [intersections[0], intersections[1]];
+        intersections.forEach((first) => intersections.forEach((second) => {
+          if (first.distanceToSquared(second) > pair[0].distanceToSquared(pair[1])) pair = [first, second];
+        }));
+        const keys = pair.map(pointKey);
+        if (keys[0] === keys[1]) continue;
+        const segmentKey = [...keys].sort().join('|');
+        if (!segments.has(segmentKey)) segments.set(segmentKey, { points: pair, keys });
+      }
+    });
+    const entries = [...segments.values()];
+    const adjacency = new Map();
+    entries.forEach((entry, segmentIndex) => entry.keys.forEach((key) => {
+      if (!adjacency.has(key)) adjacency.set(key, []);
+      adjacency.get(key).push(segmentIndex);
+    }));
+    const used = new Set();
+    const loops = [];
+    entries.forEach((entry, startIndex) => {
+      if (used.has(startIndex)) return;
+      used.add(startIndex);
+      const path = [entry.points[0].clone(), entry.points[1].clone()];
+      const startKey = entry.keys[0];
+      let currentKey = entry.keys[1];
+      let guard = 0;
+      while (currentKey !== startKey && guard < entries.length + 2) {
+        const nextIndex = (adjacency.get(currentKey) || []).find((candidate) => !used.has(candidate));
+        if (nextIndex == null) break;
+        used.add(nextIndex);
+        const next = entries[nextIndex];
+        const fromFirst = next.keys[0] === currentKey;
+        path.push(next.points[fromFirst ? 1 : 0].clone());
+        currentKey = next.keys[fromFirst ? 1 : 0];
+        guard += 1;
+      }
+      if (currentKey !== startKey) return;
+      path.pop();
+      if (path.length < 3 || Math.abs(THREE.ShapeUtils.area(path)) <= 0.00001) return;
+      loops.push(path);
+    });
+    return { loops, origin, tangentU, tangentV };
+  }
+
+  syncConstructionCap(child, plane, cacheKey = 'reveal') {
+    if (!child?.isMesh || !child.visible || !plane || !this.constructionCapGroup) return;
+    let childCache = this.constructionCapCache?.get(child);
+    if (!childCache) {
+      childCache = new Map();
+      this.constructionCapCache?.set(child, childCache);
+    }
+    const signature = [plane.normal.x, plane.normal.y, plane.normal.z, plane.constant]
+      .map((value) => Number(value).toFixed(5)).join(':');
+    let entry = childCache.get(cacheKey);
+    if (entry?.signature === signature) {
+      entry.root.visible = true;
+      return;
+    }
+    if (entry) {
+      this.clearGroup(entry.root);
+      entry.root.removeFromParent();
+    }
+    const section = this.constructionSectionLoops(child, plane);
+    const root = new THREE.Group();
+    root.name = `${child.name || 'Masonry'} solid construction cap`;
+    const sourceMaterial = (Array.isArray(child.userData?.constructionOriginalMaterial)
+      ? child.userData.constructionOriginalMaterial[0]
+      : child.userData?.constructionOriginalMaterial) || (Array.isArray(child.material) ? child.material[0] : child.material);
+    const permanentPlanes = Array.isArray(sourceMaterial?.clippingPlanes)
+      ? [...sourceMaterial.clippingPlanes]
+      : null;
+    const containsPoint = (loop, point) => {
+      let inside = false;
+      for (let current = 0, previous = loop.length - 1; current < loop.length; previous = current, current += 1) {
+        const a = loop[current];
+        const b = loop[previous];
+        if (((a.y > point.y) !== (b.y > point.y))
+          && point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || 0.000001) + a.x) inside = !inside;
+      }
+      return inside;
+    };
+    const ordered = section.loops
+      .map((loop) => ({ loop, area: Math.abs(THREE.ShapeUtils.area(loop)), parent: null, depth: 0 }))
+      .sort((left, right) => right.area - left.area);
+    ordered.forEach((entryLoop, index) => {
+      const parent = ordered.slice(0, index).reverse().find((candidate) => containsPoint(candidate.loop, entryLoop.loop[0]));
+      entryLoop.parent = parent || null;
+      entryLoop.depth = parent ? parent.depth + 1 : 0;
+    });
+    const shapeEntries = new Map();
+    ordered.filter((entryLoop) => entryLoop.depth % 2 === 0).forEach((entryLoop) => {
+      const points = entryLoop.loop.map((point) => point.clone());
+      if (!THREE.ShapeUtils.isClockWise(points)) points.reverse();
+      const shape = new THREE.Shape(points);
+      shapeEntries.set(entryLoop, shape);
+    });
+    ordered.filter((entryLoop) => entryLoop.depth % 2 === 1).forEach((entryLoop) => {
+      let outer = entryLoop.parent;
+      while (outer && outer.depth % 2 !== 0) outer = outer.parent;
+      const shape = shapeEntries.get(outer);
+      if (!shape) return;
+      const points = entryLoop.loop.map((point) => point.clone());
+      if (THREE.ShapeUtils.isClockWise(points)) points.reverse();
+      shape.holes.push(new THREE.Path(points));
+    });
+    shapeEntries.forEach((shape) => {
+      const geometry = new THREE.ShapeGeometry(shape);
+      const positions = geometry.getAttribute('position');
+      for (let vertex = 0; vertex < positions.count; vertex += 1) {
+        const u = positions.getX(vertex);
+        const v = positions.getY(vertex);
+        const world = section.origin.clone()
+          .addScaledVector(section.tangentU, u)
+          .addScaledVector(section.tangentV, v)
+          .addScaledVector(plane.normal, -0.0002);
+        positions.setXYZ(vertex, world.x, world.y, world.z);
+      }
+      positions.needsUpdate = true;
+      geometry.computeVertexNormals();
+      const material = new THREE.MeshStandardMaterial({
+        color: sourceMaterial?.color?.clone?.() || new THREE.Color('#b88954'),
+        roughness: Number.isFinite(sourceMaterial?.roughness) ? sourceMaterial.roughness : 0.86,
+        metalness: Number.isFinite(sourceMaterial?.metalness) ? sourceMaterial.metalness : 0,
+        side: THREE.DoubleSide,
+        clippingPlanes: permanentPlanes,
+        clipShadows: sourceMaterial?.clipShadows === true,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      material.userData.constructionSolidCap = true;
+      const cap = new THREE.Mesh(geometry, material);
+      cap.name = `${child.name || 'Masonry'} solid cut face`;
+      cap.castShadow = child.castShadow;
+      cap.receiveShadow = child.receiveShadow;
+      cap.renderOrder = (child.renderOrder || 0) + 1;
+      cap.userData.constructionSolidCap = true;
+      cap.userData.constructionCapSource = child;
+      root.add(cap);
+    });
+    root.visible = true;
+    this.constructionCapGroup.add(root);
+    entry = { root, signature };
+    childCache.set(cacheKey, entry);
+  }
+
+  hideConstructionCapsFor(child) {
+    this.constructionCapCache?.get(child)?.forEach((entry) => { entry.root.visible = false; });
+  }
+
+  setConstructionClip(child, progress = 1, axis = 'y', minValue = 0, maxValue = null, constructionStep = null) {
     const materials = this.prepareConstructionMaterial(child);
     if (!materials.length) return;
     child.visible = progress > 0.001;
     const box = new THREE.Box3().setFromObject(child);
-    const start = Number.isFinite(minValue) ? minValue : (axis === 'z' ? box.min.z : box.min.y);
-    const end = Number.isFinite(maxValue) ? maxValue : (axis === 'z' ? box.max.z : box.max.y);
-    const brickStep = Math.max(0.01, Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01));
-    const steppedProgress = Math.min(1, Math.max(0, Math.ceil(progress * Math.max(1, Math.ceil(Math.abs(end - start) / brickStep))) / Math.max(1, Math.ceil(Math.abs(end - start) / brickStep))));
+    const boxMin = axis === 'x' ? box.min.x : axis === 'z' ? box.min.z : box.min.y;
+    const boxMax = axis === 'x' ? box.max.x : axis === 'z' ? box.max.z : box.max.y;
+    const start = Number.isFinite(minValue) ? minValue : boxMin;
+    const end = Number.isFinite(maxValue) ? maxValue : boxMax;
+    const brickStep = Math.max(0.01, Number.isFinite(Number(constructionStep))
+      ? Number(constructionStep)
+      : Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01));
+    const courseCount = Math.max(1, Math.ceil(Math.abs(end - start) / brickStep));
+    const revealedCourses = Math.min(courseCount, Math.ceil(progress * courseCount));
+    const steppedProgress = Math.min(1, Math.max(0, revealedCourses / courseCount));
     const limit = start + (end - start) * steppedProgress;
-    const plane = axis === 'z'
-      ? new THREE.Plane(new THREE.Vector3(0, 0, end >= start ? -1 : 1), end >= start ? limit : -limit)
-      : new THREE.Plane(new THREE.Vector3(0, -1, 0), limit);
+    const plane = axis === 'x'
+      ? new THREE.Plane(new THREE.Vector3(end >= start ? -1 : 1, 0, 0), end >= start ? limit : -limit)
+      : axis === 'z'
+        ? new THREE.Plane(new THREE.Vector3(0, 0, end >= start ? -1 : 1), end >= start ? limit : -limit)
+        : new THREE.Plane(new THREE.Vector3(0, -1, 0), limit);
     materials.forEach((material, index) => {
       const permanentMaterial = this.permanentConstructionMaterial(child, index);
       const permanentPlanes = Array.isArray(permanentMaterial?.clippingPlanes)
@@ -2421,6 +3303,87 @@ export class MehrazScene {
       material.clipIntersection = false;
       material.clipShadows = permanentMaterial?.clipShadows === true;
     });
+    if (axis === 'y') {
+      child.userData.constructionVerticalCourseSequence = {
+        direction: 'bottom-to-top',
+        courseHeight: brickStep,
+        courseCount,
+        revealedCourses,
+        progress: THREE.MathUtils.clamp(progress, 0, 1),
+      };
+    }
+    if (progress > 0.001 && progress < 0.999999) this.syncConstructionCap(child, plane);
+    else this.hideConstructionCapsFor(child);
+  }
+
+  setSharedVerticalCourseConstructionClip(child, limitY, originY, topY, progress = 1) {
+    const materials = this.prepareConstructionMaterial(child);
+    if (!materials.length) return;
+    const bounds = new THREE.Box3().setFromObject(child);
+    child.visible = limitY > bounds.min.y + 0.000001;
+    if (!child.visible) return;
+    const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), limitY);
+    materials.forEach((material, index) => {
+      const permanentMaterial = this.permanentConstructionMaterial(child, index);
+      const permanentPlanes = Array.isArray(permanentMaterial?.clippingPlanes)
+        ? permanentMaterial.clippingPlanes
+        : [];
+      const existingRevealPlane = material.userData?.constructionRevealPlane;
+      const canReuseRevealPlane = existingRevealPlane
+        && material.clippingPlanes?.length === permanentPlanes.length + 1
+        && material.clippingPlanes[material.clippingPlanes.length - 1] === existingRevealPlane;
+      if (canReuseRevealPlane) existingRevealPlane.copy(plane);
+      else {
+        const revealPlane = plane.clone();
+        material.clippingPlanes = [...permanentPlanes, revealPlane];
+        material.userData.constructionRevealPlane = revealPlane;
+        material.needsUpdate = true;
+      }
+      material.clipIntersection = false;
+      material.clipShadows = permanentMaterial?.clipShadows === true;
+    });
+    const courseHeight = Math.max(
+      0.01,
+      Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01),
+    );
+    child.userData.constructionVerticalCourseSequence = {
+      direction: 'bottom-to-top',
+      courseHeight,
+      courseCount: Math.max(1, Math.ceil((topY - originY) / courseHeight)),
+      revealedCourses: Math.max(0, Math.ceil((limitY - originY) / courseHeight)),
+      progress: THREE.MathUtils.clamp(progress, 0, 1),
+      sharedCourseTopY: limitY,
+      sharedCourseOriginY: originY,
+    };
+    if (progress > 0.001 && progress < 0.999999) this.syncConstructionCap(child, plane, 'shared-vertical-reveal');
+    else this.hideConstructionCapsFor(child);
+  }
+
+  setHallBarrelSpanConstructionClip(child, progress = 1) {
+    const barrelAxis = child.userData?.hallBarrelAxis === 'y' ? 'y' : 'x';
+    const longitudinalAxis = barrelAxis === 'x' ? 'z' : 'x';
+    const box = new THREE.Box3().setFromObject(child);
+    const start = longitudinalAxis === 'x' ? box.min.x : box.min.z;
+    const end = longitudinalAxis === 'x' ? box.max.x : box.max.z;
+    const brickLengthStep = Math.max(
+      0.01,
+      Number(this.walls.bricks?.brickWidth || 0.2) + Number(this.walls.bricks?.mortar || 0.01),
+    );
+    this.setConstructionClip(
+      child,
+      progress,
+      longitudinalAxis,
+      start,
+      end,
+      brickLengthStep,
+    );
+    child.userData.constructionBarrelSpanSequence = {
+      direction: 'one-supporting-vault-to-the-next',
+      longitudinalAxis,
+      start,
+      end,
+      progress: THREE.MathUtils.clamp(progress, 0, 1),
+    };
   }
 
   setArchCourseConstructionClip(child, progress, metrics) {
@@ -2464,10 +3427,15 @@ export class MehrazScene {
       material.clipIntersection = true;
       material.needsUpdate = true;
     });
+    if (progress > 0.001 && progress < 0.999999) {
+      this.syncConstructionCap(child, planes[0], 'arch-left-reveal');
+      this.syncConstructionCap(child, planes[1], 'arch-right-reveal');
+    } else this.hideConstructionCapsFor(child);
   }
 
   clearConstructionClip(child) {
     if (!child.isMesh) return;
+    this.hideConstructionCapsFor(child);
     // A mesh that has never received an animation clip already owns its final
     // material and permanent clipping planes. Do not clone it merely because
     // a later construction stage needs it visible.
@@ -2605,7 +3573,7 @@ export class MehrazScene {
       return;
     }
     const decorationStepId = WALL_DECORATION_STEP[child.userData?.wallSide];
-    const decorationRank = CONSTRUCTION_STEP_INDEX[decorationStepId];
+    const decorationRank = this.constructionRankFor(decorationStepId);
     if (!Number.isFinite(decorationRank)) {
       child.visible = false;
       return;
@@ -2636,7 +3604,7 @@ export class MehrazScene {
         return;
       }
       const decorationStepId = SURFACE_DECORATION_STEP[root.userData?.surfaceId];
-      const decorationRank = CONSTRUCTION_STEP_INDEX[decorationStepId];
+      const decorationRank = this.constructionRankFor(decorationStepId);
       const isCurrentStep = stepId === decorationStepId;
       root.visible = Number.isFinite(decorationRank) && rank >= decorationRank && (!isCurrentStep || progress > 0.001);
       root.traverse((child) => {
@@ -2648,7 +3616,7 @@ export class MehrazScene {
   }
 
   applyMuqarnasConstruction(root, stepId, rank, progress) {
-    const muqarnasRank = CONSTRUCTION_STEP_INDEX['muqarnas-tiers'];
+    const muqarnasRank = this.constructionRankFor('muqarnas-tiers');
     if (!Number.isFinite(muqarnasRank)) {
       root.visible = false;
       return;
@@ -2679,19 +3647,82 @@ export class MehrazScene {
 
   hasConstructionStepContent(stepId) {
     const karbandiEnabled = this.walls.karbandi?.enabled === true;
+    if (['hall', 'grid'].includes(this.building.buildingType)) {
+      if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId) || PORTAL_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) return false;
+      if (HALL_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) {
+        let hasContent = false;
+        this.wallSystemRoot()?.traverse((child) => {
+          if (hasContent) return;
+          if (['hall-vaults', 'hall-transverse-vaults', 'hall-barrel-axis-vaults'].includes(stepId)) {
+            const isVault = child.userData?.isHallVaultArch === true;
+            const direction = child.userData?.hallVaultDirection;
+            const barrelAxis = this.building.hallBarrelAxis === 'y' ? 'y' : 'x';
+            hasContent = stepId === 'hall-vaults'
+              ? isVault
+              : stepId === 'hall-transverse-vaults'
+                ? isVault && direction !== barrelAxis
+                : isVault && direction === barrelAxis;
+          } else if (stepId === 'hall-barrel-spandrels') {
+            hasContent = child.userData?.isHallBarrelSpandrelInfill === true;
+          } else if (stepId === 'hall-barrel-surrounding-walls') {
+            hasContent = child.userData?.isHallPerimeterWall === true;
+          } else if (stepId === 'hall-barrel-under-vault-walls') {
+            hasContent = child.userData?.isHallBoundaryVaultInfill === true;
+          } else if (stepId === 'hall-walls') {
+            hasContent = child.userData?.isHallPerimeterWall === true
+              || child.userData?.isHallBoundaryVaultInfill === true;
+          } else if (stepId === 'hall-transition') {
+            hasContent = child.userData?.isHallBayTransition === true;
+          } else if (stepId === 'hall-cover') {
+            hasContent = child.userData?.isHallBayCover === true
+              && child.userData?.isHallBayTransition !== true;
+          }
+        });
+        return hasContent;
+      }
+    }
     if (this.building.type === 'room') {
       if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) {
+        if (stepId === 'room-skirt') {
+          if (this.walls.stoneBase?.enabled === true
+            && Number(this.walls.stoneBase?.height) > 0.000001) return true;
+          let hasRaisedDoorBase = false;
+          this.wallSystemRoot()?.traverse((child) => {
+            if (child.userData?.isRaisedInteriorFloor === true
+              || child.userData?.isDoorStep === true) hasRaisedDoorBase = true;
+          });
+          return hasRaisedDoorBase;
+        }
         let hasContent = false;
         this.wallSystemRoot()?.traverse((child) => {
           if (hasContent) return;
           const part = child.userData?.roomDomePart;
-          if (stepId === 'room-karbandi-ribs') hasContent = child.userData?.isKarbandi === true;
-          else if (stepId === 'room-karbandi-roof') hasContent = child.userData?.isKarbandiCover === true;
+           if (stepId === 'room-karbandi-ribs') hasContent = child.userData?.isKarbandi === true;
+           else if (stepId === 'room-squinch-arches') hasContent = part === 'squinch-transition-rib';
+           else if (stepId === 'room-squinch-under-arch-walls') {
+             hasContent = child.userData?.isRoomSquinchVerticalWallExtension === true;
+           }
+           else if (stepId === 'room-karbandi-roof') hasContent = child.userData?.isKarbandiCover === true;
+          else if (stepId === 'room-transition-structure') {
+            hasContent = this.building.domeTransition !== 'squinch' && (
+              (child.userData?.isRoomDomeTransitionDetail === true && part !== 'springing-ring')
+                || ['exterior-aligned-octagon-wall', 'octagon-inherited-opening-soldier']
+                  .includes(part)
+                || ['pendentive-transition-rib', 'muqarnas-transition-rib'].includes(part)
+            );
+          }
           else if (stepId === 'room-transition-cover') {
             hasContent = part === 'karbandi-roof-to-drum-infill-top'
-              || (part === 'transition-cover' && child.userData?.isKarbandiCover !== true);
+              || (['transition-cover', 'squinch-transition-cover'].includes(part)
+                && child.userData?.isKarbandiCover !== true);
           } else if (stepId === 'room-drum') hasContent = part === 'dome-drum';
-          else if (stepId === 'room-dome') hasContent = ['dome-shell', 'inner-dome-shell', 'between-dome-support-wall', 'springing-ring'].includes(part);
+          else if (stepId === 'room-extra-leg') hasContent = part === 'dome-extra-leg';
+          else if (stepId === 'room-outer-ring') {
+            const coverType = this.building.domeCoverType || 'dome';
+            hasContent = part === 'springing-ring'
+              && this.building.domeOuterRingEnabledByCoverType?.[coverType] !== false;
+          }
+          else if (stepId === 'room-dome') hasContent = ['dome-shell', 'inner-dome-shell', 'between-dome-support-wall'].includes(part);
           else if (stepId === 'room-decoration') hasContent = child.userData?.isImportedWallDecoration === true;
         });
         if (stepId === 'room-decoration' && !hasContent) {
@@ -2700,13 +3731,48 @@ export class MehrazScene {
             if (child.userData?.isZoneDecoration === true) hasContent = true;
           });
         }
+        if (stepId === 'room-transition-structure' && !hasContent) {
+          hasContent = this.placementGroup?.children.some((root) => (
+            root.userData?.assetType === 'muqarnas_assembly'
+          )) === true;
+        }
         return hasContent;
       }
       if (['south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill',
         'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof',
-        'north-upper-wall', 'muqarnas-tiers'].includes(stepId)) return false;
+        'north-upper-wall', 'portal-transition', 'portal-drum', 'portal-extra-leg', 'portal-outer-ring',
+        'portal-cover', 'muqarnas-tiers',
+        'hall-vaults', 'hall-transverse-vaults', 'hall-barrel-spandrels',
+        'hall-barrel-axis-vaults', 'hall-barrel-surrounding-walls',
+        'hall-barrel-under-vault-walls', 'hall-walls',
+        'hall-transition', 'hall-cover'].includes(stepId)) return false;
       if (stepId.startsWith('decorate-')) return false;
-    } else if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) return false;
+    } else if (ROOM_ONLY_CONSTRUCTION_STEP_IDS.has(stepId) || HALL_ONLY_CONSTRUCTION_STEP_IDS.has(stepId)) return false;
+    if (stepId === 'muqarnas-tiers') {
+      return this.placementGroup?.children.some((root) => (
+        root.userData?.assetType === 'muqarnas_assembly'
+      )) === true;
+    }
+    if (['portal-transition', 'portal-drum', 'portal-extra-leg', 'portal-outer-ring', 'portal-cover'].includes(stepId)) {
+      let hasContent = false;
+      this.wallSystemRoot()?.traverse((child) => {
+        if (hasContent) return;
+        const part = child.userData?.roomDomePart;
+        if (stepId === 'portal-transition') {
+          hasContent = child.userData?.isRoomDomeTransition === true
+            || (child.userData?.isRoomDomeTransitionDetail === true && part !== 'springing-ring')
+            || child.userData?.isRoomSquinchVerticalWallExtension === true;
+        } else if (stepId === 'portal-drum') hasContent = part === 'dome-drum';
+        else if (stepId === 'portal-extra-leg') hasContent = part === 'dome-extra-leg';
+        else if (stepId === 'portal-outer-ring') {
+          hasContent = part === 'springing-ring'
+            && this.building.domeOuterRingEnabledByCoverType?.dome !== false;
+        }
+        else hasContent = child.userData?.isPortalHalfBayCover === true
+          || ['dome-shell', 'inner-dome-shell', 'between-dome-support-wall'].includes(part);
+      });
+      return hasContent;
+    }
     if (karbandiEnabled && stepId === 'north-arch-guide') return this.walls.pointedArch?.enabled === true;
     if (stepId.startsWith('karbandi-')) {
       if (!karbandiEnabled) return false;
@@ -2739,19 +3805,335 @@ export class MehrazScene {
     return hasContent;
   }
 
+  setTwoSidedVaultCourseConstructionClip(child, progress = 1) {
+    const materials = this.prepareConstructionMaterial(child);
+    if (!materials.length) return;
+    child.visible = progress > 0.001;
+    child.updateWorldMatrix(true, false);
+    const rawProfile = child.geometry?.userData?.constructionVaultCenterline
+      || child.geometry?.userData?.squinchArchProfile;
+    if (!Array.isArray(rawProfile) || rawProfile.length < 3) {
+      this.setConstructionClip(child, progress, 'y');
+      return;
+    }
+    const profile = rawProfile.map((point) => child.localToWorld(new THREE.Vector3(
+      Number(point[0]) || 0,
+      Number(point[1]) || 0,
+      Number(point[2]) || 0,
+    )));
+    const crownIndex = profile.reduce((best, point, index) => (
+      point.y > profile[best].y ? index : best
+    ), 0);
+    if (crownIndex <= 0 || crownIndex >= profile.length - 1) {
+      this.setConstructionClip(child, progress, 'y');
+      return;
+    }
+    const courseStep = Math.max(
+      0.01,
+      Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01),
+    );
+    const pointAlong = (points, requestedDistance) => {
+      let travelled = 0;
+      for (let index = 1; index < points.length; index += 1) {
+        const segment = points[index].distanceTo(points[index - 1]);
+        if (travelled + segment < requestedDistance) {
+          travelled += segment;
+          continue;
+        }
+        const blend = segment > 0.000001
+          ? THREE.MathUtils.clamp((requestedDistance - travelled) / segment, 0, 1)
+          : 0;
+        return points[index - 1].clone().lerp(points[index], blend);
+      }
+      return points.at(-1).clone();
+    };
+    const revealOnHalf = (points) => {
+      const length = points.slice(1).reduce(
+        (sum, point, index) => sum + point.distanceTo(points[index]),
+        0,
+      );
+      const courseCount = Math.max(1, Math.ceil(length / courseStep));
+      const stepped = Math.min(
+        length,
+        Math.ceil(THREE.MathUtils.clamp(progress, 0, 1) * courseCount) * courseStep,
+      );
+      return pointAlong(points, stepped);
+    };
+    const leftHalf = profile.slice(0, crownIndex + 1);
+    const rightHalf = profile.slice(crownIndex).reverse();
+    const leftReveal = revealOnHalf(leftHalf);
+    const rightReveal = revealOnHalf(rightHalf);
+    const horizontalAxis = profile.at(-1).clone().sub(profile[0]);
+    horizontalAxis.y = 0;
+    if (horizontalAxis.lengthSq() < 0.000001) {
+      this.setConstructionClip(child, progress, 'y');
+      return;
+    }
+    horizontalAxis.normalize();
+    const leftLimit = horizontalAxis.dot(leftReveal);
+    const rightLimit = horizontalAxis.dot(rightReveal);
+    const planes = [
+      new THREE.Plane(horizontalAxis.clone().negate(), leftLimit),
+      new THREE.Plane(horizontalAxis.clone(), -rightLimit),
+    ];
+    materials.forEach((material) => {
+      material.clippingPlanes = planes.map((plane) => plane.clone());
+      material.clipIntersection = true;
+      material.userData.constructionRevealMode = 'two-sided-vault-courses-feet-to-crown';
+      material.needsUpdate = true;
+    });
+    if (progress > 0.001 && progress < 0.999999) {
+      this.syncConstructionCap(child, planes[0], 'vault-left-reveal');
+      this.syncConstructionCap(child, planes[1], 'vault-right-reveal');
+    } else this.hideConstructionCapsFor(child);
+    child.userData.constructionVaultCourseSequence = {
+      direction: 'both-springing-feet-to-crown',
+      progress: THREE.MathUtils.clamp(progress, 0, 1),
+    };
+  }
+
+  setConstructionStepOrder(stepIds = []) {
+    this.constructionStepOrder = normalizeConstructionStepOrder(stepIds);
+    this.constructionStepRank = new Map(this.constructionStepOrder.map((id, index) => [id, index]));
+  }
+
+  constructionRankFor(stepId) {
+    return this.constructionStepRank?.get(stepId) ?? CONSTRUCTION_STEP_INDEX[stepId] ?? Number.POSITIVE_INFINITY;
+  }
+
+  applyHallConstructionStep(stepId, rank, stepProgress, wallSystem) {
+    const complete = stepId === 'complete';
+    const stageRank = (id) => this.constructionRankFor(id);
+    const stageReached = (id) => complete || rank >= stageRank(id);
+    const currentStage = (id) => stepId === id;
+    const categories = {
+      'lower-walls': [],
+      'hall-vaults': [],
+      'hall-transverse-vaults': [],
+      'hall-barrel-spandrels': [],
+      'hall-barrel-axis-vaults': [],
+      'hall-barrel-surrounding-walls': [],
+      'hall-barrel-under-vault-walls': [],
+      'hall-walls': [],
+      'hall-transition': [],
+      'hall-cover': [],
+    };
+    const categoryFor = (child) => {
+      const barrelMode = this.building.hallCoverType === 'barrel';
+      if (child.userData?.isHallBarrelSpandrelInfill === true) return 'hall-barrel-spandrels';
+      if (child.userData?.isHallVaultArch === true) {
+        if (!barrelMode) return 'hall-vaults';
+        const barrelAxis = this.building.hallBarrelAxis === 'y' ? 'y' : 'x';
+        return child.userData?.hallVaultDirection === barrelAxis
+          ? 'hall-barrel-axis-vaults'
+          : 'hall-transverse-vaults';
+      }
+      if (child.userData?.isHallBoundaryVaultInfill === true) {
+        return barrelMode ? 'hall-barrel-under-vault-walls' : 'hall-walls';
+      }
+      if (child.userData?.isHallPerimeterWall === true) {
+        return barrelMode ? 'hall-barrel-surrounding-walls' : 'hall-walls';
+      }
+      if (child.userData?.isHallBayTransition === true) return 'hall-transition';
+      if (child.userData?.isHallBayCover === true
+        || child.userData?.isHallRibVaultIntersectionLine === true) return 'hall-cover';
+      const side = child.userData?.wallSide;
+      if (child.userData?.isHallBearingColumn === true
+        || side === 'hall_columns') return 'lower-walls';
+      if (child.userData?.isBrickFace === true
+        || ['north', 'south', 'east', 'west'].includes(side)) {
+        return barrelMode ? 'hall-barrel-surrounding-walls' : 'hall-walls';
+      }
+      return null;
+    };
+    wallSystem?.traverse((child) => {
+      if (child === wallSystem || (!child.isMesh && !child.isLine && !child.isLineSegments)) return;
+      if (child.userData?.roomDomePart === 'springing-ring') {
+        // Hall/Grid bay domes intentionally suppress the optional Room ring.
+        child.visible = false;
+        if (child.isMesh && child.userData?.constructionOriginalMaterial) this.clearConstructionClip(child);
+        return;
+      }
+      if (child.userData?.isKarbandiVisualGuide === true
+        || child.userData?.isHallArchConstructionGuide === true) {
+        child.visible = complete;
+        return;
+      }
+      const category = categoryFor(child);
+      if (category) categories[category].push(child);
+      else child.visible = complete;
+    });
+    Object.entries(categories).forEach(([stageId, objects]) => {
+      const domePartOrder = (child) => ({
+        'dome-drum': 0,
+        'dome-extra-leg': 1,
+        'between-dome-support-wall': 2,
+        'springing-ring': 3,
+        'dome-shell': 4,
+        'inner-dome-shell': 4,
+      })[child.userData?.roomDomePart] ?? 3;
+      const hallVaultConstructionBay = (child) => {
+        const directBay = child.userData?.hallBay;
+        const edge = child.userData?.hallGridEdge;
+        const gridX = Math.max(1, Math.round(Number(this.building.hallGridX) || 1));
+        const gridY = Math.max(1, Math.round(Number(this.building.hallGridY) || 1));
+        const spansX = this.building.buildingType === 'grid'
+          ? this.building.gridBaySpansX
+          : Array(gridX).fill(Number(this.building.hallBayWidth) || 4);
+        const spansY = this.building.buildingType === 'grid'
+          ? this.building.gridBaySpansY
+          : Array(gridY).fill(Number(this.building.hallBayDepth) || 4);
+        const width = spansX.reduce((sum, span) => sum + span, 0);
+        const depth = spansY.reduce((sum, span) => sum + span, 0);
+        const boundaries = (start, spans) => spans.reduce(
+          (values, span) => [...values, values.at(-1) + span],
+          [start],
+        );
+        const xBoundaries = boundaries(-width / 2, spansX);
+        const zBoundaries = boundaries(-depth / 2, spansY);
+        child.updateWorldMatrix(true, false);
+        const center = new THREE.Box3().setFromObject(child).getCenter(new THREE.Vector3());
+        const nearestBoundary = (coordinate, values) => values.reduce((best, value, index) => (
+          Math.abs(value - coordinate) < Math.abs(values[best] - coordinate) ? index : best
+        ), 0);
+        const containingBay = (coordinate, values) => THREE.MathUtils.clamp(
+          values.findIndex((boundary, index) => index > 0 && coordinate <= boundary + 0.000001) - 1,
+          0,
+          values.length - 2,
+        );
+        if (Array.isArray(directBay)
+          && (child.userData?.isHallBayTransition === true
+            || child.userData?.isHallBayCover === true
+            || child.userData?.isHallRibVaultIntersectionLine === true)) {
+          return [containingBay(center.x, xBoundaries), containingBay(center.z, zBoundaries)];
+        }
+        if (Array.isArray(directBay)
+          && child.userData?.isHallVaultArch !== true
+          && child.userData?.isHallBoundaryVaultInfill !== true) return directBay;
+        if (child.userData?.isHallBoundaryVaultInfill === true) {
+          const side = child.userData?.wallSide;
+          const ix = containingBay(center.x, xBoundaries);
+          const iy = containingBay(center.z, zBoundaries);
+          if (side === 'north') return [ix, 0];
+          if (side === 'south') return [ix, gridY - 1];
+          if (side === 'west') return [0, iy];
+          if (side === 'east') return [gridX - 1, iy];
+        }
+        if (!Array.isArray(edge)) return [0, 0];
+        const ix = child.userData?.hallVaultDirection === 'y'
+          ? nearestBoundary(center.x, xBoundaries)
+          : containingBay(center.x, xBoundaries);
+        const iy = child.userData?.hallVaultDirection === 'x'
+          ? nearestBoundary(center.z, zBoundaries)
+          : containingBay(center.z, zBoundaries);
+        return child.userData?.hallVaultDirection === 'y'
+          ? [THREE.MathUtils.clamp(ix - 1, 0, gridX - 1), THREE.MathUtils.clamp(iy, 0, gridY - 1)]
+          : [THREE.MathUtils.clamp(ix, 0, gridX - 1), THREE.MathUtils.clamp(iy - 1, 0, gridY - 1)];
+      };
+      const bayBatchedStage = [
+        'hall-vaults', 'hall-transverse-vaults', 'hall-barrel-axis-vaults',
+        'hall-transition', 'hall-cover',
+      ].includes(stageId);
+      if (bayBatchedStage) {
+        objects.forEach((child) => {
+          child.userData.hallConstructionBay = hallVaultConstructionBay(child);
+        });
+      }
+      const ordered = [...objects].sort((left, right) => {
+        const leftConstructionBay = bayBatchedStage
+          ? hallVaultConstructionBay(left)
+          : null;
+        const rightConstructionBay = bayBatchedStage
+          ? hallVaultConstructionBay(right)
+          : null;
+        const leftBay = left.userData?.hallBay || left.userData?.hallGridEdge || left.userData?.hallGridIntersection || [];
+        const rightBay = right.userData?.hallBay || right.userData?.hallGridEdge || right.userData?.hallGridIntersection || [];
+        return Number(leftConstructionBay?.[0] ?? leftBay[0] ?? 0) - Number(rightConstructionBay?.[0] ?? rightBay[0] ?? 0)
+          || Number(leftConstructionBay?.[1] ?? leftBay[1] ?? 0) - Number(rightConstructionBay?.[1] ?? rightBay[1] ?? 0)
+          || (stageId === 'hall-cover' ? domePartOrder(left) - domePartOrder(right) : 0)
+          || String(left.name).localeCompare(String(right.name));
+      });
+      const batches = bayBatchedStage
+        ? [...ordered.reduce((groups, child) => {
+          const bay = hallVaultConstructionBay(child);
+          const key = `${bay[0]}:${bay[1]}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(child);
+          return groups;
+        }, new Map()).values()]
+        : ['lower-walls', 'hall-walls', 'hall-barrel-spandrels', 'hall-barrel-surrounding-walls',
+          'hall-barrel-under-vault-walls'].includes(stageId)
+          ? [ordered]
+        : ordered.map((child) => [child]);
+      batches.forEach((batch, index) => {
+        const localProgress = currentStage(stageId)
+          ? THREE.MathUtils.clamp(stepProgress * Math.max(1, batches.length) - index, 0, 1)
+          : stageReached(stageId) ? 1 : 0;
+        batch.forEach((child) => {
+          const componentProgress = currentStage('hall-walls')
+            ? child.userData?.isHallBoundaryVaultInfill === true
+              ? THREE.MathUtils.clamp(localProgress * 2 - 1, 0, 1)
+              : THREE.MathUtils.clamp(localProgress * 2, 0, 1)
+            : localProgress;
+          child.visible = componentProgress > 0.001;
+          if (!child.isMesh || !child.visible) return;
+          if (currentStage(stageId)
+            && ['hall-vaults', 'hall-transverse-vaults', 'hall-barrel-axis-vaults'].includes(stageId)
+            && child.userData?.isHallVaultArch === true) {
+            this.setTwoSidedVaultCourseConstructionClip(child, componentProgress);
+          } else if (currentStage(stageId) && stageId === 'hall-transition'
+            && child.userData?.isHallFourVaultPendentive === true) {
+            this.setRoomCircularCourseConstructionReveal(child, componentProgress);
+          } else if (currentStage(stageId) && stageId === 'hall-cover'
+            && ['dome-drum', 'dome-extra-leg', 'dome-shell', 'inner-dome-shell']
+              .includes(child.userData?.roomDomePart)) {
+            this.setRoomCircularCourseConstructionReveal(child, componentProgress);
+          } else if (currentStage(stageId) && stageId === 'hall-cover'
+            && child.userData?.isHallBarrelCover === true) {
+            this.setHallBarrelSpanConstructionClip(child, componentProgress);
+          } else if (currentStage(stageId)) {
+            const beginsAtOwnLowestCourse = ['hall-barrel-spandrels', 'hall-barrel-under-vault-walls']
+              .includes(stageId);
+            this.setConstructionClip(
+              child,
+              componentProgress,
+              'y',
+              beginsAtOwnLowestCourse ? Number.NaN : 0,
+            );
+          }
+          else this.clearConstructionClip(child);
+        });
+      });
+    });
+    this.archInfillGroup.visible = stageReached('lower-walls');
+    this.placementGroup.visible = stageReached('room-decoration');
+    this.placementMaskGroup.visible = complete;
+    this.zoneGroup.visible = complete;
+    this.zoneDecorationGroup.visible = stageReached('room-decoration');
+    this.constructionGuideGroup.visible = false;
+    this.updateKarbandiReferenceHighlight();
+    this.updateWallSurfaceHighlight();
+  }
+
   applyRoomConstructionStep(stepId, rank, stepProgress, wallSystem) {
     const complete = stepId === 'complete';
-    const stageRank = (id) => CONSTRUCTION_STEP_INDEX[id];
+    const stageRank = (id) => this.constructionRankFor(id);
     const stageReached = (id) => complete || rank >= stageRank(id);
     const stageFinished = (id) => complete || rank > stageRank(id);
     const currentStage = (id) => stepId === id;
     const roomRibs = [];
     const roomRoofPanels = [];
     const roomBrickDecorations = [];
+    const squinchArchRibs = [];
+    const squinchUnderArchWalls = [];
+    const squinchUpperInfills = [];
     wallSystem?.traverse((child) => {
       if (child.isMesh && child.userData?.isKarbandi === true) roomRibs.push(child);
       if (child.isMesh && child.userData?.isKarbandiCover === true) roomRoofPanels.push(child);
       if (child.isMesh && child.userData?.isImportedWallDecoration === true) roomBrickDecorations.push(child);
+      if (child.isMesh && child.userData?.roomDomePart === 'squinch-transition-rib') squinchArchRibs.push(child);
+      if (child.isMesh && child.userData?.isRoomSquinchVerticalWallExtension === true) squinchUnderArchWalls.push(child);
+      if (child.isMesh && child.userData?.roomDomePart === 'squinch-transition-cover') squinchUpperInfills.push(child);
     });
     const ribIndexes = [...new Set(roomRibs.map((rib) => rib.userData.karbandiRibIndex))]
       .sort((a, b) => Number(a) - Number(b));
@@ -2761,14 +4143,13 @@ export class MehrazScene {
     const visibleRibIndexes = new Set(ribIndexes.slice(0, visibleRibCount));
     const roofPanelIndexes = [...new Set(roomRoofPanels.map((panel) => panel.userData.karbandiRoofPanel))]
       .sort((a, b) => Number(a) - Number(b));
-    const visibleRoofCount = currentStage('room-karbandi-roof')
-      ? Math.ceil(stepProgress * roofPanelIndexes.length)
-      : (stageFinished('room-karbandi-roof') ? roofPanelIndexes.length : 0);
-    const visibleRoofIndexes = new Set(roofPanelIndexes.slice(0, visibleRoofCount));
     const visibleDecorationCount = currentStage('room-decoration')
       ? Math.ceil(stepProgress * roomBrickDecorations.length)
       : (stageFinished('room-decoration') ? roomBrickDecorations.length : 0);
     const visibleDecorations = new Set(roomBrickDecorations.slice(0, visibleDecorationCount));
+    const squinchArchIndexes = [...new Set(squinchArchRibs.map((rib) => (
+      Number(rib.userData?.roomSquinchArchIndex) || 0
+    )))].sort((a, b) => a - b);
     const showVerticalStage = (child, id) => {
       child.visible = stageReached(id) && (!currentStage(id) || stepProgress > 0.001);
       if (!child.isMesh || !child.visible) return;
@@ -2778,14 +4159,125 @@ export class MehrazScene {
     const showCircularCourseStage = (child, id) => {
       child.visible = stageReached(id) && (!currentStage(id) || stepProgress > 0.001);
       if (!child.isMesh || !child.visible) return;
-      this.setRoomCircularCourseConstructionReveal(child, currentStage(id) ? stepProgress : 1);
+      // The circular-course shader is animation-only. Never create it while
+      // applying a later or completed stage; the permanent dome material must
+      // own the terminal model and the next architecture rebuild.
+      if (currentStage(id)) this.setRoomCircularCourseConstructionReveal(child, stepProgress);
+      else this.clearConstructionClip(child);
     };
+    const stoneSkirtEnabled = this.walls.stoneBase?.enabled === true
+      && Number(this.walls.stoneBase?.height) > 0.000001;
+    const stoneSkirtHeight = stoneSkirtEnabled ? Number(this.walls.stoneBase.height) : 0;
+    const usesFollowBuildingSkirt = stoneSkirtEnabled
+      && (this.walls.stoneBase?.planShape || 'follow') === 'follow';
     const verticalWallSides = new Set(['east', 'west', 'south', 'north', 'north_sides', 'north_top']);
+    const structuralBounds = new THREE.Box3();
+    wallSystem?.traverse((child) => {
+      if (!child.isMesh) return;
+      const side = child.userData?.wallSide;
+      const isStructuralWall = verticalWallSides.has(side) && !child.userData?.roomDomePart
+        && child.userData?.isImportedWallDecoration !== true;
+      if (isStructuralWall || child.userData?.isRoomExteriorColumn === true) {
+        structuralBounds.union(new THREE.Box3().setFromObject(child));
+      }
+    });
+    const structuralBottom = structuralBounds.isEmpty() ? 0 : structuralBounds.min.y;
+    const structuralTop = structuralBounds.isEmpty()
+      ? Math.max(0.5, Number(this.building.height) || 0.5)
+      : structuralBounds.max.y;
+    const wallStageOrigin = stoneSkirtEnabled
+      ? THREE.MathUtils.clamp(stoneSkirtHeight, structuralBottom, structuralTop)
+      : structuralBottom;
+    const sharedCourseLimit = (origin, top, progress) => {
+      const courseHeight = Math.max(
+        0.01,
+        Number(this.walls.bricks?.brickHeight || 0.08) + Number(this.walls.bricks?.mortar || 0.01),
+      );
+      const courseCount = Math.max(1, Math.ceil(Math.max(0, top - origin) / courseHeight));
+      const revealedCourses = Math.min(courseCount, Math.ceil(THREE.MathUtils.clamp(progress, 0, 1) * courseCount));
+      return Math.min(top, origin + revealedCourses * courseHeight);
+    };
+    const boundsFor = (objects) => objects.reduce(
+      (bounds, child) => bounds.union(new THREE.Box3().setFromObject(child)),
+      new THREE.Box3(),
+    );
+    const squinchUnderWallBounds = boundsFor(squinchUnderArchWalls);
+    const squinchUpperInfillBounds = boundsFor(squinchUpperInfills);
+    const showSharedVerticalStage = (child, id, bounds) => {
+      const reached = stageReached(id);
+      child.visible = reached && (!currentStage(id) || stepProgress > 0.001);
+      if (!child.isMesh || !child.visible) return;
+      if (currentStage(id) && !bounds.isEmpty()) {
+        const limit = sharedCourseLimit(bounds.min.y, bounds.max.y, stepProgress);
+        this.setSharedVerticalCourseConstructionClip(
+          child, limit, bounds.min.y, bounds.max.y, stepProgress,
+        );
+      } else this.clearConstructionClip(child);
+    };
+    const showRoomStructureStage = (child, includeColumnBaseWithSkirt = false) => {
+      const skirtIsCurrent = currentStage('room-skirt');
+      const wallIsCurrent = currentStage('lower-walls');
+      const participatesInSkirt = usesFollowBuildingSkirt || (includeColumnBaseWithSkirt && stoneSkirtEnabled);
+      const skirtReached = participatesInSkirt && stageReached('room-skirt');
+      const wallReached = stageReached('lower-walls');
+      child.visible = wallReached || (skirtReached && (!skirtIsCurrent || stepProgress > 0.001));
+      if (!child.isMesh || !child.visible) return;
+      if (skirtIsCurrent && participatesInSkirt) {
+        const skirtLimit = sharedCourseLimit(structuralBottom, wallStageOrigin, stepProgress);
+        this.setSharedVerticalCourseConstructionClip(
+          child, skirtLimit, structuralBottom, structuralTop, stepProgress,
+        );
+      } else if (wallIsCurrent) {
+        const wallLimit = sharedCourseLimit(wallStageOrigin, structuralTop, stepProgress);
+        this.setSharedVerticalCourseConstructionClip(
+          child, wallLimit, structuralBottom, structuralTop, stepProgress,
+        );
+      } else {
+        this.clearConstructionClip(child);
+      }
+    };
+    const showDoorStepStage = (child) => {
+      const stepNumber = Math.max(1, Number(child.userData?.doorStepNumber) || 1);
+      const stepCount = Math.max(stepNumber, Number(child.userData?.doorStepCount) || stepNumber);
+      const localProgress = currentStage('room-skirt')
+        ? THREE.MathUtils.clamp(stepProgress * stepCount - (stepNumber - 1), 0, 1)
+        : (stageFinished('room-skirt') ? 1 : 0);
+      child.visible = complete || localProgress > 0.001;
+      if (!child.isMesh || !child.visible) return;
+      if (currentStage('room-skirt')) this.setConstructionClip(child, localProgress, 'y');
+      else this.clearConstructionClip(child);
+      child.userData.roomConstructionDoorStepSequence = 'one-tread-and-riser-at-a-time';
+      child.userData.roomConstructionDoorStepProgress = localProgress;
+    };
 
     wallSystem?.traverse((child) => {
       if (!child.isObject3D || child === wallSystem) return;
       const part = child.userData?.roomDomePart;
       const side = child.userData?.wallSide;
+      if (child.userData?.isRaisedInteriorFloor === true) {
+        showVerticalStage(child, 'room-skirt');
+        child.userData.roomConstructionRaisedFloorSequence = 'with-stone-skirt-bottom-to-top';
+        return;
+      }
+      if (child.userData?.isDoorStep === true) {
+        showDoorStepStage(child);
+        return;
+      }
+      if (child.userData?.isIndependentStoneSkirt === true) {
+        showVerticalStage(child, 'room-skirt');
+        child.userData.roomConstructionStoneBaseSequence = 'first-bottom-to-top-stage';
+        return;
+      }
+      if (child.userData?.isRoomExteriorColumn === true) {
+        showRoomStructureStage(child, true);
+        child.userData.roomConstructionColumnSequence = 'with-walls-bottom-to-top';
+        return;
+      }
+      if (child.userData?.isSoldierCourse === true && verticalWallSides.has(side) && !part) {
+        showRoomStructureStage(child);
+        child.userData.roomConstructionOpeningCourseSequence = 'same-world-height-course-as-attached-wall';
+        return;
+      }
       if (child.userData?.isKarbandiVisualGuide === true) {
         child.visible = complete && (
           child.userData?.isKarbandiArchIntersectionGuide === true
@@ -2803,13 +4295,24 @@ export class MehrazScene {
           // Built-in running/stack/Flemish bonds are the wall's actual finish,
           // not a second decoration layer. Build them with their owning wall so
           // the saved perimeter phase remains continuous through every corner.
-          showVerticalStage(child, 'lower-walls');
+          showRoomStructureStage(child);
         }
         return;
       }
       if (child.userData?.isKarbandiCover === true) {
-        child.visible = complete || visibleRoofIndexes.has(child.userData.karbandiRoofPanel);
-        if (child.isMesh && child.visible) this.clearConstructionClip(child);
+        const panelIndex = roofPanelIndexes.indexOf(child.userData.karbandiRoofPanel);
+        const panelProgress = currentStage('room-karbandi-roof')
+          ? THREE.MathUtils.clamp(stepProgress * Math.max(1, roofPanelIndexes.length) - panelIndex, 0, 1)
+          : (stageFinished('room-karbandi-roof') ? 1 : 0);
+        child.visible = complete || panelProgress > 0.001;
+        if (child.isMesh && child.visible) {
+          if (currentStage('room-karbandi-roof')) {
+            // Wall-supported Karbandi panels continue upward with the same
+            // horizontal brick-course reveal as their adjacent wall. Other
+            // roof cells use the same bottom-to-top masonry discipline.
+            this.setConstructionClip(child, panelProgress, 'y');
+          } else this.clearConstructionClip(child);
+        }
         return;
       }
       if (child.userData?.isKarbandi === true) {
@@ -2817,9 +4320,41 @@ export class MehrazScene {
         if (child.isMesh && child.visible) this.clearConstructionClip(child);
         return;
       }
+      if (part === 'squinch-transition-rib') {
+        const sequenceIndex = squinchArchIndexes.indexOf(Number(child.userData?.roomSquinchArchIndex) || 0);
+        const archProgress = currentStage('room-squinch-arches')
+          ? THREE.MathUtils.clamp(stepProgress * Math.max(1, squinchArchIndexes.length) - sequenceIndex, 0, 1)
+          : (stageFinished('room-squinch-arches') ? 1 : 0);
+        child.visible = complete || archProgress > 0.001;
+        if (child.isMesh && child.visible) {
+          if (currentStage('room-squinch-arches')) {
+            this.setTwoSidedVaultCourseConstructionClip(child, archProgress);
+          } else this.clearConstructionClip(child);
+        }
+        child.userData.roomSquinchConstructionSequence = 'one-arch-at-a-time-both-feet-to-crown';
+        child.userData.roomSquinchConstructionArchProgress = archProgress;
+        return;
+      }
+      if (child.userData?.isRoomSquinchVerticalWallExtension === true) {
+        showSharedVerticalStage(child, 'room-squinch-under-arch-walls', squinchUnderWallBounds);
+        child.userData.roomSquinchConstructionSequence = 'after-all-arches-shared-bottom-to-top-wall-courses';
+        return;
+      }
+      if ((child.userData?.isRoomDomeTransitionDetail === true && part !== 'springing-ring')
+        || ['exterior-aligned-octagon-wall', 'octagon-inherited-opening-soldier']
+          .includes(part)
+        || ['squinch-transition-rib', 'pendentive-transition-rib', 'muqarnas-transition-rib'].includes(part)) {
+        showVerticalStage(child, 'room-transition-structure');
+        return;
+      }
       if (part === 'karbandi-roof-to-drum-infill-top'
         || (part === 'transition-cover' && child.userData?.isKarbandiCover !== true)) {
         showVerticalStage(child, 'room-transition-cover');
+        return;
+      }
+      if (part === 'squinch-transition-cover') {
+        showSharedVerticalStage(child, 'room-transition-cover', squinchUpperInfillBounds);
+        child.userData.roomSquinchConstructionSequence = 'after-under-arch-walls-shared-courses-to-drum';
         return;
       }
       if (part === 'dome-drum') {
@@ -2827,21 +4362,29 @@ export class MehrazScene {
         return;
       }
       if (part === 'dome-extra-leg') {
+        showCircularCourseStage(child, 'room-extra-leg');
+        return;
+      }
+      if (part === 'dome-shell' || part === 'inner-dome-shell') {
         showCircularCourseStage(child, 'room-dome');
         return;
       }
-      if (part === 'dome-shell' || part === 'inner-dome-shell' || part === 'between-dome-support-wall') {
-        showCircularCourseStage(child, 'room-dome');
+      if (part === 'between-dome-support-wall') {
+        showVerticalStage(child, 'room-dome');
         return;
       }
       if (part === 'springing-ring') {
-        child.visible = stageReached('room-dome') && (!currentStage('room-dome') || stepProgress > 0.001);
+        const coverType = this.building.domeCoverType || 'dome';
+        if (this.building.domeOuterRingEnabledByCoverType?.[coverType] === false) {
+          child.visible = false;
+          if (child.isMesh && child.userData?.constructionOriginalMaterial) this.clearConstructionClip(child);
+        } else showCircularCourseStage(child, 'room-outer-ring');
         return;
       }
       if (verticalWallSides.has(side) && !part) {
-        showVerticalStage(child, 'lower-walls');
+        showRoomStructureStage(child);
         child.userData.roomConstructionIncludesStoneBase = this.walls.stoneBase?.enabled === true;
-        child.userData.roomConstructionStoneBaseSequence = 'bottom-stone-first-then-wall-brick-courses';
+        child.userData.roomConstructionStoneBaseSequence = 'skirt-first-then-walls-with-exterior-columns';
         return;
       }
       if (side === 'room_dome_transition' || side === 'room_dome' || side === 'room_dome_inner' || side === 'room_dome_extra_leg' || side === 'room_dome_drum' || side === 'room_dome_ring') {
@@ -2852,7 +4395,18 @@ export class MehrazScene {
     this.placementGroup.visible = true;
     this.placementGroup.children.forEach((root) => {
       if (root.userData?.assetType === 'muqarnas_assembly') {
-        root.visible = complete;
+        root.visible = stageReached('room-transition-structure')
+          && (!currentStage('room-transition-structure') || stepProgress > 0.001);
+        const modules = root.children.filter((child) => child.isObject3D)
+          .sort((left, right) => {
+            const leftBox = new THREE.Box3().setFromObject(left);
+            const rightBox = new THREE.Box3().setFromObject(right);
+            return leftBox.min.y - rightBox.min.y || String(left.name).localeCompare(String(right.name));
+          });
+        const visibleCount = currentStage('room-transition-structure')
+          ? Math.ceil(stepProgress * modules.length)
+          : modules.length;
+        modules.forEach((module, index) => { module.visible = root.visible && index < visibleCount; });
         return;
       }
       root.visible = stageReached('room-decoration')
@@ -2884,6 +4438,7 @@ export class MehrazScene {
 
   applyConstructionStep(stepIndex = CONSTRUCTION_STEPS.length - 1, progress = 1) {
     this.ensureConstructionInteractionAvailable();
+    this.beginConstructionCapFrame();
     const nextStepIndex = Math.max(0, Math.min(CONSTRUCTION_STEPS.length - 1, Math.round(stepIndex)));
     const nextProgress = Math.max(0, Math.min(1, progress));
     const stepChanged = nextStepIndex !== this.constructionStepIndex;
@@ -2893,27 +4448,36 @@ export class MehrazScene {
     this.invalidate(stepChanged || stepJustCompleted);
     this.constructionStepIndex = nextStepIndex;
     const stepId = CONSTRUCTION_STEPS[this.constructionStepIndex]?.id || 'complete';
-    const rank = this.constructionStepIndex;
+    const rank = this.constructionRankFor(stepId);
     const wallSystem = this.wallSystemRoot();
     const stepProgress = nextProgress;
     this.constructionStepProgress = stepProgress;
+    if (['hall', 'grid'].includes(this.building.buildingType)) {
+      this.applyHallConstructionStep(stepId, rank, stepProgress, wallSystem);
+      return;
+    }
     if (this.building.type === 'room') {
       this.applyRoomConstructionStep(stepId, rank, stepProgress, wallSystem);
       return;
     }
     const northMetrics = this.northOpeningMetrics();
-    const southUnderArchRank = CONSTRUCTION_STEP_INDEX['south-wall'];
-    const archFillRank = CONSTRUCTION_STEP_INDEX['arch-fill'];
-    const lowerWallsRank = CONSTRUCTION_STEP_INDEX['lower-walls'];
-    const northUpperRank = CONSTRUCTION_STEP_INDEX['north-upper-wall'];
-    const karbandiReferenceRank = CONSTRUCTION_STEP_INDEX['karbandi-reference-rib'];
-    const karbandiRibsRank = CONSTRUCTION_STEP_INDEX['karbandi-ribs'];
-    const karbandiRoofRank = CONSTRUCTION_STEP_INDEX['karbandi-roof'];
+    const southUnderArchRank = this.constructionRankFor('south-wall');
+    const archFillRank = this.constructionRankFor('arch-fill');
+    const lowerWallsRank = this.constructionRankFor('lower-walls');
+    const northUpperRank = this.constructionRankFor('north-upper-wall');
+    const karbandiReferenceRank = this.constructionRankFor('karbandi-reference-rib');
+    const karbandiRibsRank = this.constructionRankFor('karbandi-ribs');
+    const karbandiRoofRank = this.constructionRankFor('karbandi-roof');
+    const portalTransitionRank = this.constructionRankFor('portal-transition');
+    const portalDrumRank = this.constructionRankFor('portal-drum');
+    const portalExtraLegRank = this.constructionRankFor('portal-extra-leg');
+    const portalOuterRingRank = this.constructionRankFor('portal-outer-ring');
+    const portalCoverRank = this.constructionRankFor('portal-cover');
     const showSouthUnderArch = rank >= southUnderArchRank;
     const showLowerWalls = rank >= lowerWallsRank;
     const showArch = rank >= archFillRank;
     const showNorthUpper = rank >= northUpperRank;
-    const showEverything = rank >= CONSTRUCTION_STEP_INDEX.complete;
+    const showEverything = stepId === 'complete';
     const karbandiRibMeshes = [];
     const karbandiCoverMeshes = [];
     wallSystem?.traverse((child) => {
@@ -2961,6 +4525,72 @@ export class MehrazScene {
         } else if (child.isMesh && child.visible) {
           this.clearConstructionClip(child);
         }
+        return;
+      }
+      const roomDomePart = child.userData?.roomDomePart;
+      const isPortalRaisedRibCover = child.userData?.isPortalHalfBayCover === true
+        && child.userData?.portalCoverType === 'raised-rib-vault';
+      if (isPortalRaisedRibCover) {
+        const coverReached = showEverything || rank >= portalCoverRank;
+        if (child.isLineSegments) {
+          // Mortar/groin lines must not float ahead of the masonry shell.
+          child.visible = showEverything || rank > portalCoverRank;
+        } else {
+          child.visible = coverReached;
+          if (child.isMesh && child.visible) {
+            if (stepId === 'portal-cover') {
+              const bounds = new THREE.Box3().setFromObject(child);
+              this.setConstructionClip(child, stepProgress, 'y', bounds.min.y, bounds.max.y);
+              child.userData.portalRaisedRibConstructionSequence = 'horizontal-brick-courses-bottom-to-crown';
+            } else this.clearConstructionClip(child);
+          }
+        }
+        return;
+      }
+      const isPortalTransitionPart = child.userData?.isRoomDomeTransition === true
+        || (child.userData?.isRoomDomeTransitionDetail === true && roomDomePart !== 'springing-ring')
+        || child.userData?.isRoomSquinchVerticalWallExtension === true;
+      if (isPortalTransitionPart) {
+        child.visible = showEverything || rank >= portalTransitionRank;
+        if (child.isMesh && child.visible) {
+          if (stepId === 'portal-transition' && roomDomePart === 'squinch-transition-rib') {
+            this.setTwoSidedVaultCourseConstructionClip(child, stepProgress);
+          } else if (stepId === 'portal-transition') this.setConstructionClip(child, stepProgress, 'y');
+          else this.clearConstructionClip(child);
+        }
+        return;
+      }
+      const portalCircularStage = (stageId, stageRank) => {
+        child.visible = showEverything || rank >= stageRank;
+        if (!child.isMesh || !child.visible) return;
+        if (stepId === stageId) this.setRoomCircularCourseConstructionReveal(child, stepProgress);
+        else this.clearConstructionClip(child);
+      };
+      if (roomDomePart === 'dome-drum') {
+        portalCircularStage('portal-drum', portalDrumRank);
+        return;
+      }
+      if (roomDomePart === 'dome-extra-leg') {
+        portalCircularStage('portal-extra-leg', portalExtraLegRank);
+        return;
+      }
+      if (['dome-shell', 'inner-dome-shell'].includes(roomDomePart)) {
+        portalCircularStage('portal-cover', portalCoverRank);
+        return;
+      }
+      if (roomDomePart === 'between-dome-support-wall') {
+        child.visible = showEverything || rank >= portalCoverRank;
+        if (child.isMesh && child.visible) {
+          if (stepId === 'portal-cover') this.setConstructionClip(child, stepProgress, 'y');
+          else this.clearConstructionClip(child);
+        }
+        return;
+      }
+      if (roomDomePart === 'springing-ring') {
+        if (this.building.domeOuterRingEnabledByCoverType?.dome === false) {
+          child.visible = false;
+          if (child.isMesh && child.userData?.constructionOriginalMaterial) this.clearConstructionClip(child);
+        } else portalCircularStage('portal-outer-ring', portalOuterRingRank);
         return;
       }
       const isSouthUnderArch = child.userData?.isSouthArchCap === true;
@@ -3016,7 +4646,11 @@ export class MehrazScene {
     this.applyPlacementDecorationSteps(stepId, rank, stepProgress);
     this.placementMaskGroup.visible = showEverything;
     this.zoneGroup.visible = showEverything;
-    this.zoneDecorationGroup.visible = showEverything || rank >= CONSTRUCTION_STEP_INDEX['decorate-south'];
+    const firstDecorationRank = Math.min(...[
+      'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides',
+      'decorate-north-top', 'decorate-arch',
+    ].map((id) => this.constructionRankFor(id)));
+    this.zoneDecorationGroup.visible = showEverything || rank >= firstDecorationRank;
     this.syncConstructionGuides(rank, wallSystem);
     this.constructionGuideGroup.traverse((child) => {
       if (!child.isMesh || child.userData?.isNorthWallArchGuide !== true) return;
@@ -3033,6 +4667,12 @@ export class MehrazScene {
   }
 
   ensureConstructionInteractionAvailable(forceRelease = false, reconnect = false) {
+    const hadActivePointerInteraction = Boolean(
+      this.transformControls?.dragging === true
+      || this.transformHandleActive === true
+      || this.nightLightDrag
+      || (Array.isArray(this.controls?._pointers) && this.controls._pointers.length > 0),
+    );
     if (forceRelease) {
       this.transformHandleActive = false;
       this.nightLightDrag = null;
@@ -3048,6 +4688,18 @@ export class MehrazScene {
     if (this.controls) {
       this.controls.enabled = !transformDragging && !lightDragging;
       if (forceRelease) {
+        const interactionElement = this.renderer?.domElement;
+        const capturedPointerIds = (Array.isArray(this.controls._pointers) ? this.controls._pointers : [])
+          .map((pointer) => Number(pointer?.pointerId ?? pointer))
+          .filter(Number.isFinite);
+        capturedPointerIds.forEach((pointerId) => {
+          try {
+            if (interactionElement?.hasPointerCapture?.(pointerId)) interactionElement.releasePointerCapture(pointerId);
+          } catch {
+            // The browser may already have released this pointer after a
+            // pointercancel or a window blur. Cleanup must remain idempotent.
+          }
+        });
         // OrbitControls keeps its gesture state separately from `enabled`.
         // Clear a missed pointer-up/cancel so the next drag starts normally
         // without moving the camera back to its saved position.
@@ -3057,7 +4709,8 @@ export class MehrazScene {
         // Re-register OrbitControls through its public lifecycle API. This
         // clears document-level pointer listeners left behind when a frame or
         // pointer-up is missed while construction is changing the scene.
-        if (reconnect && this.controls.disconnect && this.controls.connect && this.renderer?.domElement) {
+        if (reconnect && hadActivePointerInteraction
+          && this.controls.disconnect && this.controls.connect && this.renderer?.domElement) {
           this.controls.disconnect();
           this.controls.connect(this.renderer.domElement);
         }
@@ -3071,6 +4724,20 @@ export class MehrazScene {
     return this.controls?.enabled !== false;
   }
 
+  restoreCompletedConstructionSnapshot() {
+    try {
+      this.restoreConstructionMaterials();
+      this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
+      // Enforce a hard terminal invariant. If a future construction branch
+      // accidentally creates a reveal material while applying `complete`, it
+      // must not survive into building selection or the next animation.
+      this.restoreConstructionMaterials();
+    } finally {
+      this.ensureConstructionInteractionAvailable(true, true);
+      this.invalidate?.(true);
+    }
+  }
+
   playConstructionSequence(duration = 15, onStep = null, onDone = null) {
     if (this.constructionTimer) clearTimeout(this.constructionTimer);
     if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
@@ -3079,10 +4746,9 @@ export class MehrazScene {
     this.constructionRunId = runId;
     this.restoreConstructionMaterials();
     this.ensureConstructionInteractionAvailable(true, true);
-    const stepIndexes = CONSTRUCTION_STEPS
-      .map((step, index) => ({ step, index }))
-      .filter(({ step }) => this.hasConstructionStepContent(step.id))
-      .map(({ index }) => index);
+    const stepIndexes = normalizeConstructionStepOrder(this.constructionStepOrder)
+      .filter((id) => this.hasConstructionStepContent(id))
+      .map((id) => CONSTRUCTION_STEP_INDEX[id]);
     const total = stepIndexes.length;
     const perStep = Math.max(350, (Math.max(3, finite(duration, 15)) * 1000) / total);
     let sequenceIndex = 0;
@@ -3096,9 +4762,7 @@ export class MehrazScene {
       if (this.constructionAnimationFrame) cancelAnimationFrame(this.constructionAnimationFrame);
       this.constructionAnimationFrame = null;
       this.constructionTimer = null;
-      this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
-      this.restoreConstructionMaterials();
-      this.ensureConstructionInteractionAvailable(true, true);
+      this.restoreCompletedConstructionSnapshot();
       onDone?.();
     };
     const abortSafely = (error) => {
@@ -3110,10 +4774,9 @@ export class MehrazScene {
       this.constructionWatchdog = null;
       this.constructionTimer = null;
       this.constructionAnimationFrame = null;
-      try { this.restoreConstructionMaterials(); } catch (restoreError) {
-        console.error('Could not restore construction materials.', restoreError);
+      try { this.restoreCompletedConstructionSnapshot(); } catch (restoreError) {
+        console.error('Could not restore the completed construction snapshot.', restoreError);
       }
-      this.ensureConstructionInteractionAvailable(true, true);
       onDone?.();
     };
     const animateStep = () => {
@@ -3141,7 +4804,7 @@ export class MehrazScene {
           const easedProgress = rawProgress < 0.5
             ? 2 * rawProgress * rawProgress
             : 1 - ((-2 * rawProgress + 2) ** 2) / 2;
-          const buildProgress = ['south-wall', 'arch-fill', 'north-arch-guide', 'lower-walls', 'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'room-karbandi-ribs', 'room-karbandi-roof', 'room-transition-cover', 'room-drum', 'room-dome', 'room-decoration', 'north-upper-wall', 'muqarnas-tiers', 'decorate-south', 'decorate-east', 'decorate-west', 'decorate-north-sides', 'decorate-north-top', 'decorate-arch'].includes(stepId)
+          const buildProgress = ANIMATED_CONSTRUCTION_STEP_IDS.has(stepId)
             ? easedProgress
             : 1;
           this.applyConstructionStep(index, buildProgress);
@@ -3189,10 +4852,21 @@ export class MehrazScene {
     this.ensureConstructionInteractionAvailable(true, true);
   }
 
+  prepareForArchitectureChange() {
+    // A building replacement will dispose and rebuild the old scene on the
+    // next React commit. Cancel the animation and restore its temporary
+    // materials, but do not render a complete snapshot of geometry that is
+    // about to be discarded. On detailed Room/Vestibule models that redundant
+    // completion traversal can occupy the main thread long enough to make the
+    // building picker appear frozen.
+    this.stopConstructionSequence();
+    this.constructionStepIndex = CONSTRUCTION_STEPS.length - 1;
+    this.constructionStepProgress = 1;
+  }
+
   showCompleteConstruction() {
     this.stopConstructionSequence();
-    this.applyConstructionStep(CONSTRUCTION_STEPS.length - 1, 1);
-    this.restoreConstructionMaterials();
+    this.restoreCompletedConstructionSnapshot();
   }
 
   applyStageAppearance() {
@@ -3436,7 +5110,7 @@ export class MehrazScene {
       };
     };
     return [
-      makePortal(walls.southOpenings.door, 0, 'door'),
+      makePortal(walls.southOpenings.door, walls.southOpenings.door.sillHeight, 'door'),
       makePortal(
         walls.southOpenings.window,
         Math.min(Math.max(0, b.height - 0.3), walls.southOpenings.window.sillHeight),
@@ -3659,7 +5333,7 @@ export class MehrazScene {
       this.groundMesh.material.metalness = 0;
       this.groundMesh.material.needsUpdate = true;
     }
-    if (this.grid) this.grid.visible = !this.nightPreview;
+    if (this.grid) this.grid.visible = !this.nightPreview && this.grid.userData.hideAfterFirstGridBay !== true;
     this.renderer.toneMapping = this.nightPreview ? THREE.ACESFilmicToneMapping : THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = this.nightPreview ? 0.9 : 1;
     this.rebuildNightLights();
@@ -3803,16 +5477,29 @@ export class MehrazScene {
     const b = this.building;
     const floorMaterial = makeMaterial(b.groundColor, 0.86);
     this.groundMesh = box(40, 0.12, 40, floorMaterial, [0, -0.08, 0]);
+    this.groundMesh.userData.isStageSurface = true;
     this.buildingGroup.add(this.groundMesh);
-    const wallSystem = buildWallSystem(b, this.walls, this.zones);
+    const wallSystem = buildWallSystem(b, this.walls, this.zones, { gridTemplateCache: this.gridTemplateCache });
+    wallSystem.visible = this.architectureVisible !== false;
     if (this.stageRenderMode === 'flat') this.applyPureSolidWallMaterials(wallSystem);
     this.buildingGroup.add(wallSystem);
-    const grid = new THREE.GridHelper(40, 40, '#ad9d72', '#d5c79f');
+    const isEmptyGridBuilding = b.buildingType === 'grid'
+      && (b.gridRemovedBays || []).length >= b.hallGridX * b.hallGridY;
+    const gridSize = b.buildingType === 'grid' ? Math.max(b.width, b.depth) : 40;
+    const gridDivisions = b.buildingType === 'grid' ? 9 : 40;
+    const grid = new THREE.GridHelper(
+      gridSize,
+      gridDivisions,
+      b.buildingType === 'grid' ? '#858b90' : '#ad9d72',
+      b.buildingType === 'grid' ? '#a5aaae' : '#d5c79f',
+    );
     grid.position.y = 0.001;
     grid.material.transparent = true;
     grid.material.opacity = 0.34;
     this.grid = grid;
-    grid.visible = !this.nightPreview;
+    grid.userData.isStageSurface = true;
+    grid.userData.hideAfterFirstGridBay = b.buildingType === 'grid' && !isEmptyGridBuilding;
+    grid.visible = !this.nightPreview && grid.userData.hideAfterFirstGridBay !== true;
     this.buildingGroup.add(grid);
     if (this.nightPreview) {
       this.groundMesh.material.color.set(NIGHT_GROUND_COLOR);
@@ -3825,6 +5512,8 @@ export class MehrazScene {
     if (this.constructionStepIndex < CONSTRUCTION_STEPS.length - 1) this.applyConstructionStep(this.constructionStepIndex);
     this.updateWallSurfaceHighlight();
     this.updateKarbandiReferenceHighlight();
+    this.updateGridElementHighlight();
+    this.updateGridBayHighlight();
     if (this.sectionViewEnabled) this.applyRoomSectionClipping();
   }
 
@@ -3879,6 +5568,7 @@ export class MehrazScene {
     const greenHeight = walls.pointedArch.greenHeight ?? Math.max(0, sideTop - archHalfSpan * 0.6);
     const archPoints = walls.pointedArch.enabled
       ? archCurve((westX + eastX) / 2, archHalfSpan, sideTop, sideTop, greenOffset, greenHeight, 36, {
+        archType: walls.pointedArch.archType,
         redOffset: walls.pointedArch.redOffset,
         redRadius: walls.pointedArch.redRadius,
       })
@@ -4159,6 +5849,135 @@ export class MehrazScene {
     this.updateWallSurfaceHighlight();
   }
 
+  clearGridElementHighlight() {
+    if (!this.gridElementHighlight) return;
+    this.scene.remove(this.gridElementHighlight);
+    this.gridElementHighlight.traverse((child) => {
+      child.geometry?.dispose?.();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.filter(Boolean).forEach((material) => material.dispose?.());
+    });
+    this.gridElementHighlight = null;
+  }
+
+  setGridElementSelection(selections = []) {
+    this.selectedGridElementIds = [...new Set((Array.isArray(selections) ? selections : [])
+      .map((selection) => typeof selection === 'string' ? selection : selection?.id)
+      .filter(Boolean))];
+    this.updateGridElementHighlight();
+  }
+
+  setGridBaySelectionEnabled(enabled) {
+    this.gridBaySelectionEnabled = enabled === true;
+  }
+
+  clearGridBayHighlight() {
+    if (!this.gridBayHighlight) return;
+    this.scene.remove(this.gridBayHighlight);
+    this.gridBayHighlight.traverse((child) => {
+      child.geometry?.dispose?.();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.filter(Boolean).forEach((material) => material.dispose?.());
+    });
+    this.gridBayHighlight = null;
+  }
+
+  setGridBaySelection(keys = []) {
+    this.selectedGridBayKeys = [...new Set((Array.isArray(keys) ? keys : [])
+      .filter((key) => typeof key === 'string'))];
+    this.updateGridBayHighlight();
+  }
+
+  updateGridBayHighlight() {
+    this.invalidate();
+    this.clearGridBayHighlight();
+    if (this.building?.buildingType !== 'grid' || !this.selectedGridBayKeys.length) return;
+    const xSpans = this.building.gridBaySpansX || [];
+    const ySpans = this.building.gridBaySpansY || [];
+    const width = xSpans.reduce((sum, span) => sum + span, 0);
+    const depth = ySpans.reduce((sum, span) => sum + span, 0);
+    const selected = new Set(this.selectedGridBayKeys);
+    const root = new THREE.Group();
+    root.name = 'Selected Grid floor cells';
+    ySpans.forEach((bayDepth, iy) => xSpans.forEach((bayWidth, ix) => {
+      if (!selected.has(`${ix}:${iy}`)) return;
+      const x = -width / 2 + xSpans.slice(0, ix).reduce((sum, span) => sum + span, 0) + bayWidth / 2;
+      const z = -depth / 2 + ySpans.slice(0, iy).reduce((sum, span) => sum + span, 0) + bayDepth / 2;
+      const highlight = new THREE.Mesh(
+        new THREE.PlaneGeometry(Math.max(0.05, bayWidth - 0.08), Math.max(0.05, bayDepth - 0.08)),
+        new THREE.MeshBasicMaterial({ color: '#f0ca2e', transparent: true, opacity: 0.34, side: THREE.DoubleSide, depthTest: false }),
+      );
+      highlight.rotation.x = -Math.PI / 2;
+      highlight.position.set(x, 0.025, z);
+      highlight.renderOrder = 1000;
+      highlight.userData.isGridBayHighlight = true;
+      root.add(highlight);
+    }));
+    this.gridBayHighlight = root;
+    this.scene.add(root);
+  }
+
+  updateGridElementHighlight() {
+    this.invalidate();
+    this.clearGridElementHighlight();
+    if (this.building?.buildingType !== 'grid' || !this.selectedGridElementIds?.length) return;
+    const selected = new Set(this.selectedGridElementIds);
+    const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
+    if (!wallSystem) return;
+    wallSystem.updateMatrixWorld(true);
+    const root = new THREE.Group();
+    root.name = 'Selected Grid component transparent yellow boundary';
+    const addHighlight = (geometry, matrix, sourceMaterial) => {
+      if (!geometry) return;
+      const fillMaterial = new THREE.MeshBasicMaterial({
+        color: '#ffd928',
+        transparent: true,
+        opacity: 0.13,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      if (sourceMaterial?.clippingPlanes?.length) {
+        fillMaterial.clippingPlanes = sourceMaterial.clippingPlanes;
+        fillMaterial.clipIntersection = sourceMaterial.clipIntersection === true;
+      }
+      const highlight = new THREE.Mesh(geometry.clone(), fillMaterial);
+      matrix.decompose(highlight.position, highlight.quaternion, highlight.scale);
+      highlight.renderOrder = 30;
+      highlight.userData.isGridElementHighlight = true;
+      if (!sourceMaterial?.clippingPlanes?.length) {
+        const boundary = new THREE.LineSegments(
+          new THREE.EdgesGeometry(highlight.geometry, 20),
+          new THREE.LineBasicMaterial({ color: '#ffe252', transparent: true, opacity: 0.9, depthTest: false }),
+        );
+        boundary.renderOrder = 31;
+        boundary.userData.isGridElementHighlight = true;
+        highlight.add(boundary);
+      }
+      root.add(highlight);
+    };
+    wallSystem.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
+      const sourceMaterial = Array.isArray(child.material) ? child.material[0] : child.material;
+      if (child.isInstancedMesh && Array.isArray(child.userData?.gridInstances)) {
+        const instanceMatrix = new THREE.Matrix4();
+        child.userData.gridInstances.forEach((instance, index) => {
+          if (!selected.has(instance.id)) return;
+          child.getMatrixAt(index, instanceMatrix);
+          addHighlight(child.geometry, child.matrixWorld.clone().multiply(instanceMatrix), sourceMaterial);
+        });
+        return;
+      }
+      if (selected.has(child.userData?.gridElementId)) addHighlight(child.geometry, child.matrixWorld, sourceMaterial);
+    });
+    if (!root.children.length) return;
+    this.gridElementHighlight = root;
+    this.scene.add(root);
+  }
+
   wallSideForHit(hit) {
     if (this.building.type === 'room'
       && (this.building.roomPlanShape || 'square') !== 'square'
@@ -4171,6 +5990,16 @@ export class MehrazScene {
 
   setSquinchArchEditing(active) {
     this.squinchArchEditing = active === true;
+    this.updateWallSurfaceHighlight();
+  }
+
+  setNorthArchEditing(active) {
+    this.northArchEditing = active === true;
+    this.updateWallSurfaceHighlight();
+  }
+
+  setRoomDomeArchEditing(active) {
+    this.roomDomeArchEditing = active === true;
     this.updateWallSurfaceHighlight();
   }
 
@@ -4212,6 +6041,7 @@ export class MehrazScene {
     greenOnly = false,
   }) {
     if (!construction) return;
+    greenOnly = greenOnly || construction.archType === 'one-point';
     const pointGeometry = new THREE.SphereGeometry(0.09, 16, 12);
     const guideGroup = new THREE.Group();
     guideGroup.name = name;
@@ -4331,23 +6161,46 @@ export class MehrazScene {
     return guideGroup;
   }
 
-  orientArchConstructionGuideToRoomSection(guide, centerX, sourceGuideZ, centerZ) {
-    if (!guide
-      || this.sectionViewEnabled !== true
-      || (this.sectionViewAxis || 'x') !== 'x'
-      || this.building?.type !== 'room'
-      || this.building?.domeTransition !== 'squinch') return guide;
-    // The normal editor draws guides in the north-facing XY plane. The Room
-    // section camera looks west along -X, so rotate that complete diagram into
-    // the north-south YZ cut plane. The original guide depth becomes a tiny
-    // offset toward the camera, keeping every circle, radius, and curve visible.
-    const sectionTransform = new THREE.Matrix4()
-      .makeTranslation(centerX, 0, centerZ)
-      .multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2))
-      .multiply(new THREE.Matrix4().makeTranslation(-centerX, 0, -sourceGuideZ));
-    guide.applyMatrix4(sectionTransform);
-    guide.userData.archConstructionGuidePlane = 'room-north-south-section-facing-east-camera';
+  orientArchConstructionGuideToRoomSection(object, centerX = 0, sourceGuideZ = 0, centerZ = 0, guide = object) {
+    if (!object || !guide || this.sectionViewEnabled !== true) return guide;
+    // Every construction diagram is authored in a local XY plane, but wall,
+    // radial-opening, and reference-rib transforms can leave that plane edge-on
+    // to a section camera. Rotate the complete placed guide about its visible
+    // centre so circles, centre points, arcs, and radii all face the active
+    // section without changing their height or apparent location in the model.
+    object.updateWorldMatrix(true, true);
+    const worldQuaternion = object.getWorldQuaternion(new THREE.Quaternion());
+    const currentNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuaternion).normalize();
+    const axis = this.sectionViewAxis === 'y' ? 'y' : 'x';
+    // X Slice is viewed from east (+X) and retains the established -X-facing
+    // guide convention. Y Slice is viewed from south (+Z).
+    const targetNormal = axis === 'y'
+      ? new THREE.Vector3(0, 0, 1)
+      : new THREE.Vector3(-1, 0, 0);
+    const rotation = new THREE.Quaternion().setFromUnitVectors(currentNormal, targetNormal);
+    if (Math.abs(rotation.w) < 0.999999999 || rotation.x || rotation.y || rotation.z) {
+      const bounds = new THREE.Box3().setFromObject(object);
+      const pivot = bounds.isEmpty()
+        ? object.getWorldPosition(new THREE.Vector3())
+        : bounds.getCenter(new THREE.Vector3());
+      const sectionTransform = new THREE.Matrix4()
+        .makeTranslation(pivot.x, pivot.y, pivot.z)
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(rotation))
+        .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+      const nextWorldMatrix = sectionTransform.multiply(object.matrixWorld.clone());
+      const parentInverse = object.parent
+        ? object.parent.matrixWorld.clone().invert()
+        : new THREE.Matrix4();
+      parentInverse.multiply(nextWorldMatrix).decompose(object.position, object.quaternion, object.scale);
+      object.updateWorldMatrix(true, true);
+    }
+    guide.userData.archConstructionGuidePlane = axis === 'y'
+      ? 'east-west-section-facing-south-camera'
+      : 'room-north-south-section-facing-east-camera';
+    guide.userData.archConstructionSectionAxis = axis;
+    guide.userData.archConstructionSectionFacing = axis === 'y' ? 'positive-z-camera' : 'positive-x-camera';
     guide.userData.archConstructionSectionCenter = [centerX, centerZ];
+    guide.userData.archConstructionSectionSourceGuideZ = sourceGuideZ;
     return guide;
   }
 
@@ -4374,7 +6227,7 @@ export class MehrazScene {
       springY,
       walls.karbandi.greenOffset,
       greenHeight,
-      { redOffset: walls.karbandi.redOffset },
+      { archType: walls.karbandi.archType, redOffset: walls.karbandi.redOffset },
     );
     const guide = this.addArchConstructionDiagram(root, {
       construction,
@@ -4398,6 +6251,7 @@ export class MehrazScene {
       .multiply(new THREE.Matrix4().makeRotationY(angle))
       .multiply(new THREE.Matrix4().makeTranslation(walls.karbandi.referenceX, 0, walls.karbandi.referenceZ));
     guide.applyMatrix4(groupTransform.multiply(referenceTransform));
+    this.orientArchConstructionGuideToRoomSection(guide, centerX, -walls.karbandi.ribDepth / 2 - 0.035, centerZ);
   }
 
   addNorthArchConstructionGuides(root) {
@@ -4427,21 +6281,28 @@ export class MehrazScene {
       greenOffset,
       greenHeight + archShiftY,
       {
+      archType: walls.pointedArch.archType,
       redOffset: walls.pointedArch.redOffset,
       redRadius: walls.pointedArch.redRadius,
       },
     );
-    this.addArchConstructionDiagram(root, {
+    const guideZ = -halfDepth - walls.sideOffsets.north - thickness - 0.035;
+    const guide = this.addArchConstructionDiagram(root, {
       construction,
       centerX,
-      guideZ: -halfDepth - walls.sideOffsets.north - thickness - 0.035,
+      guideZ,
       layerDirection: -1,
       name: 'North arch symmetric red and green construction circles',
       guideType: 'north',
     });
+    this.orientArchConstructionGuideToRoomSection(guide, centerX, guideZ, 0);
   }
 
   addRoomDomeArchConstructionGuides(root) {
+    // Hall owns one representative, camera-facing dome guide. Falling through
+    // to the generic Room selector would attach a second guide to the first
+    // dome found in the grid, splitting one diagram across two different bays.
+    if (['hall', 'grid'].includes(this.building?.buildingType)) return;
     const innerDome = this.selectedWallSide === 'room_dome_inner';
     const portalDome = this.building.type !== 'room' && this.walls.portalCover === 'dome';
     if ((!innerDome && this.selectedWallSide !== 'room_dome')
@@ -4547,7 +6408,7 @@ export class MehrazScene {
         springY,
         domeArch.greenOffset,
         springY + domeArch.greenHeightOffset,
-        { redOffset: domeArch.redOffset, redRadius: domeArch.redRadius },
+        { archType: domeArch.archType, redOffset: domeArch.redOffset, redRadius: domeArch.redRadius },
       );
     const guideZ = portalDome ? centerZ - 0.035 : centerZ;
     const guide = this.addArchConstructionDiagram(root, {
@@ -4644,7 +6505,7 @@ export class MehrazScene {
       springY,
       settings.greenOffset,
       springY + settings.greenHeightOffset,
-      { redOffset: settings.redOffset },
+      { archType: settings.archType, redOffset: settings.redOffset },
     );
     const referenceWall = portalSquinchActive ? 'south' : 'north';
     let guideZ = portalSquinchActive
@@ -4752,9 +6613,9 @@ export class MehrazScene {
     const movedToOctagon = Boolean(octagonHost && inheritedOpening);
     const octagonTopY = Number(octagonHost?.userData.roomKarbandiOctagonTopStart?.[1]);
     const hostHeight = movedToOctagon && Number.isFinite(octagonTopY) ? octagonTopY : wallHeight;
-    const bottom = openingType === 'window'
-      ? (movedToOctagon ? Math.max(0, Number(opening.sillHeight) || 0) : Math.min(wallHeight - 0.3, opening.sillHeight))
-      : 0;
+    const bottom = movedToOctagon
+      ? Math.max(0, Number(opening.sillHeight) || 0)
+      : Math.min(wallHeight - 0.3, opening.sillHeight);
     const profile = movedToOctagon
       ? null
       : southOpeningProfile(opening, 0, span, hostHeight, bottom);
@@ -4771,7 +6632,7 @@ export class MehrazScene {
       movedToOctagon ? inheritedOpening.springY : profile.springTop,
       opening.arch.greenOffset,
       movedToOctagon ? inheritedOpening.greenHeight : profile.greenHeight,
-      { redOffset: opening.arch.redOffset, redRadius: opening.arch.redRadius },
+      { archType: opening.arch.archType, redOffset: opening.arch.redOffset, redRadius: opening.arch.redRadius },
     );
     if (!construction) return;
     const localGuideRoot = new THREE.Group();
@@ -4815,16 +6676,67 @@ export class MehrazScene {
       localGuideRoot.rotation.y = -Math.PI / 2;
     }
     root.add(localGuideRoot);
+    this.orientArchConstructionGuideToRoomSection(localGuideRoot, centerX, -0.035, centerZ, guide);
   }
 
   addRoomPlanOpeningConstructionGuide(root) {
     const [prefix, openingId] = String(this.selectedOpeningGuide || '').split(':');
     if (prefix !== 'plan' || !openingId) return;
     const b = normalizeBuilding(this.building);
-    if (b.type !== 'room' || (b.roomPlanShape || 'square') === 'square') return;
+    const hallMode = ['hall', 'grid'].includes(b.buildingType);
+    if (b.type !== 'room' || (!hallMode && (b.roomPlanShape || 'square') === 'square')) return;
     const walls = normalizeWallSystem(this.walls, b);
     const opening = walls.roomPlanOpenings?.find((entry) => entry.id === openingId);
     if (!opening || opening.head !== 'arch') return;
+    if (hallMode) {
+      const angle = ((Number(opening.rotation) % 360) + 360) % 360;
+      const side = [
+        { name: 'north', center: 0, span: b.width, origin: new THREE.Vector3(0, 0, -b.depth / 2), direction: new THREE.Vector3(1, 0, 0), placementDirection: 1 },
+        { name: 'east', center: 90, span: b.depth, origin: new THREE.Vector3(b.width / 2, 0, 0), direction: new THREE.Vector3(0, 0, 1), placementDirection: 1 },
+        { name: 'south', center: 180, span: b.width, origin: new THREE.Vector3(0, 0, b.depth / 2), direction: new THREE.Vector3(-1, 0, 0), placementDirection: 1 },
+        { name: 'west', center: 270, span: b.depth, origin: new THREE.Vector3(-b.width / 2, 0, 0), direction: new THREE.Vector3(0, 0, -1), placementDirection: 1 },
+      ].reduce((nearest, candidate) => {
+        const raw = Math.abs(angle - candidate.center);
+        const distance = Math.min(raw, 360 - raw);
+        return !nearest || distance < nearest.distance ? { ...candidate, distance } : nearest;
+      }, null);
+      let delta = angle - side.center;
+      while (delta > 180) delta -= 360;
+      while (delta < -180) delta += 360;
+      const maximumCenter = Math.max(0, side.span / 2 - opening.width / 2);
+      const along = THREE.MathUtils.clamp(delta / 45 * side.span / 2, -maximumCenter, maximumCenter);
+      const hostCenter = side.origin.clone().addScaledVector(side.direction, along);
+      const springY = opening.sillHeight + opening.height;
+      const construction = pointedArchConstruction(
+        0,
+        opening.width / 2,
+        springY,
+        opening.arch.greenOffset,
+        opening.arch.greenHeight,
+        { archType: opening.arch.archType, redOffset: opening.arch.redOffset },
+      );
+      if (!construction) return;
+      const localGuideRoot = new THREE.Group();
+      localGuideRoot.position.copy(hostCenter);
+      localGuideRoot.rotation.y = Math.atan2(-side.direction.z, side.direction.x);
+      const guide = this.addArchConstructionDiagram(localGuideRoot, {
+        construction,
+        centerX: 0,
+        guideZ: -0.035,
+        layerDirection: -1,
+        name: `Hall ${side.name} ${opening.type} ${opening.id} arch construction circles and radii`,
+        guideType: opening.type,
+      });
+      if (!guide) return;
+      guide.userData.wallSide = side.name;
+      guide.userData.roomPlanOpeningId = opening.id;
+      guide.userData.openingHostSurface = `hall-${side.name}-wall`;
+      guide.userData.openingHostCenterWorld = hostCenter.toArray();
+      guide.userData.openingHostRotation = opening.rotation;
+      root.add(localGuideRoot);
+      this.orientArchConstructionGuideToRoomSection(localGuideRoot, hostCenter.x, -0.035, hostCenter.z, guide);
+      return;
+    }
     const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
     const planGroup = wallSystem?.children.find((child) => child.userData?.roomPlanShape === b.roomPlanShape);
     const planVertices = planGroup?.userData.roomPlanVertices || wallSystem?.userData.roomPlanVertices;
@@ -4850,7 +6762,7 @@ export class MehrazScene {
     const direction = end.clone().sub(start).normalize();
     const localDistance = centerPhase - segmentStarts[segmentIndex];
     const hostCenter = start.clone().addScaledVector(direction, localDistance);
-    const bottom = opening.type === 'window' ? opening.sillHeight : 0;
+    const bottom = opening.sillHeight;
     const springY = bottom + opening.height;
     const construction = pointedArchConstruction(
       0,
@@ -4858,7 +6770,7 @@ export class MehrazScene {
       springY,
       opening.arch.greenOffset,
       opening.arch.greenHeight,
-      { redOffset: opening.arch.redOffset },
+      { archType: opening.arch.archType, redOffset: opening.arch.redOffset },
     );
     if (!construction) return;
     const localGuideRoot = new THREE.Group();
@@ -4880,20 +6792,14 @@ export class MehrazScene {
     guide.userData.openingHostSegmentIndex = segmentIndex;
     guide.userData.openingHostRotation = opening.rotation;
     root.add(localGuideRoot);
+    this.orientArchConstructionGuideToRoomSection(localGuideRoot, hostCenter.x, -0.035, hostCenter.z, guide);
   }
 
   updateWallSurfaceHighlight() {
     this.invalidate();
     this.clearWallSurfaceHighlight();
     const openSide = this.selectedWallSide === 'south_arch' ? 'south' : this.selectedWallSide?.startsWith('north_') ? 'north' : this.selectedWallSide;
-    const roomKarbandiActive = this.building.type === 'room' && this.building.domeTransition === 'karbandi';
-    const showKarbandiRibArchGuide = this.karbandiRibArchEditing && (this.walls.karbandi?.enabled === true || roomKarbandiActive);
-    const showSquinchArchGuide = this.squinchArchEditing && (
-      (this.building.type === 'room' && this.building.domeTransition === 'squinch')
-      || (this.building.type !== 'room' && this.walls.portalTransition === 'squinch')
-    );
-    const showRoomPlanOpeningGuide = String(this.selectedOpeningGuide || '').startsWith('plan:');
-    if ((!this.selectedWallSide && !showKarbandiRibArchGuide && !showSquinchArchGuide && !showRoomPlanOpeningGuide) || !this.walls.enabled) return;
+    if (!this.selectedWallSide || !this.walls.enabled) return;
     if (this.selectedWallSide && this.walls.openSides.includes(openSide)) return;
     const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
     if (!wallSystem) return;
@@ -4964,15 +6870,6 @@ export class MehrazScene {
       }
       root.add(highlight);
     });
-    if (root.children.length && selectedSide === 'north_top') this.addNorthArchConstructionGuides(root);
-    if (root.children.length && ['room_dome', 'room_dome_inner'].includes(selectedSide)) this.addRoomDomeArchConstructionGuides(root);
-    if (
-      root.children.length
-      && (selectedSide === 'south' || (this.building.type === 'room' && ['north', 'east', 'west'].includes(selectedSide)))
-    ) this.addRoomWallOpeningConstructionGuides(root);
-    if (showRoomPlanOpeningGuide) this.addRoomPlanOpeningConstructionGuide(root);
-    if (showKarbandiRibArchGuide) this.addKarbandiRibArchConstructionGuides(root);
-    if (showSquinchArchGuide) this.addRoomSquinchArchConstructionGuides(root);
     if (!root.children.length) {
       highlightMaterial.dispose();
       edgeMaterial.dispose();
@@ -5048,7 +6945,17 @@ export class MehrazScene {
     } else if (view === 'side') {
       this.camera.position.set(target.x + radius * 1.55, target.y, target.z);
     } else {
-      this.camera.position.set(target.x - radius * 1.15, target.y + radius * 0.78, target.z - radius * 1.25);
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+      const aspect = Math.max(0.1, this.camera.aspect || 1);
+      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+      const limitingFov = Math.max(THREE.MathUtils.degToRad(8), Math.min(verticalFov, horizontalFov));
+      const fitDistance = Math.max(
+        radius,
+        (Math.max(0.5, sphere.radius) / Math.sin(limitingFov / 2)) * 1.08,
+      );
+      const direction = new THREE.Vector3(-1.15, 0.78, -1.25).normalize();
+      this.camera.position.copy(target).addScaledVector(direction, fitDistance);
     }
     this.camera.lookAt(target);
     this.camera.updateProjectionMatrix();
@@ -5064,6 +6971,15 @@ export class MehrazScene {
     });
     this.sectionMaterialClipping.clear();
     if (this.sectionCapGroup) this.clearGroup(this.sectionCapGroup);
+    this.syncHallSectionConstructionGuides();
+  }
+
+  syncHallSectionConstructionGuides() {
+    this.buildingGroup?.traverse((child) => {
+      const plane = child.userData?.hallConstructionGuidePlane;
+      if (!plane) return;
+      child.visible = plane === (this.sectionViewEnabled ? this.sectionViewAxis : 'x');
+    });
   }
 
   roomSectionHatchMaterial() {
@@ -5435,7 +7351,9 @@ ${shader.fragmentShader}`.replace(
       configureMaterial(material);
     });
     if (!Object.hasOwn(child.userData, 'constructionOriginalCustomDepthMaterial')) {
-      child.userData.constructionOriginalCustomDepthMaterial = child.customDepthMaterial || null;
+      // Three.js checks customDepthMaterial against `undefined`; assigning
+      // null is interpreted as a real material and crashes shadow rendering.
+      child.userData.constructionOriginalCustomDepthMaterial = child.customDepthMaterial;
       child.customDepthMaterial = new THREE.MeshDepthMaterial({
         depthPacking: THREE.RGBADepthPacking,
         side: Array.isArray(child.material) ? child.material[0]?.side : child.material.side,
@@ -5543,6 +7461,29 @@ ${shader.fragmentShader}`.replace(
       || child.userData?.roomDomeOpeningVoid === true
       || child.userData?.roomDomePart === 'karbandi-roof-to-drum-infill'
       || child.userData?.roomDomePart === 'karbandi-rib-top-backing';
+    const sectionHatchLinePoints = (loop) => {
+      const points = [];
+      const sums = loop.map((point) => point.x + point.y);
+      const minimum = Math.floor(Math.min(...sums) / hatchSpacing) * hatchSpacing;
+      const maximum = Math.ceil(Math.max(...sums) / hatchSpacing) * hatchSpacing;
+      for (let diagonal = minimum; diagonal <= maximum + 0.000001; diagonal += hatchSpacing) {
+        const intersections = [];
+        loop.forEach((start, index) => {
+          const end = loop[(index + 1) % loop.length];
+          const startDistance = start.x + start.y - diagonal;
+          const endDistance = end.x + end.y - diagonal;
+          if (!((startDistance <= 0 && endDistance > 0)
+            || (endDistance <= 0 && startDistance > 0))) return;
+          const amount = startDistance / (startDistance - endDistance);
+          intersections.push(start.clone().lerp(end, amount));
+        });
+        intersections.sort((left, right) => left.x - right.x);
+        for (let index = 0; index + 1 < intersections.length; index += 2) {
+          points.push(intersections[index], intersections[index + 1]);
+        }
+      }
+      return points;
+    };
     const addSectionCaps = (child, sectionLoops, capSource, sourcePartOverride = null) => {
       sectionLoops.forEach((loop, loopIndex) => {
         const shape = new THREE.Shape();
@@ -5552,11 +7493,13 @@ ${shader.fragmentShader}`.replace(
         const geometry = new THREE.ShapeGeometry(shape);
         const positions = geometry.getAttribute('position');
         const uvs = geometry.getAttribute('uv');
+        const isHallVaultCut = child.userData?.isHallVaultArch === true;
+        const faceOffset = isHallVaultCut ? 0.01 : 0.0005;
         for (let vertex = 0; vertex < positions.count; vertex += 1) {
           const horizontal = positions.getX(vertex);
           const y = positions.getY(vertex);
-          if (axis === 'y') positions.setXYZ(vertex, horizontal, y, center + 0.0005);
-          else positions.setXYZ(vertex, center + 0.0005, y, horizontal);
+          if (axis === 'y') positions.setXYZ(vertex, horizontal, y, center + faceOffset);
+          else positions.setXYZ(vertex, center + faceOffset, y, horizontal);
           uvs.setXY(vertex, horizontal / hatchSpacing, y / hatchSpacing);
         }
         positions.needsUpdate = true;
@@ -5573,7 +7516,18 @@ ${shader.fragmentShader}`.replace(
           indices.needsUpdate = true;
         }
         geometry.computeVertexNormals();
-        const cap = new THREE.Mesh(geometry, cutMaterial);
+        const capMaterial = isHallVaultCut ? cutMaterial.clone() : cutMaterial;
+        if (isHallVaultCut) {
+          capMaterial.depthTest = true;
+          capMaterial.depthWrite = true;
+          capMaterial.polygonOffsetFactor = -4;
+          capMaterial.polygonOffsetUnits = -4;
+          capMaterial.userData = {
+            ...cutMaterial.userData,
+            hallVaultSectionDepthOccludedAtExactCut: true,
+          };
+        }
+        const cap = new THREE.Mesh(geometry, capMaterial);
         cap.name = `${child.name || 'Masonry'} section cut face ${loopIndex + 1}`;
         cap.renderOrder = 40;
         cap.userData.roomSectionCutFace = true;
@@ -5585,16 +7539,152 @@ ${shader.fragmentShader}`.replace(
         cap.userData.roomSectionHatchSpacing = hatchSpacing;
         cap.userData.roomSectionAxis = axis;
         cap.userData.roomSectionVoidPreserved = ['dome-shell', 'inner-dome-shell', 'dome-drum'].includes(child.userData?.roomDomePart);
+        if (child.userData?.isHallVaultArch === true) {
+          cap.renderOrder = 44;
+          cap.userData.isHallVaultSectionCap = true;
+          cap.userData.hallVaultSectionCapRule = 'actual-square-vault-profile-at-section-plane';
+          cap.userData.hallVaultSectionCapVisibilityRule = 'camera-side-offset-with-normal-depth-occlusion-on-exact-vault-contour';
+          cap.userData.hallVaultSectionCapFaceOffset = faceOffset;
+          cap.userData.hallVaultSectionCapHatchRule = 'material-clipped-hatch-only-no-free-line-overdraw';
+        }
+        const hatchPoints = sectionHatchLinePoints(loop);
+        if (hatchPoints.length && !isHallVaultCut) {
+          const lineFaceOffset = 0.0015;
+          const linePositions = hatchPoints.map((point) => (
+            axis === 'y'
+              ? new THREE.Vector3(point.x, point.y, center + lineFaceOffset)
+              : new THREE.Vector3(center + lineFaceOffset, point.y, point.x)
+          ));
+          const hatchLines = new THREE.LineSegments(
+            new THREE.BufferGeometry().setFromPoints(linePositions),
+            new THREE.LineBasicMaterial({
+              color: '#111111',
+              transparent: true,
+              opacity: 0.9,
+              depthTest: true,
+              depthWrite: false,
+            }),
+          );
+          hatchLines.name = `${cap.name} explicit hatch`;
+          hatchLines.renderOrder = cap.renderOrder + 1;
+          hatchLines.userData.isRoomSectionHatchLine = true;
+          hatchLines.userData.roomSectionHatch = 'explicit-black-45-degree-lines';
+          hatchLines.userData.roomSectionAxis = axis;
+          cap.add(hatchLines);
+          cap.userData.roomSectionExplicitHatch = true;
+        }
         this.sectionCapGroup.add(cap);
       });
     };
-    [this.buildingGroup, this.archInfillGroup].forEach((root) => root?.traverse((child) => {
+    [
+      this.buildingGroup,
+      this.archInfillGroup,
+      this.placementGroup,
+      this.projectInstanceGroup,
+    ].forEach((root) => root?.traverse((child) => {
       if (!child.isMesh || child === this.groundMesh || !child.visible || excluded(child)) return;
       const automaticLoops = this.roomSectionLoopsForMesh(child, center, axis);
       let sectionLoops = automaticLoops.length
         ? automaticLoops
         : this.roomTransitionSectionLoops(child, center, axis);
-      let capSource = automaticLoops.length ? 'mesh-intersection' : 'transition-wall-profile';
+      let capSource = automaticLoops.length
+        ? 'mesh-intersection'
+        : 'transition-wall-profile';
+      const isLongitudinalHallVault = child.userData?.isHallVaultArch === true
+        && ((axis === 'x' && child.userData?.hallVaultDirection === 'y')
+          || (axis === 'y' && child.userData?.hallVaultDirection === 'x'));
+      if (isLongitudinalHallVault) {
+        const bounds = new THREE.Box3().setFromObject(child);
+        const cutMinimum = axis === 'y' ? bounds.min.z : bounds.min.x;
+        const cutMaximum = axis === 'y' ? bounds.max.z : bounds.max.x;
+        if (cutMinimum < center - 0.0001 && cutMaximum > center + 0.0001) {
+          sectionLoops = this.roomSectionEnvelopeLoopsForMeshes(
+            [child],
+            center,
+            Number(child.userData?.hallVaultProfileHeight) || 0.05,
+            0.0001,
+            0,
+            axis,
+          );
+          capSource = 'exact-hall-longitudinal-vault-soffit-extrados-envelope';
+        }
+      }
+      if (child.userData?.isHallBoundaryVaultInfill === true) {
+        // This is a real closed masonry solid. Use only its exact triangle-plane
+        // contour; an envelope fallback would incorrectly close the open arch.
+        // At a Hall bay centre, the section often lies exactly on triangulated
+        // vertices. Sample an imperceptible distance into the retained half to
+        // avoid that degenerate coplanar case, then draw the cap on the true cut.
+        sectionLoops = automaticLoops;
+        if (!sectionLoops.length) {
+          const side = child.userData?.wallSide;
+          const axisMatchesProfile = axis === 'x'
+            ? side === 'north' || side === 'south'
+            : side === 'east' || side === 'west';
+          const profile = (child.userData?.hallVaultSoffitProfile || [])
+            .map((point) => new THREE.Vector2(Number(point[0]), Number(point[1])))
+            .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+            .sort((left, right) => left.x - right.x);
+          if (axisMatchesProfile && profile.length >= 2) {
+            child.updateWorldMatrix(true, false);
+            const localProbe = new THREE.Vector3(
+              axis === 'x' ? center : 0,
+              0,
+              axis === 'y' ? center : 0,
+            ).applyMatrix4(child.matrixWorld.clone().invert());
+            const localU = localProbe.x;
+            let soffitY = null;
+            for (let index = 0; index < profile.length - 1; index += 1) {
+              const start = profile[index];
+              const end = profile[index + 1];
+              if (localU < start.x - 0.0001 || localU > end.x + 0.0001) continue;
+              const amount = Math.abs(end.x - start.x) > 0.000001
+                ? (localU - start.x) / (end.x - start.x)
+                : 0;
+              soffitY = THREE.MathUtils.lerp(start.y, end.y, amount);
+              break;
+            }
+            const wallTop = Number(child.userData?.hallBoundaryVaultWallTop);
+            if (Number.isFinite(soffitY) && Number.isFinite(wallTop) && soffitY > wallTop + 0.0001) {
+              const bounds = new THREE.Box3().setFromObject(child);
+              const minimum = axis === 'x' ? bounds.min.z : bounds.min.x;
+              const maximum = axis === 'x' ? bounds.max.z : bounds.max.x;
+              if (maximum > minimum + 0.0001) sectionLoops = [[
+                new THREE.Vector2(minimum, wallTop),
+                new THREE.Vector2(maximum, wallTop),
+                new THREE.Vector2(maximum, soffitY),
+                new THREE.Vector2(minimum, soffitY),
+              ]];
+            }
+          }
+        }
+        capSource = automaticLoops.length
+          ? 'exact-hall-boundary-vault-infill-mesh-intersection'
+          : 'exact-hall-boundary-vault-infill-profile-section';
+      }
+      const hallOpenTransitionInterface = ['hall', 'grid'].includes(this.building?.buildingType)
+        && (child.userData?.isHallBayTransition === true
+          || child.userData?.roomDomePart === 'transition-cover');
+      if (!sectionLoops.length && !hallOpenTransitionInterface
+        && child.userData?.isHallBoundaryVaultInfill !== true) {
+        child.updateWorldMatrix(true, false);
+        const bounds = new THREE.Box3().setFromObject(child);
+        const minimum = axis === 'y' ? bounds.min.z : bounds.min.x;
+        const maximum = axis === 'y' ? bounds.max.z : bounds.max.x;
+        if (minimum < center - 0.0001 && maximum > center + 0.0001) {
+          const fallbackThickness = Math.max(
+            0.01,
+            Number(child.userData?.hallVaultProfileHeight)
+              || Number(child.userData?.roofThickness)
+              || Number(child.geometry?.userData?.domeShellThickness)
+              || 0.05,
+          );
+          sectionLoops = this.roomSectionEnvelopeLoopsForMeshes(
+            [child], center, fallbackThickness, 0.0001, 0, axis,
+          );
+          if (sectionLoops.length) capSource = 'open-solid-section-envelope-fallback';
+        }
+      }
       if (this.building?.domeTransitionCoverEnabled === true
         && child.userData?.roomDomePart === 'exterior-aligned-octagon-wall') {
         const completeWallSection = this.roomTransitionSectionLoops(child, center, axis);
@@ -5694,25 +7784,28 @@ ${shader.fragmentShader}`.replace(
     }
   }
 
+  roomSectionCutCenter(axis = 'x') {
+    return 0;
+  }
+
   applyRoomSectionClipping() {
     this.restoreRoomSectionMaterials();
     if (!this.sectionViewEnabled) return;
-    const walls = normalizeWallSystem(this.walls, this.building);
-    const westX = -this.building.width / 2 - walls.sideOffsets.west;
-    const eastX = this.building.width / 2 + walls.sideOffsets.east;
-    const northZ = -this.building.depth / 2 - walls.sideOffsets.north;
-    const southZ = this.building.depth / 2 + walls.sideOffsets.south;
-    const centerX = (westX + eastX) / 2;
-    const centerZ = (northZ + southZ) / 2;
     const axis = this.sectionViewAxis === 'y' ? 'y' : 'x';
-    const center = axis === 'y' ? centerZ : centerX;
+    // Every section remains referenced to the world grid centre. Hall cap
+    // surfaces receive their own small camera-side visual offset in
+    // buildRoomSectionCaps; the architectural cut plane itself never moves.
+    const center = this.roomSectionCutCenter(axis);
+    this.sectionCutCenter = center;
     const planeNormal = axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0);
     this.sectionClipPlane = new THREE.Plane(planeNormal, center);
-    if (this.building.type === 'room' || this.building.buildingType === 'portal') {
-      this.buildRoomSectionCaps(center, axis);
-    }
+    this.buildRoomSectionCaps(center, axis);
+    this.syncHallSectionConstructionGuides();
     const applyPlane = (root, plane, skipNestedProjects = false) => {
       const visit = (child) => {
+        if (child === this.groundMesh || child === this.grid || child.userData?.isStageSurface === true) return;
+        if (child.userData?.isHallArchConstructionGuide === true
+          || child.userData?.isKarbandiVisualGuide === true) return;
         if (skipNestedProjects && child !== root && child.userData?.isProjectInstance === true) return;
         if (child.material) {
           const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -5741,25 +7834,8 @@ ${shader.fragmentShader}`.replace(
       this.zoneDecorationGroup,
       this.placementGroup,
       this.placementMaskGroup,
+      this.projectInstanceGroup,
     ].forEach((root) => applyPlane(root, this.sectionClipPlane));
-    this.projectInstanceGroup?.updateWorldMatrix(true, true);
-    this.projectInstanceGroup?.children.forEach((project) => {
-      const localPlane = new THREE.Plane(
-        axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0),
-        Number(project.userData?.[axis === 'y' ? 'sectionCenterZ' : 'sectionCenterX']) || 0,
-      );
-      const worldPlane = localPlane.applyMatrix4(project.matrixWorld);
-      applyPlane(project, worldPlane, true);
-      project.traverse((child) => {
-        if (child === project || child.userData?.isProjectInstance !== true) return;
-        child.updateWorldMatrix(true, true);
-        const nestedPlane = new THREE.Plane(
-          axis === 'y' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(-1, 0, 0),
-          Number(child.userData?.[axis === 'y' ? 'sectionCenterZ' : 'sectionCenterX']) || 0,
-        ).applyMatrix4(child.matrixWorld);
-        applyPlane(child, nestedPlane, true);
-      });
-    });
     this.invalidate(true);
   }
 
@@ -5768,10 +7844,17 @@ ${shader.fragmentShader}`.replace(
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());
     const radius = Math.max(size.x, size.y, size.z, 2) * 1.4;
-    this.controls.target.set(center.x, Math.max(0.4, center.y), center.z);
+    const cutCenter = Number.isFinite(this.sectionCutCenter)
+      ? this.sectionCutCenter
+      : this.roomSectionCutCenter(axis);
+    this.controls.target.set(
+      axis === 'x' ? cutCenter : center.x,
+      Math.max(0.4, center.y),
+      axis === 'y' ? cutCenter : center.z,
+    );
     this.camera.up.set(0, 1, 0);
-    if (axis === 'y') this.camera.position.set(center.x, this.controls.target.y, center.z + radius);
-    else this.camera.position.set(center.x + radius, this.controls.target.y, center.z);
+    if (axis === 'y') this.camera.position.set(this.controls.target.x, this.controls.target.y, radius);
+    else this.camera.position.set(radius, this.controls.target.y, this.controls.target.z);
     this.camera.lookAt(this.controls.target);
     this.camera.updateProjectionMatrix();
     this.controls.update();
@@ -5789,6 +7872,10 @@ ${shader.fragmentShader}`.replace(
       if (next) {
         this.applyRoomSectionClipping();
         if (axisChanged) this.frameRoomSectionView(nextAxis);
+        // Rebuild every active construction diagram for the newly selected
+        // section plane. Otherwise switching X/Y leaves existing guides in the
+        // previous plane and makes their circles appear edge-on.
+        if (axisChanged) this.updateWallSurfaceHighlight();
       }
       return next;
     }
@@ -6389,6 +8476,58 @@ ${shader.fragmentShader}`.replace(
         return;
       }
     }
+    const wallSystem = this.architectureVisible !== false
+      ? this.buildingGroup.children.find((child) => child.userData?.wallSystem)
+      : null;
+    if (wallSystem && this.building.buildingType === 'grid' && this.gridBaySelectionEnabled === true) {
+      const floorPoint = new THREE.Vector3();
+      const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      if (this.raycaster.ray.intersectPlane(floorPlane, floorPoint)) {
+        const xSpans = this.building.gridBaySpansX || [];
+        const ySpans = this.building.gridBaySpansY || [];
+        const width = xSpans.reduce((sum, span) => sum + span, 0);
+        const depth = ySpans.reduce((sum, span) => sum + span, 0);
+        const localX = floorPoint.x + width / 2;
+        const localY = floorPoint.z + depth / 2;
+        const findSpan = (position, spans) => {
+          let cursor = 0;
+          for (let index = 0; index < spans.length; index += 1) {
+            cursor += spans[index];
+            if (position >= 0 && position <= cursor) return index;
+          }
+          return -1;
+        };
+        const ix = findSpan(localX, xSpans);
+        const iy = findSpan(localY, ySpans);
+        if (ix >= 0 && iy >= 0) {
+          this.callbacks.onGridBaySelection?.({
+            bay: [ix, iy],
+            key: `${ix}:${iy}`,
+            additive: event.ctrlKey || event.metaKey || event.shiftKey,
+          });
+          event.preventDefault();
+          return;
+        }
+      }
+    }
+    if (wallSystem && this.building.buildingType === 'grid' && this.building.gridStageEditEnabled === true) {
+      const gridHit = this.raycaster.intersectObject(wallSystem, true).find((hit) => (
+        hit.object?.isMesh && ['wall', 'vault', 'dome', 'transition'].includes(hit.object?.userData?.gridElementType)
+      ));
+      if (gridHit) {
+        const instance = gridHit.object.isInstancedMesh
+          ? gridHit.object.userData.gridInstances?.[gridHit.instanceId]
+          : null;
+        this.callbacks.onGridElementSelection?.({
+          id: instance?.id || gridHit.object.userData.gridElementId,
+          type: instance?.type || gridHit.object.userData.gridElementType,
+          bay: instance?.bay || gridHit.object.userData.gridBay || null,
+        });
+        event.preventDefault();
+        return;
+      }
+    }
+    this.callbacks.onGridElementSelection?.(null);
     const projectInstanceId = projectInstanceIdFromHits(
       this.raycaster.intersectObjects(this.projectInstanceGroup.children, true),
       this.projectInstanceGroup,
@@ -6409,7 +8548,6 @@ ${shader.fragmentShader}`.replace(
       this.selectZone(zoneId);
       return;
     }
-    const wallSystem = this.buildingGroup.children.find((child) => child.userData?.wallSystem);
     const wallHit = wallSystem
       ? this.raycaster.intersectObject(wallSystem, true).find((hit) => hit.object?.isMesh && hit.object?.userData?.wallSide)
       : null;
@@ -6579,11 +8717,12 @@ ${shader.fragmentShader}`.replace(
     if (controlsChanged) this.invalidate();
   };
 
-  clearGroup(group) {
+  clearGroup(group, disposeShared = false) {
     group.traverse((child) => {
-      child.geometry?.dispose?.();
+      if (disposeShared || child.geometry?.userData?.gridSharedTemplate !== true) child.geometry?.dispose?.();
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.filter(Boolean).forEach((material) => {
+        if (!disposeShared && material.userData?.gridSharedTemplate === true) return;
         material.userData?.generatedTexture?.dispose?.();
         material.map?.dispose?.();
         material.dispose?.();
@@ -6615,7 +8754,11 @@ ${shader.fragmentShader}`.replace(
     this.clearGroup(this.zoneGroup);
     this.clearGroup(this.placementGroup);
     this.clearGroup(this.projectInstanceGroup);
+    this.clearGridElementHighlight();
+    this.clearGridBayHighlight();
     this.clearWallSurfaceHighlight();
+    this.gridTemplateCache.templates.forEach((template) => this.clearGroup(template, true));
+    this.gridTemplateCache.templates.clear();
     this.nightLightObjects.forEach(({ helper, marker, targetMarker }) => {
       helper?.dispose?.();
       marker?.geometry?.dispose?.();

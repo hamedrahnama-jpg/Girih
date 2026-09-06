@@ -8,6 +8,37 @@ import {
   normalizeMehrazProjectPayload,
   projectIdentityAfterStageAddition,
 } from './project-persistence.js';
+import { saveCombinationProfile } from './combination-profiles.js';
+
+test('projects persist independent building-transition-cover profiles', () => {
+  const room = normalizeBuilding({
+    type: 'room', buildingType: 'room', domeTransition: 'karbandi', domeCoverType: 'dome', height: 7,
+  });
+  const roomWalls = normalizeWallSystem({ ...DEFAULT_WALL_SYSTEM, color: '#123456' }, room);
+  let combinationProfiles = saveCombinationProfile(null, room, roomWalls);
+  const hall = normalizeBuilding({
+    type: 'room', buildingType: 'hall', hallTransitionType: 'karbandi', hallCoverType: 'barrel', height: 4,
+  });
+  const hallWalls = normalizeWallSystem({ ...DEFAULT_WALL_SYSTEM, color: '#654321' }, hall);
+  combinationProfiles = saveCombinationProfile(combinationProfiles, hall, hallWalls);
+
+  const constructionStepOrder = ['empty', 'hall-cover', 'lower-walls', 'hall-vaults', 'complete'];
+  const stored = createMehrazProjectPayload({
+    building: hall,
+    walls: hallWalls,
+    placements: [],
+    combinationProfiles,
+    constructionStepOrder,
+  });
+  const reopened = normalizeMehrazProjectPayload(JSON.parse(JSON.stringify(stored)));
+
+  assert.equal(reopened.version, MEHRAZ_PROJECT_SCHEMA_VERSION);
+  assert.equal(reopened.combinationProfiles.profiles['room::karbandi::dome'].building.height, 7);
+  assert.equal(reopened.combinationProfiles.profiles['room::karbandi::dome'].walls.color, '#123456');
+  assert.equal(reopened.combinationProfiles.profiles['hall::karbandi::barrel'].building.height, 4);
+  assert.equal(reopened.combinationProfiles.profiles['hall::karbandi::barrel'].walls.color, '#654321');
+  assert.ok(reopened.constructionStepOrder.indexOf('hall-cover') < reopened.constructionStepOrder.indexOf('lower-walls'));
+});
 
 test('First staged project starts a new composition save target', () => {
   const identity = projectIdentityAfterStageAddition({
@@ -54,8 +85,10 @@ test('Room projects save and reopen with dome, transition, and independent bonds
     domeTransition: 'karbandi',
     domeTransitionCoverEnabled: true,
     domeDrumHeight: 0.65,
+    domeDrumHeightByTransition: { karbandi: 0.65 },
     domeExtraLegColor: '#3a8f5d',
     domeOuterLegExtensionByCoverType: { dome: 0.75 },
+    domeOuterLegExtensionByTransitionAndCoverType: { karbandi: { dome: 0.75 } },
     domePatternCoverage: 72,
     domeArch: { redOffset: -0.4, greenOffset: 0.8, greenHeightOffset: 0.3 },
   });
@@ -69,6 +102,7 @@ test('Room projects save and reopen with dome, transition, and independent bonds
         room_dome_extra_leg: { source: 'builtin', builtIn: 'flemish', scale: 1, offsetU: 0, offsetV: 0 },
         room_dome_extra_leg_interior: { source: 'builtin', builtIn: 'stack', scale: 1, offsetU: 0, offsetV: 0 },
         room_dome_drum: { source: 'builtin', builtIn: 'flemish', scale: 1, offsetU: 0, offsetV: 0 },
+        room_dome_drum_interior: { source: 'builtin', builtIn: 'stack', scale: 1, offsetU: 0, offsetV: 0 },
         room_dome_transition: { source: 'builtin', builtIn: 'running', scale: 1, offsetU: 0, offsetV: 0 },
       },
     },
@@ -130,6 +164,7 @@ test('Room projects save and reopen with dome, transition, and independent bonds
   assert.equal(reopened.walls.bricks.sideBonds.room_dome_extra_leg.builtIn, 'flemish');
   assert.equal(reopened.walls.bricks.sideBonds.room_dome_extra_leg_interior.builtIn, 'stack');
   assert.equal(reopened.walls.bricks.sideBonds.room_dome_drum.builtIn, 'flemish');
+  assert.equal(reopened.walls.bricks.sideBonds.room_dome_drum_interior.builtIn, 'stack');
   assert.equal(reopened.walls.bricks.sideBonds.room_dome_transition.builtIn, 'running');
   assert.equal(reopened.projectInstances.length, 2);
   assert.deepEqual(reopened.projectInstances[0].transform, {

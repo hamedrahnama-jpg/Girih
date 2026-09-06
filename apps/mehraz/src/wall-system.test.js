@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { archCourseDistanceAtPoint, buildWallSystem, configureStoneBaseMaterial, createRoomPlanOpening, DEFAULT_WALL_SYSTEM, karbandiGroupYForWallTopLegCenters, karbandiGroupZForWallLegCenters, normalizeKarbandiRibCount, karbandiReferenceZForRibCount, karbandiReferenceZSolutions, karbandiSpanForWallLegCenters, normalizeWallSystem, pointedArchConstruction, portalDefaultWallSystem, roomPlanOpeningsWithDefaultDoor, sampledCurveIntervalsAtOrAbove, solveKarbandiWallSeating, southOpeningProfile, wallConnectedRibIndexes, wallContextLibraryAsset } from './wall-system.js';
-import { buildingForSelectedType, buildingSurfaces, CONSTRUCTION_STEPS, constructionStepsForBuilding, defaultZoneBounds, MehrazScene, moveZoneVerticallyByBrick, normalizeBuilding, resizeZoneHeightByBrick, zoneBrickHeightStep, zonePatternMapTransform, zoneSoldierCourses, zoneWorldTransform } from './mehraz-scene.js';
+import { archCourseDistanceAtPoint, buildWallSystem, configureStoneBaseMaterial, createRoomPlanOpening, DEFAULT_WALL_SYSTEM, karbandiGroupYForWallTopLegCenters, karbandiGroupZForWallLegCenters, normalizeKarbandiRibCount, karbandiReferenceZForRibCount, karbandiReferenceZSolutions, karbandiSpanForWallLegCenters, normalizeWallSystem, pointedArchConstruction, portalDefaultWallSystem, roomPlanOpeningsWithDefaultDoor, sampledCurveIntervalsAtOrAbove, solveKarbandiOneLegCornerSeating, solveKarbandiWallSeating, southOpeningProfile, wallConnectedRibIndexes, wallContextLibraryAsset } from './wall-system.js';
+import { ANIMATED_CONSTRUCTION_STEP_IDS, buildingForSelectedType, buildingSurfaces, CONSTRUCTION_STEPS, constructionStepsForBuilding, defaultZoneBounds, MehrazScene, moveZoneVerticallyByBrick, normalizeBuilding, resizeHallVaultProfileHeight, resizeHallVaultProfileWidth, resizeZoneHeightByBrick, zoneBrickHeightStep, zonePatternMapTransform, zoneSoldierCourses, zoneWorldTransform } from './mehraz-scene.js';
 
 function constructionScene() {
   const scene = Object.create(MehrazScene.prototype);
@@ -27,6 +27,8 @@ function karbandiConstructionScene() {
   const scene = constructionScene();
   scene.walls = normalizeWallSystem({
     ...DEFAULT_WALL_SYSTEM,
+    portalTransition: 'karbandi',
+    portalCover: 'none',
     bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
     ahang: { enabled: false },
     karbandi: {
@@ -50,7 +52,7 @@ function visibleStructuralMeshes(scene, side) {
   ));
 }
 
-function buildWallSystemWithCanvasMock(building, walls, zones = []) {
+function buildWallSystemWithCanvasMock(building, walls, zones = [], options = {}) {
   const previousDocument = globalThis.document;
   globalThis.document = {
     createElement: () => ({
@@ -60,12 +62,2331 @@ function buildWallSystemWithCanvasMock(building, walls, zones = []) {
     }),
   };
   try {
-    return buildWallSystem(building, walls, zones);
+    return buildWallSystem(building, walls, zones, options);
   } finally {
     if (previousDocument === undefined) delete globalThis.document;
     else globalThis.document = previousDocument;
   }
 }
+
+test('Grid independently edits and removes walls, vaults, domes, and transitions', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'grid',
+    hallGridX: 2,
+    hallGridY: 2,
+    gridBaySpansX: [3, 5],
+    gridBaySpansY: [4, 6],
+    gridBayCovers: {
+      '0:0': 'dome',
+      '1:0': 'none',
+      '0:1': 'rib-vault',
+      '1:1': 'barrel',
+    },
+    gridBayTransitions: { '0:0': 'karbandi', '1:1': 'pendentive' },
+    gridRemovedWalls: ['wall:north:0'],
+    gridRemovedVaults: ['vault:x:1:0'],
+    gridRemovedDomes: ['dome:0:0'],
+    gridRemovedTransitions: ['transition:1:1'],
+    gridElementColors: { 'wall:north:1': '#123456' },
+    gridStageEditEnabled: true,
+  });
+  assert.equal(building.buildingType, 'grid');
+  assert.equal(building.width, 8);
+  assert.equal(building.depth, 10);
+  assert.deepEqual(building.gridBaySpansX, [3, 5]);
+  assert.deepEqual(building.gridBaySpansY, [4, 6]);
+
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const grid = buildWallSystemWithCanvasMock(building, walls);
+  assert.equal(grid.userData.buildingType, 'grid');
+  assert.equal(grid.children.length, 4);
+  assert.deepEqual(grid.children.map((bay) => bay.userData.gridBayCoverType), [
+    'dome', 'rib-vault', 'none', 'barrel',
+  ]);
+  const elementIds = [];
+  grid.traverse((child) => {
+    if (child.isMesh && child.userData.gridElementId) elementIds.push(child.userData.gridElementId);
+  });
+  assert.equal(elementIds.includes('wall:north:0'), false);
+  assert.equal(elementIds.includes('dome:0:0'), false);
+  assert.equal(elementIds.includes('vault:x:1:0'), false);
+  assert.equal(elementIds.includes('transition:1:1'), false);
+  assert.ok(elementIds.includes('wall:north:1'));
+  assert.ok(elementIds.includes('cover:0:1'));
+  const editedWall = [];
+  grid.traverse((child) => {
+    if (child.isMesh && child.userData.gridElementId === 'wall:north:1') editedWall.push(child);
+  });
+  assert.ok(editedWall.length > 0);
+  assert.ok(editedWall.every((child) => (
+    (Array.isArray(child.material) ? child.material : [child.material])
+      .every((material) => material.userData.gridElementColorOverride === '#123456')
+  )));
+  assert.equal(new Set(elementIds.filter((id) => id.startsWith('vault:'))).size,
+    elementIds.filter((id) => id.startsWith('vault:')).length,
+    'shared structural vaults must appear only once');
+});
+
+test('Grid bay deletion retains shared vaults and removes columns with no surviving vault', () => {
+  const building = normalizeBuilding({
+    type: 'room', buildingType: 'grid', hallGridX: 2, hallGridY: 1,
+    gridBaySpansX: [4, 4], gridBaySpansY: [4], gridRemovedBays: ['0:0'],
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const grid = buildWallSystemWithCanvasMock(building, walls);
+  const ids = [];
+  grid.traverse((child) => {
+    if (child.isMesh && child.userData.gridElementId) ids.push(child.userData.gridElementId);
+  });
+  assert.ok(ids.includes('vault:y:1:0'), 'the vault shared with the surviving bay must remain');
+  assert.equal(ids.includes('vault:y:0:0'), false, 'an unused outside vault must be removed');
+  assert.ok(ids.includes('wall:between-x:1:0'),
+    'a surviving bay beside an empty cell must receive a wall on the exposed edge');
+  assert.ok(ids.includes('wall:east:0'),
+    'the outside edge of the surviving bay must retain its exterior wall');
+  assert.equal(new Set(ids.filter((id) => id.startsWith('column:'))).size, 4,
+    'only the four columns connected to the surviving bay vaults remain');
+
+  const unsupported = normalizeBuilding({
+    type: 'room', buildingType: 'grid', hallGridX: 1, hallGridY: 1,
+    gridBaySpansX: [4], gridBaySpansY: [4],
+    gridRemovedVaults: ['vault:x:0:0', 'vault:x:0:1', 'vault:y:0:0', 'vault:y:1:0'],
+  });
+  const unsupportedGrid = buildWallSystemWithCanvasMock(unsupported, normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, unsupported));
+  const columns = [];
+  unsupportedGrid.traverse((child) => {
+    if (child.isMesh && child.userData.gridElementType === 'column') columns.push(child);
+  });
+  assert.equal(columns.length, 0, 'columns without any connected vault must be deleted');
+});
+
+test('large Grids share bay templates, instance repeated covers, and suppress expensive effects', () => {
+  const building = normalizeBuilding({
+    type: 'room', buildingType: 'grid', hallGridX: 4, hallGridY: 4,
+    gridBaySpansX: [4, 4, 4, 4], gridBaySpansY: [4, 4, 4, 4],
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    edges: { ...DEFAULT_WALL_SYSTEM.edges, enabled: true },
+    shadows: true,
+  }, building);
+  const grid = buildWallSystemWithCanvasMock(building, walls);
+  const batches = [];
+  grid.traverse((child) => {
+    if (child.isInstancedMesh && child.userData.isGridInstancedBatch) batches.push(child);
+  });
+  assert.equal(grid.userData.gridActiveBayCount, 16);
+  assert.ok(grid.userData.gridSharedTemplateCount <= 2,
+    'equal bays should use one normal template plus at most one guide template');
+  assert.ok(batches.some((batch) => batch.userData.gridElementType === 'dome' && batch.count >= 15));
+  assert.ok(batches.some((batch) => batch.userData.gridElementType === 'transition' && batch.count >= 15));
+  assert.equal(grid.userData.gridEdgesSuppressed, true);
+  assert.equal(grid.userData.gridShadowsSuppressed, true);
+  assert.ok(batches.every((batch) => batch.castShadow === false && batch.receiveShadow === false));
+});
+
+test('Grid bay changes reuse unchanged cached templates across rebuilds', () => {
+  const cache = { signature: null, templates: new Map() };
+  const base = normalizeBuilding({
+    type: 'room', buildingType: 'grid', hallGridX: 5, hallGridY: 4,
+    gridBaySpansX: [4, 4, 4, 4, 4], gridBaySpansY: [4, 4, 4, 4],
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, base);
+  const first = buildWallSystemWithCanvasMock(base, walls, [], { gridTemplateCache: cache });
+  assert.equal(first.userData.gridRegeneratedTemplateCount, 1);
+  const changed = normalizeBuilding({ ...base, gridRemovedBays: ['4:3'] });
+  const second = buildWallSystemWithCanvasMock(changed, walls, [], { gridTemplateCache: cache });
+  assert.equal(second.userData.gridActiveBayCount, 19);
+  assert.equal(second.userData.gridRegeneratedTemplateCount, 0,
+    'adding or removing a bay must not regenerate unchanged dome and Pendentive templates');
+});
+
+test('Hall builds a column-and-arch grid with one Pendentive and small dome per bay', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 2,
+    hallBayWidth: 5,
+    hallBayDepth: 4,
+    hallColumnProfile: 'square',
+    hallColumnDimension: 0.6,
+    hallArchGuideVisible: true,
+    hallDomeGuideVisible: true,
+    hallDomeArch: { greenOffsetAuto: true, greenHeightAuto: true },
+    height: 5,
+    domeTransitionHeight: 1.1,
+  });
+  assert.equal(building.buildingType, 'hall');
+  assert.equal(building.roomPlanShape, 'square');
+  assert.equal(building.domeTransition, 'pendentive');
+  assert.equal(building.hallTransitionType, 'pendentive');
+  assert.equal(building.hallCoverType, 'dome');
+  assert.equal(building.width, 10);
+  assert.equal(building.length, 8);
+  assert.equal(building.depth, 8);
+  assert.deepEqual(building.hallDomeArch, {
+    archType: 'one-point',
+    redOffset: -1.95,
+    redRadius: 0.0001,
+    greenOffset: 0.05,
+    greenHeight: 4,
+    greenHeightOffset: -2,
+    greenOffsetAuto: true,
+    greenHeightAuto: true,
+  });
+
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock({
+    ...building,
+    // The builder must enforce the invariant even for a conflicting legacy or
+    // manually edited payload that bypasses normalizeBuilding.
+    hallTransitionEnabled: true,
+    domeEnabled: true,
+    hallDomeGuideVisible: true,
+    domeTransitionCoverEnabled: true,
+  }, walls);
+  const columns = [];
+  const arches = [];
+  const pendentives = [];
+  const domes = [];
+  const guides = [];
+  const perimeterWalls = [];
+  const boundaryInfills = [];
+  hall.traverse((object) => {
+    if (object.userData?.isHallBearingColumn) columns.push(object);
+    if (object.userData?.isHallVaultArch) arches.push(object);
+    if (object.userData?.isHallBayCover && object.userData?.isRoomDomeTransitionCover) pendentives.push(object);
+    if (object.userData?.isHallBayCover && object.userData?.roomDomePart === 'dome-shell') domes.push(object);
+    if (object.userData?.isHallArchConstructionGuide && object.isLine) guides.push(object);
+    if (object.userData?.isHallPerimeterWall) perimeterWalls.push(object);
+    if (object.userData?.isHallBoundaryVaultInfill) boundaryInfills.push(object);
+  });
+
+  assert.equal(hall.userData.hallBayCount, 4);
+  assert.equal(hall.userData.hallBearingIntersectionCount, 9);
+  assert.equal(columns.length, 9, 'every grid intersection must contain one bearing column');
+  assert.ok(columns.every((column) => column.geometry.type === 'BoxGeometry'));
+  assert.ok(columns.every((column) => column.userData.hallColumnDimension === 0.6));
+  assert.equal(new Set(columns.map((column) => column.geometry)).size, 1, 'identical Hall columns reuse one geometry');
+  assert.equal(arches.length, 12, 'the two-by-two grid must share twelve unique bay-edge arches');
+  assert.ok(arches.every((arch) => arch.userData.hallVaultProfile === 'square'));
+  assert.ok(arches.every((arch) => arch.geometry.userData.hallVaultDimension === building.hallArchRibWidth));
+  assert.ok(arches.every((arch) => arch.geometry.userData.hallVaultProfileWidth === building.hallArchRibWidth));
+  assert.ok(arches.every((arch) => arch.geometry.userData.hallVaultProfileHeight === building.hallArchRibHeight));
+  assert.ok(arches.every((arch) => arch.geometry.userData.hallVaultSharpProfileEdges === true));
+  assert.ok(arches.every((arch) => (
+    arch.geometry.userData.hallVaultIntersectionRule
+    === 'unclipped-profile-shifted-inward-to-shared-column-top-bearing-point'
+  )));
+  assert.ok(arches.every((arch) => arch.geometry.userData.hallVaultCutPlanes == null));
+  assert.ok(Math.abs(hall.userData.hallVaultBearingShift
+    - Math.max(0, (building.hallArchRibWidth - building.hallArchRibHeight) / 2)) < 0.000001);
+  assert.ok(Math.abs(hall.userData.hallVaultSpanX
+    - (building.hallBayWidth - 2 * hall.userData.hallVaultBearingShift)) < 0.000001);
+  assert.ok(Math.abs(hall.userData.hallVaultSpanY
+    - (building.hallBayDepth - 2 * hall.userData.hallVaultBearingShift)) < 0.000001);
+  const northXVault = arches.find((arch) => arch.userData.hallVaultDirection === 'x'
+    && arch.userData.hallGridEdge[0] === 0 && arch.userData.hallGridEdge[1] === 0);
+  const eastYVault = arches.find((arch) => arch.userData.hallVaultDirection === 'y'
+    && arch.userData.hallGridEdge[0] === 1 && arch.userData.hallGridEdge[1] === 0);
+  const xPositions = northXVault.geometry.getAttribute('position');
+  const yPositions = eastYVault.geometry.getAttribute('position');
+  const xSections = northXVault.geometry.userData.hallVaultProfileSectionCount;
+  const ySections = eastYVault.geometry.userData.hallVaultProfileSectionCount;
+  const xBayCornerIndex = 2 * xSections * 2 + (xSections - 1) * 2 + 1;
+  const yBayCornerIndex = ySections * 2;
+  const xBearingPoint = new THREE.Vector3().fromBufferAttribute(xPositions, xBayCornerIndex);
+  const yBearingPoint = new THREE.Vector3().fromBufferAttribute(yPositions, yBayCornerIndex);
+  assert.ok(xBearingPoint.distanceTo(yBearingPoint) < 0.000001,
+    'the shifted X and Y vault edge arcs must meet at one leg bearing point');
+  assert.ok(Math.abs(xBearingPoint.y - building.height) < 0.000001,
+    'the shared edge-arc bearing point must remain on top of the column');
+  assert.ok(arches.every((arch) => arch.userData.hallVaultFinish === 'bricks'));
+  assert.equal(boundaryInfills.length, 8, 'each perimeter bay must continue to the underside of its vault');
+  assert.ok(boundaryInfills.every((infill) => infill.userData.hallBrickCourseAxis === 'horizontal-world-y'));
+  assert.ok(boundaryInfills.every((infill) => infill.userData.hallVaultOverlapRule === 'wall-stops-at-square-vault-soffit-edge'));
+  assert.equal(pendentives.length, 4, 'every bay must receive one smooth square-to-circle Pendentive');
+  assert.ok([...pendentives, ...domes].every((surface) => (
+    surface.castShadow === true
+      && surface.receiveShadow === false
+      && surface.userData.hallPendentiveDomeShadowRule === 'shared-soft-light-without-joint-self-shadow'
+  )), 'Hall Pendentive and dome must share one soft-light treatment without a shadow seam');
+  assert.ok(pendentives.every((pendentive) => pendentive.geometry.userData.hallPendentiveVerticalSegments === 24));
+  assert.ok(pendentives.every((pendentive) => pendentive.geometry.userData.hallPendentiveAngularSegments === 32));
+  assert.ok(pendentives.every((pendentive) => (
+    pendentive.geometry.userData.hallPendentiveResolutionRule
+      === 'fixed-24-vertical-by-32-angular-unrelated-to-room-pendentive-controls'
+  )));
+  assert.equal(domes.length, 4, 'every bay must receive one small dome');
+  assert.equal(hall.userData.hallRepeatedBayGeometryStrategy, 'one-local-template-cloned-per-identical-bay');
+  assert.ok(pendentives.every((pendentive) => (
+    pendentive.geometry.userData.hallRepeatedBayGeometry === 'clone-of-local-bay-template'
+  )));
+  assert.equal(domes.filter((dome) => (
+    dome.userData.hallRepeatedBayGeometry === 'clone-of-first-bay-template'
+  )).length, 3);
+  assert.ok(domes.every((dome) => dome.userData.roomDomePlanSides === 32));
+  assert.equal(new Set(domes.flatMap((dome) => dome.material)).size, 3, 'all Hall domes reuse one material set');
+  assert.ok(domes.every((dome) => Math.abs(dome.userData.roomDomeSpringY - hall.userData.hallDomeBearingY) < 0.000001));
+  assert.ok(Math.abs(hall.userData.hallDomeBearingY - hall.userData.hallVaultExtradosCrownY) < 0.000001);
+  assert.equal(hall.userData.hallDomeBearingRule, 'measured-sampled-vault-extrados-crown');
+  assert.ok(domes.every((dome) => {
+    const innerProfile = dome.geometry.userData.domeShellInnerProfile;
+    return Math.abs(innerProfile.at(-1)[1] - hall.userData.hallVaultExtradosCrownY) < 0.000001;
+  }), 'the actual dome interior base edge must sit on the vault extrados crown');
+  assert.ok(domes.every((dome) => (
+    dome.geometry.userData.domeInteriorBaseBearingRule
+    === 'radius-and-height-pinned-to-vault-extrados-crown'
+  )));
+  assert.ok(domes.every((dome) => (
+    dome.userData.roomDomeInteriorBaseJointRule
+    === 'radius-and-height-pinned-to-vault-interior-green-point-at-extrados-crown'
+  )));
+  const expectedInteriorBearingRadius = Math.min(building.hallBayWidth, building.hallBayDepth) / 2 - building.hallArchRibWidth / 2;
+  const expectedShellThickness = walls.bricks.brickWidth;
+  const expectedExteriorBearingRadius = expectedInteriorBearingRadius + expectedShellThickness;
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.roomDomeRadius - expectedExteriorBearingRadius
+  ) < 0.0001));
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.portalCoverInteriorBaseRadius - expectedInteriorBearingRadius
+  ) < 0.0001));
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.roomDomeShellThickness - expectedShellThickness
+  ) < 0.000001));
+  assert.ok(domes.every((dome) => dome.userData.roomDomeShellThicknessSource === 'one-normal-brick-length'));
+  assert.ok(domes.every((dome) => dome.geometry.userData.domeBondBasePhaseRule === 'shared-concentric-v1-course-at-pendentive-and-dome-base'));
+  assert.ok(domes.every((dome) => dome.geometry.userData.domeBondBasePhaseContinuous === true));
+  assert.equal(hall.userData.hallPendentivePositiveCrownRise, 0);
+  assert.equal(hall.userData.hallPendentiveCrownInterpolation, 'plan-circle-only-no-elevation-wave');
+  assert.equal(hall.userData.hallDomeGreenContinuityRule, 'interior-and-exterior-dome-meridians-developed-from-measured-pendentive-crown-tangent');
+  const pendentiveSpringTangent = new THREE.Vector2(
+    ...hall.userData.hallDomePendentiveSpringTangents.outer,
+  );
+  assert.ok(pendentiveSpringTangent.x < 0 && pendentiveSpringTangent.y > 0);
+  assert.ok(Math.abs(pendentiveSpringTangent.length() - 1) < 0.000001);
+  assert.equal(hall.userData.hallDomeAutomaticGreenOffset, 0);
+  assert.ok(Math.abs(
+    hall.userData.hallDomeAutomaticTangentRadius
+    - expectedExteriorBearingRadius / pendentiveSpringTangent.y
+  ) < 0.000001);
+  assert.ok(Math.abs(
+    hall.userData.hallDomeAutomaticRedOffset
+    + expectedExteriorBearingRadius
+    - hall.userData.hallDomeAutomaticRedRadius * pendentiveSpringTangent.y
+  ) < 0.000001);
+  assert.ok(hall.userData.hallDomeAutomaticGreenHeight < hall.userData.hallDomeBearingY);
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.roomDomeArchConstruction.greenCenter[0]
+  ) < 0.000001));
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.roomDomeArchConstruction.greenCenter[1]
+    - hall.userData.hallDomeAutomaticGreenHeight
+  ) < 0.000001));
+  assert.ok(domes.every((dome) => Math.abs(
+    dome.userData.roomDomeArchConstruction.greenRadius
+    - hall.userData.hallDomeAutomaticTangentRadius
+  ) < 0.000001));
+  assert.ok(domes.every((dome) => (
+    dome.geometry.userData.domeSpringTangentRule
+    === 'interior-and-exterior-meridians-developed-from-corresponding-pendentive-crown-tangents'
+  )));
+  domes.forEach((dome) => {
+    for (const tangent of [
+      dome.geometry.userData.domeSpringOuterTangent,
+      dome.geometry.userData.domeSpringInnerTangent,
+    ]) {
+      assert.ok(new THREE.Vector2(...tangent).distanceTo(pendentiveSpringTangent) < 0.000001);
+    }
+    for (const profile of [
+      dome.geometry.userData.domeShellOuterProfile,
+      dome.geometry.userData.domeShellInnerProfile,
+    ]) {
+      const base = new THREE.Vector2(...profile.at(-1));
+      const beforeBase = new THREE.Vector2(...profile.at(-2));
+      const domeSpringTangent = beforeBase.sub(base).normalize();
+      assert.ok(
+        domeSpringTangent.distanceTo(pendentiveSpringTangent) < 0.03,
+        'the dome arch must leave its base on the measured Pendentive crown tangent',
+      );
+    }
+  });
+  const visibleInHall = (object) => {
+    for (let current = object; current && current !== hall; current = current.parent) {
+      if (!current.visible) return false;
+    }
+    return true;
+  };
+  const visibleGuides = guides.filter(visibleInHall);
+  assert.equal(visibleGuides.filter((guide) => guide.userData.hallConstructionGuideKind === 'arc').length, 6, 'the two-point vault contributes four arcs and the one-point dome contributes two arcs');
+  assert.equal(visibleGuides.filter((guide) => guide.userData.hallConstructionGuideKind === 'radius').length, 6, 'each displayed construction arc must show only its own radius');
+  assert.equal(visibleGuides.filter((guide) => guide.name.startsWith('Hall central dome')).length, 4, 'one Hall dome displays only its two green arcs and their two radii');
+  assert.ok(arches.every((arch) => arch.userData.hallArchConstruction.redRadius > 0));
+  assert.ok(domes.every((dome) => dome.userData.hallBay.length === 2));
+  assert.ok(perimeterWalls.every((wall) => Array.isArray(wall.material) && wall.material.length === 3));
+  assert.ok(perimeterWalls.every((wall) => wall.userData.hallInteriorBondSide === 'room_plan_interior'));
+  assert.ok(perimeterWalls.every((wall) => wall.userData.hallExteriorBondSide === 'room_plan_exterior'));
+  assert.ok(perimeterWalls.every((wall) => wall.userData.hallWallCenterlineAlignedToVault === true));
+  assert.equal(perimeterWalls.find((wall) => wall.userData.wallSide === 'north').position.z, -building.depth / 2);
+  assert.equal(perimeterWalls.find((wall) => wall.userData.wallSide === 'east').position.x, building.width / 2);
+  pendentives.forEach((pendentive) => {
+    assert.equal(pendentive.userData.hallPendentiveSupport, 'four-shared-pointed-vault-arches');
+    assert.equal(pendentive.geometry.userData.hallPendentiveLowerBoundary, 'two-exact-sampled-square-vault-extrados-edge-curves-per-corner');
+    assert.equal(pendentive.geometry.userData.hallPendentiveUpperBoundary, 'planar-dome-base-circle-through-four-vault-crown-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveMeridian, 'triangular-two-arch-coons-style-smooth-patch');
+    assert.equal(pendentive.geometry.userData.hallPendentiveMeridianBlendRule, 'cubic-zero-start-slope-unit-crown-slope-no-horizontal-course-forcing');
+    assert.equal(pendentive.geometry.userData.hallPendentiveTwoVaultBlend, 'one-patch-directly-bounded-by-both-vault-edges-and-dome-quarter-circle');
+    assert.equal(pendentive.geometry.userData.hallPendentiveBrickCourseFlow, 'dome-base-anchored-concentric-courses-measured-down-each-surface-meridian');
+    assert.equal(pendentive.geometry.userData.hallPendentiveClipRule, 'triangular-surface-terminates-on-both-vault-curves');
+    assert.ok(Math.abs(
+      pendentive.geometry.userData.hallPendentiveShellThickness - expectedShellThickness
+    ) < 0.0001);
+    assert.equal(pendentive.geometry.userData.hallPendentiveShellThicknessSource, 'one-normal-brick-length');
+    assert.ok(Math.abs(
+      pendentive.userData.hallTransitionShellThickness - expectedShellThickness
+    ) < 0.0001);
+    assert.equal(pendentive.geometry.userData.hallPendentiveInnerFaceRule, 'three-boundary-triangular-coons-patch-ending-at-green-vault-interior-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveInteriorBoundaryCount, 3);
+    assert.equal(pendentive.geometry.userData.hallPendentiveInteriorPointCount, 3);
+    assert.deepEqual(pendentive.geometry.userData.hallPendentiveInteriorBoundaries, ['first-vault-inner-clipping-curve', 'dome-interior-base-arc', 'second-vault-inner-clipping-curve']);
+    assert.equal(pendentive.geometry.userData.hallPendentiveInnerVaultClipRule, 'stays-inside-vault-inner-edges-and-ends-at-green-dome-base-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveInnerVaultBearingInset, 0);
+    assert.equal(pendentive.geometry.userData.hallPendentiveOuterFaceRule, 'independent-three-boundary-exterior-coons-patch');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorBoundaryCount, 3);
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorPointCount, 3);
+    assert.deepEqual(pendentive.geometry.userData.hallPendentiveExteriorBoundaries, ['first-vault-extrados', 'dome-exterior-base-arc', 'second-vault-extrados']);
+    assert.equal(pendentive.geometry.userData.hallPendentiveClosedBoundaries, false);
+    assert.equal(pendentive.geometry.userData.hallPendentiveDomeAssemblyClosure, 'open-shared-circular-interface-closed-by-coincident-dome-inner-and-exterior-shells');
+    assert.equal(pendentive.geometry.userData.hallPendentiveVaultClipRule, 'exact-three-curve-boundary-with-no-post-offset-clipping');
+    assert.equal(pendentive.geometry.userData.hallPendentiveColumnSeatRule, 'interior-collapses-to-exact-shared-vault-edge-intersection-exterior-ends-on-its-two-vault-curve-legs');
+    assert.equal(pendentive.geometry.userData.hallPendentiveInteriorBottomCornerRule, 'single-exact-intersection-of-the-two-inner-vault-edge-arcs');
+    assert.equal(pendentive.geometry.userData.hallPendentiveIntersectionCutRule, 'exterior-bearing-edge-interpolates-only-between-two-vault-curve-leg-points');
+    assert.equal(
+      pendentive.geometry.userData.hallPendentiveBearingThicknessRamp,
+      0,
+    );
+    assert.equal(pendentive.geometry.userData.hallPendentiveVaultBoundaryThicknessRamp, 0);
+    assert.equal(pendentive.geometry.userData.hallPendentiveBrickUvRule, 'radial-centerline-anchored-physical-row-distance-u-with-shared-angular-dome-base-and-physical-meridian-distance-v');
+    assert.equal(pendentive.geometry.userData.hallPendentiveHorizontalJointSpacingRule, 'constant-physical-width-with-fewer-bricks-toward-each-bottom-point');
+    assert.equal(pendentive.geometry.userData.hallPendentiveVerticalJointFlowRule, 'fixed-dome-radial-centerlines-with-side-clipped-joints-not-boundary-anchored-drift');
+    assert.equal(pendentive.geometry.userData.hallPendentiveDomeBondContinuation, true);
+    assert.equal(pendentive.geometry.userData.hallPendentiveDomeBondUvRule, 'shared-concentric-v1-course-continues-into-corresponding-dome-meridian');
+    assert.equal(pendentive.geometry.userData.hallPendentiveAngularSeamRule, 'continuous-per-quadrant-dome-lathe-u-with-explicit-360-degree-endpoint');
+    assert.equal(pendentive.geometry.userData.hallPendentiveSharedCrownPhaseRule, 'all-interior-and-exterior-quadrants-share-dome-base-phase-v1');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorShapeRule, 'independent-smooth-triangular-patch-developed-from-three-red-points-and-three-curves');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorOffsetRule, 'none-independent-boundary-surface');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorBottomCornerRule, 'single-one-brick-plan-offset-intersection-of-two-smoothly-seated-vault-extrados-curves');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorRelaxationRule, 'fixed-three-boundary-harmonic-control-net-with-preserved-crown-tangent-row');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorBearingClipRule, 'exterior-face-ends-at-exact-sampled-vault-leg-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorCrownRule, 'exact-dome-exterior-base-arc-boundary');
+    assert.equal(pendentive.geometry.userData.hallPendentiveCrownCurvature, 'circular-in-plan-with-no-sinusoidal-elevation-wave');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorVaultBoundaryRule, 'two-exact-vault-extrados-boundaries-meet-dome-circle-at-their-red-crown-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorVaultLimit, 'vault-centerline');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorVaultCurveStripRule, 'disabled-no-crown-flattening-or-smoothing-strip');
+    assert.equal(pendentive.geometry.userData.hallPendentiveExteriorVaultCurveStripSegments, 0);
+    assert.equal(pendentive.geometry.userData.hallPendentiveTopClipRule, 'exact-dome-base-arc-continues-to-uncapped-shared-dome-interface');
+    assert.ok(Math.abs(pendentive.geometry.userData.hallPendentiveTopClipY - hall.userData.hallDomeBearingY) < 0.000001);
+    assert.equal(pendentive.geometry.userData.hallPendentiveDomeContactRule, 'upper-exterior-circle-coincident-with-dome-exterior-base-circle');
+    assert.equal(pendentive.geometry.userData.hallPendentiveInteriorDomeJointRule, 'dome-interior-base-and-pendentive-interior-arc-share-vault-green-point-radius');
+    assert.equal(pendentive.geometry.userData.hallPendentiveLegTrimRule, 'interior-terminates-before-vault-red-arc-on-two-green-inner-crown-points');
+    assert.equal(pendentive.geometry.userData.hallPendentiveSolidClosureRule, 'inner-and-exterior-shells-joined-by-clean-lower-upper-and-two-vault-curve-returns');
+    assert.ok(Array.isArray(pendentive.material));
+    assert.equal(pendentive.material.length, 3);
+    const shellPositions = pendentive.geometry.getAttribute('position');
+    const shellUvs = pendentive.geometry.getAttribute('uv');
+    const surfaceVertexCount = pendentive.geometry.userData.hallPendentiveSurfaceVertexCount;
+    const verticalSegments = pendentive.geometry.userData.hallPendentiveVerticalSegments;
+    const angularSegments = pendentive.geometry.userData.hallPendentiveAngularSegments;
+    const rowStride = angularSegments + 1;
+    const [bayCenterX, bayCenterZ] = pendentive.userData.hallBayCenter;
+    const verticesPerPatch = (verticalSegments + 1) * rowStride;
+    for (let patch = 0; patch < 4; patch += 1) {
+      const topRow = patch * verticesPerPatch + verticalSegments * rowStride;
+      for (let segment = 0; segment <= angularSegments; segment += 1) {
+        const innerIndex = topRow + segment;
+        const outerIndex = innerIndex + surfaceVertexCount;
+        const innerRadius = Math.hypot(
+          shellPositions.getX(innerIndex) - bayCenterX,
+          shellPositions.getZ(innerIndex) - bayCenterZ,
+        );
+        const outerRadius = Math.hypot(
+          shellPositions.getX(outerIndex) - bayCenterX,
+          shellPositions.getZ(outerIndex) - bayCenterZ,
+        );
+        assert.ok(
+          Math.abs(innerRadius - expectedInteriorBearingRadius) < 0.0001,
+          'the Pendentive interior crown must reach every point of the red-point dome base circle',
+        );
+        assert.ok(
+          Math.abs(outerRadius - expectedExteriorBearingRadius) < 0.0001,
+          'the Pendentive exterior crown must reach the dome exterior base circle',
+        );
+      }
+    }
+    const patchSigns = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
+    const expectedPatchU = [
+      [0, 0.25],
+      [0.5, 0.25],
+      [0.5, 0.75],
+      [1, 0.75],
+    ];
+    for (let patch = 0; patch < 4; patch += 1) {
+      const patchStart = patch * verticesPerPatch;
+      for (const [faceOffset, faceRadius] of [
+        [0, expectedInteriorBearingRadius],
+        [surfaceVertexCount, expectedExteriorBearingRadius],
+      ]) {
+        for (let row = 0; row <= verticalSegments; row += 1) {
+          const rowStart = faceOffset + patchStart + row * rowStride;
+          const startU = shellUvs.getX(rowStart);
+          const endU = shellUvs.getX(rowStart + angularSegments);
+          const centerU = shellUvs.getX(rowStart + Math.floor(angularSegments / 2));
+          const expectedCenterU = (expectedPatchU[patch][0] + expectedPatchU[patch][1]) / 2;
+          assert.ok(Math.abs(centerU - expectedCenterU) < 0.000001,
+            'every Pendentive row must remain anchored to the same dome-radial centerline');
+          if (row === verticalSegments) {
+            assert.ok(Math.abs(startU - expectedPatchU[patch][0]) < 0.000001);
+            assert.ok(Math.abs(endU - expectedPatchU[patch][1]) < 0.000001);
+          }
+          for (let segment = 1; segment <= angularSegments; segment += 1) {
+            const previousU = shellUvs.getX(rowStart + segment - 1);
+            const currentU = shellUvs.getX(rowStart + segment);
+            const direction = Math.sign(expectedPatchU[patch][1] - expectedPatchU[patch][0]);
+            assert.ok((currentU - previousU) * direction >= -0.000001,
+              'angular brick coordinates must never wrap or reverse inside a Pendentive quadrant');
+            if (row < verticalSegments) {
+              const previousPoint = new THREE.Vector3().fromBufferAttribute(
+                shellPositions,
+                rowStart + segment - 1,
+              );
+              const currentPoint = new THREE.Vector3().fromBufferAttribute(
+                shellPositions,
+                rowStart + segment,
+              );
+              const mappedDistance = Math.abs(currentU - previousU) * Math.PI * 2 * faceRadius;
+              assert.ok(Math.abs(mappedDistance - previousPoint.distanceTo(currentPoint)) < 0.00001,
+                'horizontal Pendentive UV distance must equal physical row distance');
+            }
+          }
+        }
+        const bottomStart = faceOffset + patchStart;
+        const middleStart = faceOffset + patchStart + Math.floor(verticalSegments / 2) * rowStride;
+        const topStart = faceOffset + patchStart + verticalSegments * rowStride;
+        const rowSpan = (rowStart) => Math.abs(
+          shellUvs.getX(rowStart + angularSegments) - shellUvs.getX(rowStart),
+        );
+        assert.ok(rowSpan(bottomStart) < rowSpan(middleStart));
+        assert.ok(rowSpan(middleStart) < rowSpan(topStart),
+          'upper Pendentive rows must contain more horizontal bricks than lower rows');
+      }
+    }
+    const expectedVaultRibWidth = building.hallArchRibWidth ?? building.wallThickness;
+    const expectedIntersectionCutHalf = Math.max(expectedVaultRibWidth, building.hallColumnDimension) / 2;
+    const expectedVaultInnerHalfWidth = building.hallBayWidth / 2 - expectedIntersectionCutHalf;
+    const expectedVaultInnerHalfDepth = building.hallBayDepth / 2 - expectedIntersectionCutHalf;
+    for (let patch = 0; patch < 4; patch += 1) {
+      const patchStart = patch * verticesPerPatch;
+      const [signX, signZ] = patchSigns[patch];
+      const expectedBottomCorner = new THREE.Vector3(
+        bayCenterX + signX * expectedVaultInnerHalfWidth,
+        building.height,
+        bayCenterZ + signZ * expectedVaultInnerHalfDepth,
+      );
+      for (let segment = 0; segment <= angularSegments; segment += 1) {
+        const bottomPoint = new THREE.Vector3().fromBufferAttribute(
+          shellPositions,
+          patchStart + segment,
+        );
+        assert.ok(bottomPoint.distanceTo(expectedBottomCorner) < 0.0001,
+          'the interior Pendentive bottom corner must be the exact intersection of both vault edges');
+      }
+      for (let row = 0; row <= verticalSegments; row += 1) {
+        const progress = row / verticalSegments;
+        const firstVaultBoundary = patchStart + row * rowStride;
+        const secondVaultBoundary = firstVaultBoundary + angularSegments;
+        const expectedFirstClip = THREE.MathUtils.lerp(expectedVaultInnerHalfDepth, expectedInteriorBearingRadius, progress);
+        const expectedSecondClip = THREE.MathUtils.lerp(expectedVaultInnerHalfWidth, expectedInteriorBearingRadius, progress);
+        assert.ok(Math.abs(
+          shellPositions.getZ(firstVaultBoundary) - bayCenterZ - signZ * expectedFirstClip
+        ) < 0.0001, 'the interior face must remain clipped to the first vault inner edge');
+        assert.ok(Math.abs(
+          shellPositions.getX(secondVaultBoundary) - bayCenterX - signX * expectedSecondClip
+        ) < 0.0001, 'the interior face must remain clipped to the second vault inner edge');
+      }
+    }
+    for (const faceOffset of [0, surfaceVertexCount]) {
+      const crownYs = [];
+      for (let segment = 0; segment <= angularSegments; segment += 1) {
+        crownYs.push(shellPositions.getY(faceOffset + verticalSegments * rowStride + segment));
+      }
+      assert.ok(
+        Math.max(...crownYs) - Math.min(...crownYs) < 0.00001,
+        'the yellow circle is a plan boundary and must not create a sinusoidal side-elevation wave',
+      );
+    }
+    const domeMeridianLength = pendentive.geometry.userData.hallPendentiveDomeBondMeridianLength;
+    for (const faceOffset of [0, surfaceVertexCount]) {
+      for (const segment of [1, Math.floor(angularSegments / 2), angularSegments - 1]) {
+        for (let row = verticalSegments - 4; row < verticalSegments; row += 1) {
+          const start = faceOffset + row * rowStride + segment;
+          const end = start + rowStride;
+          const physicalStep = new THREE.Vector3().fromBufferAttribute(shellPositions, start)
+            .distanceTo(new THREE.Vector3().fromBufferAttribute(shellPositions, end));
+          const textureStep = shellUvs.getY(end) - shellUvs.getY(start);
+          assert.ok(Math.abs(
+            textureStep - physicalStep / domeMeridianLength
+          ) < 0.000001, 'each crown meridian must preserve physical brick-course spacing');
+        }
+      }
+      const penultimateRow = faceOffset + (verticalSegments - 1) * rowStride;
+      assert.ok(Math.abs(
+        shellUvs.getY(penultimateRow + Math.floor(angularSegments / 2))
+        - shellUvs.getY(penultimateRow)
+      ) > 0.000001, 'crown courses must not be forced into one shared horizontal UV row');
+      const topRow = faceOffset + verticalSegments * rowStride;
+      for (let segment = 0; segment <= angularSegments; segment += 1) {
+        assert.ok(Math.abs(shellUvs.getY(topRow + segment) - 1) < 0.000001,
+          'the complete dome contact circle must share one concentric brick-course phase');
+      }
+    }
+    for (let patch = 0; patch < 4; patch += 1) {
+      const patchStart = patch * verticesPerPatch;
+      for (let row = 1; row <= verticalSegments; row += 1) {
+        for (let segment = 0; segment <= angularSegments; segment += 1) {
+          const innerIndex = patchStart + row * rowStride + segment;
+          const outerIndex = innerIndex + surfaceVertexCount;
+          const inner = new THREE.Vector3().fromBufferAttribute(shellPositions, innerIndex);
+          const outer = new THREE.Vector3().fromBufferAttribute(shellPositions, outerIndex);
+          assert.ok(Number.isFinite(inner.x) && Number.isFinite(outer.x),
+            'both independently developed Pendentive faces must contain valid surface points');
+        }
+      }
+    }
+    for (let patch = 0; patch < 4; patch += 1) {
+      const patchStart = patch * verticesPerPatch;
+      const [signX, signZ] = patchSigns[patch];
+      const gridX = bayCenterX + signX * building.hallBayWidth / 2;
+      const gridZ = bayCenterZ + signZ * building.hallBayDepth / 2;
+      const faceX = gridX - signX * expectedIntersectionCutHalf;
+      const faceZ = gridZ - signZ * expectedIntersectionCutHalf;
+      const exteriorFaceX = faceX + signX * expectedShellThickness;
+      const exteriorFaceZ = faceZ + signZ * expectedShellThickness;
+      for (let segment = 0; segment <= angularSegments; segment += 1) {
+        const innerSeat = new THREE.Vector3().fromBufferAttribute(shellPositions, patchStart + segment);
+        const outerSeat = new THREE.Vector3().fromBufferAttribute(
+          shellPositions,
+          patchStart + segment + surfaceVertexCount,
+        );
+        assert.ok(
+          Math.abs(innerSeat.x - faceX) < 0.000001
+          && Math.abs(innerSeat.z - faceZ) < 0.000001,
+          'the interior lower row must remain on the single shared vault-edge intersection',
+        );
+        assert.ok(Math.abs(outerSeat.y - building.height) < 0.000001,
+          'the exterior face must end at the vault-leg elevation instead of bleeding down the column');
+        assert.ok(
+          Math.abs(outerSeat.x - exteriorFaceX) < 0.000001
+          && Math.abs(outerSeat.z - exteriorFaceZ) < 0.000001,
+          'the exterior lower row must collapse to the shared vault-edge point offset outward by one brick',
+        );
+        assert.ok(
+          Math.abs(innerSeat.x - gridX) >= expectedIntersectionCutHalf - 0.000001
+          || Math.abs(innerSeat.z - gridZ) >= expectedIntersectionCutHalf - 0.000001,
+          'the lower Pendentive cut must never enter or converge inside the column footprint',
+        );
+      }
+      const start = new THREE.Vector3().fromBufferAttribute(shellPositions, patchStart);
+      const middle = new THREE.Vector3().fromBufferAttribute(shellPositions, patchStart + angularSegments / 2);
+      const end = new THREE.Vector3().fromBufferAttribute(shellPositions, patchStart + angularSegments);
+      const outerStart = new THREE.Vector3().fromBufferAttribute(
+        shellPositions,
+        patchStart + surfaceVertexCount,
+      );
+      const outerEnd = new THREE.Vector3().fromBufferAttribute(
+        shellPositions,
+        patchStart + angularSegments + surfaceVertexCount,
+      );
+      assert.ok(Math.abs(outerStart.z - exteriorFaceZ) < 0.00001,
+        'the first exterior boundary must start directly on its sampled vault edge');
+      assert.ok(Math.abs(outerEnd.x - exteriorFaceX) < 0.00001,
+        'the second exterior boundary must start directly on its sampled vault edge');
+      assert.ok(start.distanceTo(middle) < 0.000001 && middle.distanceTo(end) < 0.000001,
+        'the triangular interior face must collapse to the exact shared vault-edge point');
+    }
+    const crownStartRow = pendentive.geometry.userData.hallPendentiveExteriorCrownStartRow;
+    assert.equal(crownStartRow, verticalSegments, 'no post-process may bend the final meridians to force a horizontal brick course');
+    const dome = domes.find((candidate) => candidate.userData.hallBay.join() === pendentive.userData.hallBay.join());
+    assert.ok(dome);
+    assert.equal(pendentive.material[0], dome.material[0], 'Pendentive and dome interior must share one bond material');
+    assert.equal(pendentive.material[1], dome.material[1], 'Pendentive and dome exterior must share one bond material');
+    const domePositions = dome.geometry.getAttribute('position');
+    const domeUvs = dome.geometry.getAttribute('uv');
+    const domeProfileLength = dome.geometry.userData.domeShellProfileLength;
+    const domeOuterProfileLength = dome.geometry.userData.domeShellOuterProfileLength;
+    for (let ringStart = 0; ringStart < domeUvs.count; ringStart += domeProfileLength) {
+      assert.ok(Math.abs(domeUvs.getY(ringStart + domeOuterProfileLength - 1) - 1) < 0.000001,
+        'every exterior dome-base vertex must share the concentric V=1 course');
+      assert.ok(Math.abs(domeUvs.getY(ringStart + domeOuterProfileLength) - 1) < 0.000001,
+        'every interior dome-base vertex must share the concentric V=1 course');
+    }
+    const nearestDomeBasePhase = (shellIndex, targetAngle) => {
+      let nearestPhase = null;
+      let nearestDistance = Infinity;
+      for (let vertex = shellIndex; vertex < domeUvs.count; vertex += domeProfileLength) {
+        let angle = Math.atan2(
+          domePositions.getX(vertex) - bayCenterX,
+          domePositions.getZ(vertex) - bayCenterZ,
+        );
+        if (angle < 0) angle += Math.PI * 2;
+        const rawDistance = Math.abs(angle - targetAngle);
+        const distance = Math.min(rawDistance, Math.PI * 2 - rawDistance);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestPhase = domeUvs.getY(vertex);
+        }
+      }
+      return nearestPhase;
+    };
+    for (const segment of [0, Math.floor(angularSegments / 2), angularSegments]) {
+      const innerTopIndex = verticalSegments * rowStride + segment;
+      const outerTopIndex = innerTopIndex + surfaceVertexCount;
+      let angle = Math.atan2(
+        shellPositions.getX(innerTopIndex) - bayCenterX,
+        shellPositions.getZ(innerTopIndex) - bayCenterZ,
+      );
+      if (angle < 0) angle += Math.PI * 2;
+      assert.ok(Math.abs(
+        nearestDomeBasePhase(domeOuterProfileLength, angle) - shellUvs.getY(innerTopIndex)
+      ) < 0.000001, 'dome interior must inherit the Pendentive interior crown course phase');
+      assert.ok(Math.abs(
+        nearestDomeBasePhase(domeOuterProfileLength - 1, angle) - shellUvs.getY(outerTopIndex)
+      ) < 0.000001, 'dome exterior must inherit the Pendentive exterior crown course phase');
+    }
+    assert.ok(Math.abs(
+      pendentive.geometry.userData.hallPendentiveDomeBondMeridianLength
+      - dome.geometry.userData.domeMeridianLength
+    ) < 0.000001);
+    assert.ok(Math.abs(pendentive.geometry.userData.hallPendentiveDomeExteriorContactRadius - dome.userData.roomDomeRadius) < 0.000001);
+    assert.ok(Math.abs(dome.userData.roomDomeSpringY - pendentive.userData.hallPendentiveDomeContactY) < 0.000001);
+    assert.ok(Math.abs(dome.userData.portalCoverInteriorBaseRadius - pendentive.userData.hallPendentiveDomeContactRadius) < 0.000001);
+  });
+});
+
+test('Hall circular columns keep configured brick width around the circumference and brick height up the column', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallColumnProfile: 'circle',
+    hallColumnDimension: 0.5,
+    height: 3,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: {
+      ...DEFAULT_WALL_SYSTEM.bricks,
+      enabled: true,
+      brickWidth: 0.2,
+      brickHeight: 0.1,
+    },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const columns = hall.children.filter((child) => child.userData?.isHallBearingColumn);
+  assert.equal(columns.length, 4);
+  columns.forEach((column) => {
+    assert.equal(column.geometry.type, 'CylinderGeometry');
+    assert.equal(column.geometry.userData.hallCircleColumnBondUvMapping,
+      'developed-cylinder-circumference-and-world-height-metres');
+    assert.equal(column.userData.hallColumnBrickScaleRule,
+      'configured-brick-width-around-developed-circumference-and-configured-brick-height-up-world-y');
+    assert.equal(column.geometry.userData.hallCircleColumnBrickWidth, 0.2);
+    assert.equal(column.geometry.userData.hallCircleColumnBrickHeight, 0.1);
+    const expectedCircumference = Math.PI * building.hallColumnDimension;
+    assert.ok(Math.abs(
+      column.geometry.userData.hallCircleColumnBondCircumference - expectedCircumference
+    ) < 0.000001);
+    const uvs = column.geometry.getAttribute('uv');
+    const normals = column.geometry.getAttribute('normal');
+    const sideU = [];
+    const sideV = [];
+    for (let index = 0; index < uvs.count; index += 1) {
+      if (Math.abs(normals.getY(index)) >= 0.5) continue;
+      sideU.push(uvs.getX(index));
+      sideV.push(uvs.getY(index));
+    }
+    assert.ok(Math.abs(Math.max(...sideU) - Math.min(...sideU) - expectedCircumference) < 0.000001);
+    assert.ok(Math.abs(Math.max(...sideV) - Math.min(...sideV) - building.height) < 0.000001);
+    assert.ok(Math.abs(1 / column.material.map.repeat.x / 4 - walls.bricks.brickWidth) < 0.000001);
+    assert.ok(Math.abs(1 / column.material.map.repeat.y / 2 - walls.bricks.brickHeight) < 0.000001);
+  });
+});
+
+test('Hall perimeter honors separate interior and exterior bonds with continuous face phases', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 2,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    height: 3,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    stoneBase: { ...DEFAULT_WALL_SYSTEM.stoneBase, enabled: false },
+    bricks: {
+      ...DEFAULT_WALL_SYSTEM.bricks,
+      enabled: true,
+      sideBonds: {
+        ...DEFAULT_WALL_SYSTEM.bricks.sideBonds,
+        room_plan_interior: { source: 'builtin', builtIn: 'stack' },
+        room_plan_exterior: { source: 'builtin', builtIn: 'flemish' },
+      },
+    },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const perimeterWalls = [];
+  const boundaryInfills = [];
+  hall.traverse((object) => {
+    if (object.userData?.isHallPerimeterWall) perimeterWalls.push(object);
+    if (object.userData?.isHallBoundaryVaultInfill) boundaryInfills.push(object);
+  });
+  const cycleLength = (building.width + building.depth) * 2;
+  assert.equal(perimeterWalls.length, 4);
+  assert.ok(boundaryInfills.length > 0);
+  [...perimeterWalls, ...boundaryInfills].forEach((surface) => {
+    const interior = surface.material.find((material) => material.userData?.brickBondSide === 'room_plan_interior');
+    const exterior = surface.material.find((material) => material.userData?.brickBondSide === 'room_plan_exterior');
+    assert.equal(interior?.userData.brickBondSelection, 'stack');
+    assert.equal(exterior?.userData.brickBondSelection, 'flemish');
+    assert.ok(Math.abs(interior.map.repeat.x * cycleLength - Math.round(interior.map.repeat.x * cycleLength)) < 0.000001);
+    assert.ok(Math.abs(exterior.map.repeat.x * cycleLength - Math.round(exterior.map.repeat.x * cycleLength)) < 0.000001);
+    assert.equal(surface.geometry.userData.hallPerimeterBondUvMapping, 'one-developed-clockwise-loop-shared-by-each-face');
+    assert.equal(surface.geometry.userData.hallPerimeterBondCycleLength, cycleLength);
+  });
+  perimeterWalls.forEach((wall) => {
+    assert.equal(wall.userData.hallPerimeterBondContinuity, 'independent-seamless-interior-and-exterior-clockwise-loops');
+  });
+  boundaryInfills.forEach((infill) => {
+    assert.equal(infill.userData.hallPerimeterBondContinuity, 'continues-corresponding-lower-wall-face-without-phase-reset');
+  });
+});
+
+test('Hall sides can open beneath their vaults and movable doors and windows cut through perimeter walls', () => {
+  const door = {
+    ...createRoomPlanOpening('door', 'hall-door'),
+    rotation: 0,
+    width: 1.4,
+    height: 2,
+    sillHeight: 0,
+    head: 'arch',
+  };
+  const window = {
+    ...createRoomPlanOpening('window', 'hall-window'),
+    rotation: 180,
+    width: 1.2,
+    height: 1.1,
+    sillHeight: 1,
+    head: 'lintel',
+  };
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 2,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    hallVaultConvergenceAdjusted: true,
+    height: 4,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    openSides: ['west'],
+    roomPlanOpenings: [door, window],
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const perimeterWalls = hall.children.filter((child) => child.userData?.isHallPerimeterWall);
+  const boundaryInfills = hall.children.filter((child) => child.userData?.isHallBoundaryVaultInfill);
+  assert.equal(perimeterWalls.length, 3);
+  assert.equal(perimeterWalls.some((wall) => wall.userData.wallSide === 'west'), false);
+  assert.equal(boundaryInfills.length, 6);
+  assert.equal(boundaryInfills.some((infill) => infill.userData.wallSide === 'west'), false,
+    'opening a Hall side must remove both the lower perimeter wall and masonry beneath its boundary vaults');
+
+  const northWall = perimeterWalls.find((wall) => wall.userData.wallSide === 'north');
+  const southWall = perimeterWalls.find((wall) => wall.userData.wallSide === 'south');
+  assert.deepEqual(northWall.userData.hallPlanOpeningIds, ['hall-door']);
+  assert.deepEqual(southWall.userData.hallPlanOpeningIds, ['hall-window']);
+  assert.equal(northWall.userData.hallPlanOpeningConstruction,
+    'movable-door-and-window-holes-through-complete-wall-thickness');
+  hall.updateWorldMatrix(true, true);
+  const rayHits = (wall, origin, direction) => new THREE.Raycaster(origin, direction, 0, 10)
+    .intersectObject(wall, false);
+  assert.equal(rayHits(
+    northWall,
+    new THREE.Vector3(0, 1, -building.depth / 2 - 2),
+    new THREE.Vector3(0, 0, 1),
+  ).length, 0, 'the arched Hall door must be a real hole through the north wall');
+  assert.equal(rayHits(
+    southWall,
+    new THREE.Vector3(0, 1.5, building.depth / 2 + 2),
+    new THREE.Vector3(0, 0, -1),
+  ).length, 0, 'the Hall window must be a real hole through the south wall');
+  assert.ok(rayHits(
+    northWall,
+    new THREE.Vector3(2, 1, -building.depth / 2 - 2),
+    new THREE.Vector3(0, 0, 1),
+  ).length > 0, 'masonry beside the Hall door must remain solid');
+});
+
+test('Hall doors and windows continue through boundary-vault transition masonry', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    height: 4,
+  });
+  const door = {
+    ...createRoomPlanOpening('door', 'crossing-door'),
+    rotation: 0,
+    width: 0.8,
+    height: 4.5,
+    sillHeight: 0,
+    head: 'lintel',
+  };
+  const window = {
+    ...createRoomPlanOpening('window', 'crossing-window'),
+    rotation: 180,
+    width: 0.8,
+    height: 1,
+    sillHeight: 3.5,
+    head: 'lintel',
+  };
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    roomPlanOpenings: [door, window],
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  hall.updateMatrixWorld(true);
+
+  [
+    ['north', 'crossing-door', new THREE.Vector3(0, 4.25, -3), new THREE.Vector3(0, 0, 1)],
+    ['south', 'crossing-window', new THREE.Vector3(0, 4.25, 3), new THREE.Vector3(0, 0, -1)],
+  ].forEach(([side, openingId, origin, direction]) => {
+    const infill = hall.children.find((child) => (
+      child.userData?.isHallBoundaryVaultInfill && child.userData.wallSide === side
+    ));
+    assert.ok(infill);
+    assert.deepEqual(infill.userData.hallTransitionOpeningIds, [openingId]);
+    infill.material.forEach((material) => { material.side = THREE.DoubleSide; });
+    assert.equal(
+      new THREE.Raycaster(origin, direction, 0, 6).intersectObject(infill, false).length,
+      0,
+      `${side} transition wall must stay open above the lower wall`,
+    );
+  });
+});
+
+test('Hall dome center-opening toggle cuts a circular oculus through both shell faces', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    height: 3,
+    domePatternCoverage: 85,
+    domeCenterOpeningEnabled: true,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const dome = hall.children.find((object) => object.userData?.roomDomePart === 'dome-shell');
+  assert.ok(dome);
+  const geometry = dome.geometry;
+  const positions = geometry.getAttribute('position');
+  const openingRadius = geometry.userData.domeCenterOpeningRadius;
+  let minimumRadius = Infinity;
+  for (let vertex = 0; vertex < positions.count; vertex += 1) {
+    minimumRadius = Math.min(minimumRadius, Math.hypot(
+      positions.getX(vertex) - dome.userData.roomDomeCenter[0],
+      positions.getZ(vertex) - dome.userData.roomDomeCenter[1],
+    ));
+  }
+  assert.equal(geometry.userData.domeCenterOpeningEnabled, true);
+  assert.equal(geometry.userData.domeCenterOpeningPercent, 15);
+  assert.equal(geometry.userData.domeRetainedCoveragePercent, 85);
+  assert.equal(geometry.userData.domeCenterOpeningRule, 'vertical-circular-oculus-through-exterior-return-and-interior-shell');
+  assert.ok(openingRadius > 0);
+  assert.ok(Math.abs(minimumRadius - openingRadius) < 0.0001,
+    'the dome mesh must stop at the circular opening instead of retaining hidden apex vertices');
+  assert.ok(geometry.userData.domeShellOuterProfile.every(([radius]) => radius >= openingRadius - 0.0001));
+  assert.ok(geometry.userData.domeShellInnerProfile.every(([radius]) => radius >= openingRadius - 0.0001));
+  assert.equal(dome.userData.roomDomePatternCoverage, 100,
+    'hole mode must keep the remaining dome fully patterned');
+
+  const closedHall = buildWallSystemWithCanvasMock(normalizeBuilding({
+    ...building,
+    domeCenterOpeningEnabled: false,
+  }), walls);
+  const closedDome = closedHall.children.find((object) => object.userData?.roomDomePart === 'dome-shell');
+  const closedPositions = closedDome.geometry.getAttribute('position');
+  let closedMinimumRadius = Infinity;
+  for (let vertex = 0; vertex < closedPositions.count; vertex += 1) {
+    closedMinimumRadius = Math.min(closedMinimumRadius, Math.hypot(
+      closedPositions.getX(vertex) - closedDome.userData.roomDomeCenter[0],
+      closedPositions.getZ(vertex) - closedDome.userData.roomDomeCenter[1],
+    ));
+  }
+  assert.ok(closedMinimumRadius < 0.0001);
+  assert.equal(closedDome.geometry.userData.domeCenterOpeningEnabled, false);
+  assert.equal(closedDome.userData.roomDomePatternCoverage, 85);
+});
+
+test('every building type accepts a minimum height of 0.5 metres', () => {
+  const cases = [
+    { type: 'iwan', buildingType: 'portal' },
+    { type: 'room', buildingType: 'room' },
+    { type: 'room', buildingType: 'vestibule' },
+    { type: 'room', buildingType: 'hall' },
+  ];
+
+  cases.forEach((source) => {
+    assert.equal(normalizeBuilding({ ...source, height: 0.5 }).height, 0.5);
+    assert.equal(normalizeBuilding({ ...source, height: 0.1 }).height, 0.5);
+  });
+
+  const hall = normalizeBuilding({ ...cases[3], height: 0.5 });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, hall);
+  const model = buildWallSystemWithCanvasMock(hall, walls);
+  const perimeterWall = model.children.find((object) => object.userData?.isHallPerimeterWall);
+  assert.equal(perimeterWall?.userData.hallWallTop, 0.5);
+});
+
+test('Hall defaults to the three-by-three grid with 0.5-metre walls and 0.7-by-0.35-metre vault profiles', () => {
+  const hall = normalizeBuilding({ type: 'room', buildingType: 'hall' });
+  assert.equal(hall.height, 3);
+  assert.equal(hall.hallGridX, 3);
+  assert.equal(hall.hallGridY, 3);
+  assert.equal(hall.hallBayWidth, 4.35);
+  assert.equal(hall.hallBayDepth, 4.35);
+  assert.ok(Math.abs(hall.width - 13.05) < 0.000001);
+  assert.ok(Math.abs(hall.length - 13.05) < 0.000001);
+  assert.equal(hall.hallVaultConvergenceAdjusted, true);
+  assert.equal(hall.wallThickness, 0.5);
+  assert.equal(hall.hallColumnProfile, 'square');
+  assert.equal(hall.hallColumnDimension, 0.5);
+  assert.equal(hall.hallColumnDimensionFollowsWallThickness, true);
+  assert.equal(hall.hallArchRibWidth, 0.7);
+  assert.equal(hall.hallArchRibHeight, 0.35);
+  assert.ok(Math.abs(
+    hall.hallBayWidth - (hall.hallArchRibWidth - hall.hallArchRibHeight) - 4
+  ) < 0.000001);
+  assert.equal(hall.hallVaultFinish, 'bricks');
+  assert.equal(hall.hallVaultColor, '#b78b5d');
+  assert.equal(hall.hallTransitionEnabled, true);
+  assert.equal(hall.hallTransitionType, 'pendentive');
+  assert.equal(hall.hallCoverType, 'dome');
+  assert.deepEqual(hall.hallDomeArch, {
+    archType: 'one-point',
+    redOffset: -1.95,
+    redRadius: 0.0001,
+    greenOffset: 0.05,
+    greenHeight: 4,
+    greenHeightOffset: -2,
+    greenOffsetAuto: true,
+    greenHeightAuto: true,
+  });
+  assert.equal(hall.domeTransition, 'pendentive');
+  assert.equal(hall.domeEnabled, true);
+  const enteredHall = buildingForSelectedType(normalizeBuilding({
+    type: 'iwan',
+    buildingType: 'portal',
+    hallDomeArch: { redOffset: 4, redRadius: 3, greenOffset: 5, greenHeight: 6 },
+    domePatternCoverage: 42,
+    domeColor: '#ab6723',
+  }), 'hall');
+  assert.deepEqual(enteredHall.hallDomeArch, {
+    archType: 'one-point',
+    redOffset: -1.95,
+    redRadius: 0.0001,
+    greenOffset: 0.05,
+    greenHeight: 4,
+    greenHeightOffset: -2,
+    greenOffsetAuto: true,
+    greenHeightAuto: true,
+  });
+  const manuallyDisabledContinuation = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallDomeArch: { greenOffsetAuto: false, greenHeightAuto: false },
+  });
+  assert.equal(manuallyDisabledContinuation.hallDomeArch.greenOffsetAuto, false);
+  assert.equal(manuallyDisabledContinuation.hallDomeArch.greenHeightAuto, false);
+  assert.equal(enteredHall.domePatternCoverage, 85);
+  assert.equal(enteredHall.domeColor, '#49b5ca');
+  assert.equal(enteredHall.hallGridX, 3);
+  assert.equal(enteredHall.hallGridY, 3);
+  assert.equal(enteredHall.hallBayWidth, 4.35);
+  assert.equal(enteredHall.hallBayDepth, 4.35);
+  assert.ok(Math.abs(enteredHall.width - 13.05) < 0.000001);
+  assert.ok(Math.abs(enteredHall.length - 13.05) < 0.000001);
+  assert.equal(enteredHall.height, 3);
+  assert.equal(enteredHall.wallThickness, 0.5);
+  assert.equal(enteredHall.hallColumnDimension, 0.5);
+  assert.equal(enteredHall.hallArchRibWidth, 0.7);
+  assert.equal(enteredHall.hallArchRibHeight, 0.35);
+  const resized = normalizeBuilding({ ...hall, wallThickness: 0.55 });
+  assert.equal(resized.hallColumnDimension, 0.55);
+  const custom = normalizeBuilding({
+    type: 'room', buildingType: 'hall', wallThickness: 0.42, hallColumnDimension: 0.6,
+  });
+  assert.equal(custom.hallColumnDimension, 0.6);
+  assert.equal(custom.hallColumnDimensionFollowsWallThickness, false);
+});
+
+test('Hall vault dimension moves the green interior joint without changing one-brick dome and Pendentive thickness', () => {
+  for (const hallArchRibWidth of [0.2, 0.75]) {
+    const building = normalizeBuilding({
+      type: 'room',
+      buildingType: 'hall',
+      hallGridX: 1,
+      hallGridY: 1,
+      hallBayWidth: 4,
+      hallBayDepth: 4,
+      hallArchRibWidth,
+    });
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, building);
+    const hall = buildWallSystemWithCanvasMock(building, walls);
+    const dome = hall.getObjectByName('Room circular dome cover');
+    const pendentive = hall.children.find((object) => object.userData?.isHallFourVaultPendentive);
+    const expectedInteriorJointRadius = 2 - hallArchRibWidth / 2;
+    assert.ok(dome);
+    assert.ok(pendentive);
+    assert.ok(Math.abs(dome.userData.portalCoverInteriorBaseRadius - expectedInteriorJointRadius) < 0.000001);
+    assert.ok(Math.abs(dome.userData.roomDomeInteriorBaseTargetRadius - expectedInteriorJointRadius) < 0.000001);
+    assert.ok(Math.abs(dome.userData.roomDomeShellThickness - walls.bricks.brickWidth) < 0.000001);
+    assert.ok(Math.abs(pendentive.geometry.userData.hallPendentiveShellThickness - walls.bricks.brickWidth) < 0.000001);
+    assert.ok(Math.abs(
+      dome.userData.roomDomeRadius - dome.userData.portalCoverInteriorBaseRadius - walls.bricks.brickWidth
+    ) < 0.000001);
+  }
+});
+
+test('Hall vault profile height independently controls arch thickness through the curve', () => {
+  const crownTops = [];
+  const vaultSpans = [];
+  for (const hallArchRibHeight of [0.2, 0.6]) {
+    const building = normalizeBuilding({
+      type: 'room',
+      buildingType: 'hall',
+      hallGridX: 1,
+      hallGridY: 1,
+      hallArchRibWidth: 0.7,
+      hallArchRibHeight,
+      hallVaultConvergenceAdjusted: true,
+    });
+    const hall = buildWallSystemWithCanvasMock(building, normalizeWallSystem({}, building));
+    const vault = hall.children.find((object) => object.userData?.isHallVaultArch);
+    assert.ok(vault);
+    assert.equal(vault.geometry.userData.hallVaultProfileWidth, 0.7);
+    assert.equal(vault.geometry.userData.hallVaultProfileHeight, hallArchRibHeight);
+    assert.equal(vault.userData.hallVaultProfileWidth, 0.7);
+    assert.equal(vault.userData.hallVaultProfileHeight, hallArchRibHeight);
+    crownTops.push(hall.userData.hallDomeBearingY);
+    vaultSpans.push(hall.userData.hallVaultSpanX);
+  }
+  assert.ok(crownTops.every(Number.isFinite));
+  assert.ok(Math.abs(vaultSpans[0] - 3.5) < 0.000001);
+  assert.ok(Math.abs(vaultSpans[1] - 3.9) < 0.000001,
+    'vault height changes must shift both legs while retaining the rectangular profile');
+});
+
+test('Hall vault width changes expand both bay dimensions and total Hall dimensions while preserving clear bays', () => {
+  const initial = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 2,
+    hallBayWidth: 4,
+    hallBayDepth: 5,
+    hallArchRibWidth: 0.7,
+    hallArchRibHeight: 0.35,
+  });
+  const resized = resizeHallVaultProfileWidth(initial, 0.8);
+  assert.ok(Math.abs(resized.hallBayWidth - 4.1) < 0.000001);
+  assert.ok(Math.abs(resized.hallBayDepth - 5.1) < 0.000001);
+  assert.ok(Math.abs(resized.width - 12.3) < 0.000001);
+  assert.ok(Math.abs(resized.length - 10.2) < 0.000001);
+  assert.ok(Math.abs(
+    resized.hallBayWidth - resized.hallArchRibWidth
+    - (initial.hallBayWidth - initial.hallArchRibWidth)
+  ) < 0.000001);
+  assert.ok(Math.abs(
+    resized.hallBayDepth - resized.hallArchRibWidth
+    - (initial.hallBayDepth - initial.hallArchRibWidth)
+  ) < 0.000001);
+  assert.equal(resized.hallArchRibHeight, 0.35);
+
+  const convergedDefault = normalizeBuilding({ type: 'room', buildingType: 'hall' });
+  const tallerProfile = resizeHallVaultProfileHeight(convergedDefault, 0.45);
+  assert.ok(Math.abs(tallerProfile.hallBayWidth - 4.25) < 0.000001);
+  assert.ok(Math.abs(tallerProfile.hallBayDepth - 4.25) < 0.000001);
+  assert.ok(Math.abs(tallerProfile.width - 12.75) < 0.000001);
+  assert.ok(Math.abs(
+    tallerProfile.hallBayWidth
+    - (tallerProfile.hallArchRibWidth - tallerProfile.hallArchRibHeight)
+    - 4
+  ) < 0.000001, 'height changes must preserve the corrected column-top convergence allowance');
+});
+
+test('Hall transition and cover toggles independently build Pendentive or Karbandi with Dome or No cover', () => {
+  let hiddenDomePendentivePositions = null;
+  for (const hallTransitionType of ['pendentive', 'karbandi']) {
+    for (const hallCoverType of ['none', 'dome']) {
+      const building = normalizeBuilding({
+        type: 'room',
+        buildingType: 'hall',
+        hallGridX: 1,
+        hallGridY: 1,
+        hallTransitionType,
+        hallCoverType,
+      });
+      const hall = buildWallSystemWithCanvasMock(building, normalizeWallSystem({}, building));
+      const transitions = [];
+      const domes = [];
+      hall.traverse((object) => {
+        if (object.userData?.isHallBayTransition) transitions.push(object);
+        if (object.userData?.isHallBayCover && object.userData?.roomDomePart === 'dome-shell') domes.push(object);
+      });
+      assert.equal(building.domeTransition, hallTransitionType);
+      assert.equal(building.domeEnabled, hallCoverType === 'dome');
+      assert.equal(hall.userData.hallTransitionType, hallTransitionType);
+      assert.equal(hall.userData.hallCoverType, hallCoverType);
+      assert.ok(transitions.length > 0, 'the transition remains when Hall cover is disabled');
+      assert.ok(transitions.every((transition) => transition.userData.roomDomeTransitionType === hallTransitionType));
+      if (hallTransitionType === 'karbandi') {
+        assert.equal(transitions.length, 16, 'Hall Karbandi builds the configured rotating rib network');
+        assert.ok(transitions.every((transition) => transition.userData.isHallKarbandiTransition === true));
+        assert.ok(transitions.every((transition) => transition.userData.isKarbandi === true));
+        assert.equal(hall.userData.karbandiWallLegMode, 'one');
+        assert.equal(hall.userData.karbandiClosestWallLegs.length, 4);
+        const crownY = Math.max(...transitions.map((transition) => (
+          new THREE.Box3().setFromObject(transition, true).max.y
+        )));
+        assert.ok(
+          Math.abs(crownY - hall.userData.hallVaultExtradosCrownY) < 0.000001,
+          'Hall Karbandi crown must stay level with the vault extrados crown',
+        );
+        assert.ok(transitions.every((transition) => (
+          transition.userData.hallKarbandiCrownTargetY === hall.userData.hallVaultExtradosCrownY
+          && transition.userData.hallKarbandiCrownAlignmentRule === 'rib-extrados-crown-aligned-to-vault-extrados-crown'
+        )));
+      } else {
+        assert.equal(transitions.length, 1);
+        assert.equal(transitions[0].userData.isHallFourVaultPendentive, true);
+      }
+      assert.equal(domes.length, hallCoverType === 'dome' ? 1 : 0);
+      if (hallTransitionType === 'karbandi' && hallCoverType === 'dome') {
+        assert.ok(
+          Math.abs(domes[0].userData.roomDomeSpringY - hall.userData.hallVaultExtradosCrownY) < 0.000001,
+          'Hall dome must spring directly from the common Karbandi and vault crown level',
+        );
+      }
+      if (hallTransitionType === 'pendentive') {
+        const positions = Array.from(transitions[0].geometry.getAttribute('position').array);
+        if (hallCoverType === 'dome') {
+          assert.equal(transitions[0].geometry.userData.hallPendentiveClosedBoundaries, false);
+          assert.deepEqual(positions, hiddenDomePendentivePositions, 'showing the dome must not change any Pendentive vertex');
+        } else {
+          hiddenDomePendentivePositions = positions;
+          assert.equal(transitions[0].userData.hallInvisibleDomeReferenceUsed, true);
+          assert.equal(transitions[0].geometry.userData.hallPendentiveClosedBoundaries, true);
+          assert.equal(transitions[0].geometry.userData.hallPendentiveDomeAssemblyClosure, 'same-curved-dome-interface-closed-only-because-visible-dome-is-disabled');
+          assert.equal(transitions[0].geometry.userData.hallPendentiveTopClipRule, 'same-curved-dome-interface-with-clean-shell-thickness-return');
+        }
+      }
+    }
+  }
+});
+
+test('Room transition remains visible while its upper cover is None', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    roomPlanShape: 'square',
+    domeTransition: 'squinch',
+    domeCoverType: 'none',
+  });
+  const room = buildWallSystem(building, normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building));
+
+  assert.equal(room.getObjectByName('Room circular dome cover'), undefined);
+  assert.equal(room.children.some((child) => child.userData?.wallSide === 'room_dome_drum'), false);
+  assert.ok(
+    room.children.some((child) => child.name.startsWith('Room Squinch transition rib ')),
+    'the selected transition must remain on stage without an upper cover',
+  );
+});
+
+test('Hall Karbandi defaults to one Hall-vault-style leg arch and clips the dome base to its crown', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallBayWidth: 5,
+    hallBayDepth: 4,
+    hallTransitionType: 'karbandi',
+    hallCoverType: 'dome',
+  });
+  const walls = normalizeWallSystem({}, building);
+  assert.equal(walls.karbandi.wallLegMode, 'one');
+  assert.equal(walls.karbandi.archType, building.hallArch.archType);
+  assert.equal(walls.karbandi.redOffset, building.hallArch.redOffset);
+  assert.equal(walls.karbandi.greenOffset, building.hallArch.greenOffset);
+  assert.equal(walls.karbandi.greenHeightOffset, building.hallArch.greenHeightOffset);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const dome = hall.children.find((object) => (
+    object.userData?.isHallBayCover && object.userData?.roomDomePart === 'dome-shell'
+  ));
+  assert.ok(dome);
+  assert.equal(dome.userData.hallDomeBaseConstructionRule, 'circular-base-centered-on-and-clipped-to-karbandi-crown-centerline');
+  const crownRadius = Math.max(...hall.children
+    .filter((object) => object.userData?.isHallKarbandiTransition && object.userData?.isKarbandi)
+    .map((rib) => Number(rib.userData.karbandiCrownCenterlineRadius))
+    .filter(Number.isFinite));
+  assert.ok(Math.abs(dome.userData.hallDomeKarbandiCrownRadius - crownRadius) < 0.000001);
+  const brickLength = walls.bricks.brickWidth;
+  assert.deepEqual(dome.userData.hallDomeInteriorBaseRadii, [
+    crownRadius - brickLength / 2,
+    crownRadius - brickLength / 2,
+  ]);
+  assert.deepEqual(
+    dome.userData.hallDomeExteriorBaseRadii,
+    dome.userData.hallDomeInteriorBaseRadii.map((radius) => radius + brickLength),
+  );
+  assert.equal(dome.userData.hallDomeBaseExtension, brickLength);
+  assert.equal(
+    dome.userData.hallDomeBaseExtensionRule,
+    'one-brick-length-centered-on-karbandi-crown-centerline',
+  );
+  assert.ok(Math.abs(dome.userData.hallDomeBaseCenterlineRadius - crownRadius) < 0.000001);
+  assert.equal(dome.userData.hallDomeCurveMode, 'explicit-hall-dome-arch-no-automatic-continuity');
+  assert.ok(dome.userData.roomDomeRise > 0.4, 'the explicit Hall dome arch must rise above a flat cap');
+  assert.ok(Math.abs(dome.geometry.userData.domeShellInnerProfile.at(-1)[0] - crownRadius + brickLength / 2) < 0.000001);
+  assert.ok(Math.abs(dome.geometry.userData.domeShellOuterProfile.at(-1)[0] - crownRadius - brickLength / 2) < 0.000001);
+  assert.ok(Math.abs(dome.userData.roomDomeSpringY - hall.userData.hallVaultExtradosCrownY) < 0.000001);
+});
+
+test('Hall Karbandi one-leg mode solves four bay-corner bearings without removing ribs', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallTransitionType: 'karbandi',
+    hallCoverType: 'none',
+  });
+  const buildMode = (wallLegMode) => {
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, wallLegMode },
+    }, building);
+    return buildWallSystemWithCanvasMock(building, walls);
+  };
+  const twoLeg = buildMode('two');
+  const oneLeg = buildMode('one');
+  const ribs = (hall) => hall.children.filter((object) => (
+    object.userData?.isHallKarbandiTransition
+    && object.userData?.isKarbandi
+    && object.userData?.isKarbandiVisualGuide !== true
+  ));
+
+  assert.equal(ribs(twoLeg).length, 16);
+  assert.equal(ribs(oneLeg).length, 16);
+  assert.equal(twoLeg.userData.karbandiClosestWallLegs.length, 8);
+  assert.equal(oneLeg.userData.karbandiClosestWallLegs.length, 4);
+  assert.equal(oneLeg.userData.karbandiWallLegMode, 'one');
+  assert.ok(oneLeg.userData.karbandiClosestWallLegs.every((leg) => leg.distance < 0.001));
+});
+
+test('Hall Barrel retains selected-axis boundary vaults and removes perpendicular boundary vaults', () => {
+  for (const axis of ['x', 'y']) {
+    const building = normalizeBuilding({
+      type: 'room',
+      buildingType: 'hall',
+      hallGridX: 2,
+      hallGridY: 3,
+      hallCoverType: 'barrel',
+      hallBarrelAxis: axis,
+      hallTransitionEnabled: true,
+      hallArchRibHeight: 0.42,
+    });
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: true },
+    }, building);
+    const hall = buildWallSystemWithCanvasMock(building, walls);
+    const barrels = hall.children.filter((object) => object.userData?.isHallBarrelCover);
+    const generatingVaults = hall.children.filter((object) => (
+      object.userData?.isHallVaultArch && object.userData.hallVaultDirection === axis
+    ));
+    const perpendicularVaults = hall.children.filter((object) => (
+      object.userData?.isHallVaultArch && object.userData.hallVaultDirection !== axis
+    ));
+    const spandrels = hall.children.filter((object) => object.userData?.isHallBarrelSpandrelInfill);
+    const columns = hall.children.filter((object) => object.userData?.isHallBearingColumn);
+    const perimeterColumns = columns.filter((column) => column.userData.hallColumnIsPerimeter);
+    const interiorColumns = columns.filter((column) => !column.userData.hallColumnIsPerimeter);
+    const boundaryVaults = hall.children.filter((object) => (
+      object.userData?.isHallVaultArch
+      && (object.userData.hallVaultDirection === 'x'
+        ? object.userData.hallGridEdge[1] === 0 || object.userData.hallGridEdge[1] === building.hallGridY
+        : object.userData.hallGridEdge[0] === 0 || object.userData.hallGridEdge[0] === building.hallGridX)
+    ));
+    const boundaryInfills = hall.children.filter((object) => object.userData?.isHallBoundaryVaultInfill);
+    const perimeterWalls = hall.children.filter((object) => object.userData?.isHallPerimeterWall);
+    const transitions = hall.children.filter((object) => object.userData?.isHallBayTransition);
+    const domes = hall.children.filter((object) => object.userData?.roomDomePart === 'dome-shell');
+
+    assert.equal(building.hallBarrelAxis, axis);
+    assert.equal(building.hallTransitionEnabled, false);
+    assert.equal(hall.userData.hallCoverType, 'barrel');
+    assert.equal(hall.userData.hallBarrelAxis, axis);
+    assert.equal(hall.userData.hallBarrelShellThickness, building.hallArchRibHeight);
+    assert.ok(hall.userData.hallBarrelPerpendicularVaultShift < -building.hallArchRibHeight);
+    assert.equal(barrels.length, building.hallGridX * building.hallGridY);
+    assert.equal(transitions.length, 0);
+    assert.equal(domes.length, 0);
+    assert.ok(generatingVaults.every((vault) => (
+      vault.userData.hallVaultVerticalShift === 0
+      && vault.userData.hallVaultLayerRole === 'barrel-generating'
+    )));
+    assert.ok(perpendicularVaults.every((vault) => (
+      vault.userData.hallVaultVerticalShift === hall.userData.hallBarrelPerpendicularVaultShift
+      && vault.userData.hallVaultLayerRole === 'below-barrel'
+    )));
+    generatingVaults[0].geometry.computeBoundingBox();
+    perpendicularVaults[0].geometry.computeBoundingBox();
+    assert.ok(generatingVaults[0].geometry.boundingBox.max.y > building.height);
+    assert.ok(
+      perpendicularVaults[0].geometry.boundingBox.max.y < building.height,
+      `switching to ${axis.toUpperCase()} must recess the other vault extrados below the Barrel spring line`,
+    );
+    assert.equal(spandrels.length, perpendicularVaults.length,
+      'every lowered transverse vault segment must carry one solid wall up to the Barrel');
+    assert.ok(spandrels.every((spandrel) => (
+      spandrel.userData.hallVaultDirection !== axis
+      && spandrel.userData.hallBarrelSpandrelTopY === building.height
+      && spandrel.userData.hallBarrelSpandrelBottomProfile.length > 2
+      && spandrel.userData.hallBarrelSpandrelMaterialSource === 'exact-shared-hall-vault-and-barrel-material'
+    )));
+    [...generatingVaults, ...perpendicularVaults].forEach((vault) => {
+      assert.equal(vault.material.userData.brickBondSelection, 'running');
+      assert.equal(vault.material.userData.hallVaultMortarColor, walls.bricks.mortarColor);
+      assert.equal(vault.material.userData.hallVaultMortarSize, walls.bricks.mortar);
+      assert.equal(vault.material.userData.hallVaultBondAndMortarTextureEnabled, true);
+      assert.ok(vault.material.map, 'Hall vaults must retain their bond and mortar texture in Barrel mode');
+    });
+    spandrels.forEach((spandrel) => {
+      assert.ok(spandrel.material.every((material) => material === generatingVaults[0].material),
+        'spandrel, Hall vault, and Barrel must use the exact same textured masonry material');
+      const positions = spandrel.geometry.getAttribute('position');
+      const normals = spandrel.geometry.getAttribute('normal');
+      const uvs = spandrel.geometry.getAttribute('uv');
+      const topByFace = { negative: null, positive: null };
+      for (let vertex = 0; vertex < positions.count; vertex += 1) {
+        if (Math.abs(positions.getY(vertex) - building.height) > 0.000001) continue;
+        if (normals.getZ(vertex) < -0.5 && topByFace.negative == null) topByFace.negative = vertex;
+        if (normals.getZ(vertex) > 0.5 && topByFace.positive == null) topByFace.positive = vertex;
+      }
+      assert.notEqual(topByFace.negative, null);
+      assert.notEqual(topByFace.positive, null);
+      assert.ok(Math.abs(
+        uvs.getY(topByFace.negative)
+          - spandrel.geometry.userData.hallBarrelSpandrelGeneratingArcLength
+      ) < 0.000001, 'one spandrel face must continue the ending Barrel arc phase');
+      assert.ok(Math.abs(uvs.getY(topByFace.positive)) < 0.000001,
+        'the opposite spandrel face must continue the starting Barrel arc phase');
+      [topByFace.negative, topByFace.positive].forEach((vertex) => {
+        const expectedU = spandrel.userData.hallVaultDirection === 'x'
+          ? spandrel.position.x + positions.getX(vertex)
+          : spandrel.position.z - positions.getX(vertex);
+        assert.ok(Math.abs(uvs.getX(vertex) - expectedU) < 0.000001);
+      });
+    });
+    const expectedInteriorColumnTop = building.height + hall.userData.hallBarrelPerpendicularVaultShift;
+    assert.ok(interiorColumns.length > 0);
+    assert.ok(interiorColumns.every((column) => (
+      Math.abs(column.userData.hallColumnTop - expectedInteriorColumnTop) < 0.000001
+      && column.userData.hallColumnBarrelCut === true
+      && column.userData.hallColumnBearingRule === 'cut-to-underside-of-lowered-perpendicular-vault-leg'
+    )), 'interior columns must stop at the lowered transverse-vault leg instead of overlapping its spandrel');
+    assert.ok(perimeterColumns.length > 0);
+    assert.ok(perimeterColumns.every((column) => (
+      Math.abs(column.userData.hallColumnTop - building.height) < 0.000001
+      && column.userData.hallColumnBarrelCut === false
+      && column.userData.hallColumnBearingRule === 'full-height-perimeter-column-without-boundary-arch'
+    )), 'perimeter columns must remain at the full surrounding-wall height');
+    const expectedSelectedAxisBoundaryVaults = axis === 'x'
+      ? building.hallGridX * 2
+      : building.hallGridY * 2;
+    assert.equal(boundaryVaults.length, expectedSelectedAxisBoundaryVaults,
+      'Barrel mode must retain only the boundary vaults that generate its selected axis');
+    assert.ok(boundaryVaults.every((vault) => vault.userData.hallVaultDirection === axis),
+      'changing the Barrel axis must replace the retained perimeter vault family');
+    assert.equal(boundaryInfills.length, expectedSelectedAxisBoundaryVaults,
+      'only the selected-axis surrounding walls may retain masonry beneath their boundary vaults');
+    const plainBearingSides = axis === 'x' ? ['east', 'west'] : ['north', 'south'];
+    const plainBearingWalls = perimeterWalls.filter((wall) => plainBearingSides.includes(wall.userData.wallSide));
+    assert.equal(plainBearingWalls.length, 2);
+    plainBearingWalls.forEach((wall) => {
+      assert.equal(wall.userData.hallBarrelPlainBearingWall, true);
+      assert.ok(Math.abs(
+        wall.userData.hallBarrelWallInteriorInset - hall.userData.hallBarrelInteriorBearingInset
+      ) < 0.000001);
+      const bounds = new THREE.Box3().setFromObject(wall);
+      if (wall.userData.wallSide === 'west') {
+        assert.ok(Math.abs(bounds.min.x - (-building.hallGridX * building.hallBayWidth / 2 - building.wallThickness / 2)) < 0.000001);
+        assert.ok(Math.abs(bounds.max.x - (-building.hallGridX * building.hallBayWidth / 2 + hall.userData.hallBarrelInteriorBearingInset)) < 0.000001);
+      } else if (wall.userData.wallSide === 'east') {
+        assert.ok(Math.abs(bounds.max.x - (building.hallGridX * building.hallBayWidth / 2 + building.wallThickness / 2)) < 0.000001);
+        assert.ok(Math.abs(bounds.min.x - (building.hallGridX * building.hallBayWidth / 2 - hall.userData.hallBarrelInteriorBearingInset)) < 0.000001);
+      } else if (wall.userData.wallSide === 'north') {
+        assert.ok(Math.abs(bounds.min.z - (-building.hallGridY * building.hallBayDepth / 2 - building.wallThickness / 2)) < 0.000001);
+        assert.ok(Math.abs(bounds.max.z - (-building.hallGridY * building.hallBayDepth / 2 + hall.userData.hallBarrelInteriorBearingInset)) < 0.000001);
+      } else {
+        assert.ok(Math.abs(bounds.max.z - (building.hallGridY * building.hallBayDepth / 2 + building.wallThickness / 2)) < 0.000001);
+        assert.ok(Math.abs(bounds.min.z - (building.hallGridY * building.hallBayDepth / 2 - hall.userData.hallBarrelInteriorBearingInset)) < 0.000001);
+      }
+    });
+    spandrels[0].geometry.computeBoundingBox();
+    assert.ok(Math.abs(spandrels[0].geometry.boundingBox.max.y - building.height) < 0.000001);
+    assert.ok(Math.abs(spandrels[0].geometry.boundingBox.min.y - expectedInteriorColumnTop) < 0.000001);
+    barrels.forEach((barrel) => {
+      assert.equal(barrel.userData.hallBarrelGeneratingVaultDirection, axis);
+      assert.equal(barrel.userData.hallBarrelShellThickness, building.hallArchRibHeight);
+      assert.equal(barrel.material, generatingVaults[0].material,
+        'Barrel and generating vaults must share the exact brick material and phase');
+      assert.equal(barrel.geometry.userData.hallBarrelUvMapping,
+        'global-selected-axis-coordinate-u-and-generating-vault-arc-length-v');
+      const positions = barrel.geometry.getAttribute('position');
+      const uvs = barrel.geometry.getAttribute('uv');
+      for (let vertex = 0; vertex < positions.count; vertex += 1) {
+        const longitudinal = axis === 'x' ? positions.getZ(vertex) : positions.getX(vertex);
+        assert.ok(Math.abs(uvs.getX(vertex) - longitudinal) < 0.000001);
+      }
+    });
+
+    const firstBarrel = barrels.find((barrel) => barrel.userData.hallBarrelInterval === 1);
+    assert.ok(firstBarrel, 'the continuity sample must use an internal generating-vault seam');
+    const firstPosition = new THREE.Vector3().fromBufferAttribute(firstBarrel.geometry.getAttribute('position'), 0);
+    const firstUv = new THREE.Vector2().fromBufferAttribute(firstBarrel.geometry.getAttribute('uv'), 0);
+    let closest = null;
+    generatingVaults.forEach((vault) => {
+      const positions = vault.geometry.getAttribute('position');
+      const uvs = vault.geometry.getAttribute('uv');
+      for (let vertex = 0; vertex < positions.count; vertex += 1) {
+        const point = new THREE.Vector3().fromBufferAttribute(positions, vertex);
+        const distance = point.distanceToSquared(firstPosition);
+        if (!closest || distance < closest.distance) {
+          closest = {
+            distance,
+            uv: new THREE.Vector2().fromBufferAttribute(uvs, vertex),
+          };
+        }
+      }
+    });
+    assert.ok(closest.distance < 0.000001, 'Barrel shell must meet its generating vault exactly');
+    assert.ok(firstUv.distanceTo(closest.uv) < 0.000001,
+      'brick UVs must remain continuous across the generating vault and Barrel joint');
+  }
+});
+
+test('Hall Rib vault intersects X and Y curved roofs with the Hall vault profile height', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 1,
+    hallCoverType: 'rib-vault',
+    hallTransitionEnabled: true,
+    hallArchRibHeight: 0.42,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: true, brickWidth: 0.18 },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const covers = [];
+  const transitions = [];
+  const domes = [];
+  const domeGuides = [];
+  const intersectionLines = [];
+  hall.traverse((object) => {
+    if (object.userData?.isHallRibVaultCover) covers.push(object);
+    if (object.userData?.isHallBayTransition) transitions.push(object);
+    if (object.userData?.roomDomePart === 'dome-shell') domes.push(object);
+    if (object.userData?.hallConstructionGuideCategory === 'dome') domeGuides.push(object);
+    if (object.userData?.isHallRibVaultIntersectionLine) intersectionLines.push(object);
+  });
+  assert.equal(building.hallCoverType, 'rib-vault');
+  assert.equal(building.domeEnabled, false);
+  assert.equal(building.hallTransitionEnabled, false);
+  assert.equal(building.domeTransitionCoverEnabled, false);
+  assert.equal(building.hallDomeGuideVisible, false);
+  assert.equal(building.hallRibVaultEdgeColors['rib-vault'], '#3aa1bb');
+  assert.equal(building.hallRibVaultEdgeColors['raised-rib-vault'], '#3aa1bb');
+  assert.equal(hall.userData.hallCoverType, 'rib-vault');
+  assert.equal(hall.userData.hallTransitionEnabled, false);
+  assert.equal(covers.length, 3);
+  assert.equal(transitions.length, 0, 'Rib vault bears directly on the X and Y vault arches');
+  assert.equal(domes.length, 0);
+  assert.equal(domeGuides.length, 0);
+  assert.equal(intersectionLines.length, covers.length * 2);
+  intersectionLines.forEach((line) => {
+    assert.equal(line.userData.hallRibVaultIntersectionLineStyle, 'solid');
+    assert.equal(line.userData.hallRibVaultIntersectionLineColorSource, 'cover-specific-edge-line-color');
+    assert.equal(line.userData.hallRibVaultIntersectionLineWidth, 1);
+    assert.equal(line.material.color.getHexString(), '3aa1bb');
+    assert.ok(line.geometry.getAttribute('position').count > 0);
+  });
+  assert.deepEqual(
+    new Set(intersectionLines.map((line) => line.userData.hallRibVaultIntersectionFace)),
+    new Set(['interior', 'exterior']),
+  );
+  covers.forEach((cover) => {
+    assert.equal(cover.userData.hallRibVaultThicknessSource, 'hall-vault-profile-height');
+    assert.equal(cover.userData.hallRibVaultExtrusionRule, 'x-and-y-vault-curves-extruded-by-their-vault-profile-height');
+    assert.ok(Math.abs(cover.userData.hallRibVaultShellThickness - building.hallArchRibHeight) < 0.000001);
+    assert.deepEqual(cover.userData.hallRibVaultCurves, ['x-axis-vault-profile', 'y-axis-vault-profile']);
+    assert.equal(cover.geometry.userData.hallRibVaultIntradosRule, 'four-panel-intersection-of-x-and-y-vault-soffit-profiles');
+    assert.equal(cover.geometry.userData.hallRibVaultUvMapping, 'metre-based-symmetric-u-follows-generating-barrel-axis-v-follows-nearest-spring-vault-arc');
+    assert.equal(cover.geometry.userData.hallRibVaultBrickScaleRule, 'same-physical-bond-period-on-x-and-y-generated-roof-panels');
+    assert.equal(cover.geometry.userData.hallRibVaultPatternContinuity, 'shared-symmetric-phase-across-four-groins-on-equal-span-bays');
+    assert.equal(cover.geometry.userData.hallRibVaultPanelConstruction, 'four-independent-curved-panels-with-duplicated-sharp-groin-edges');
+    assert.equal(cover.geometry.userData.hallRibVaultPanelCount, 4);
+    assert.equal(cover.geometry.userData.hallRibVaultRidgePaths.length, 4);
+    assert.equal(cover.geometry.userData.hallRibVaultInteriorRidgePaths.length, 4);
+    assert.equal(cover.geometry.userData.hallRibVaultExteriorRidgePaths.length, 4);
+    assert.equal(cover.geometry.userData.hallRibVaultBoundaryFlushRule, 'interior-follows-vault-soffit-exterior-follows-vault-extrados');
+    assert.equal(cover.geometry.userData.hallRibVaultSeatRule, 'starts-at-inward-vault-side-faces-with-no-centerline-overlap');
+    assert.ok(Math.abs(
+      cover.geometry.userData.hallRibVaultClearHalfWidth
+      - (building.hallBayWidth / 2 - building.hallArchRibWidth / 2)
+    ) < 0.000001);
+    assert.ok(Math.abs(
+      cover.geometry.userData.hallRibVaultClearHalfDepth
+      - (building.hallBayDepth / 2 - building.hallArchRibWidth / 2)
+    ) < 0.000001);
+    assert.ok(cover.geometry.userData.hallRibVaultXArcLength > building.hallBayWidth);
+    assert.ok(cover.geometry.userData.hallRibVaultYArcLength > building.hallBayDepth);
+    assert.equal(cover.geometry.groups.length, 3);
+    const positions = cover.geometry.getAttribute('position');
+    const uvs = cover.geometry.getAttribute('uv');
+    const row = cover.geometry.userData.hallRibVaultSubdivisions + 1;
+    const patchSize = row * row;
+    const [centerX, centerZ] = cover.userData.hallBayCenter;
+    const clearHalfWidth = cover.geometry.userData.hallRibVaultClearHalfWidth;
+    const clearHalfDepth = cover.geometry.userData.hallRibVaultClearHalfDepth;
+    for (let along = 0; along < row; along += 1) {
+      assert.ok(Math.abs(positions.getZ(along) - (centerZ - clearHalfDepth)) < 0.00001);
+      assert.ok(Math.abs(positions.getZ(patchSize + along) - (centerZ + clearHalfDepth)) < 0.00001);
+      assert.ok(Math.abs(positions.getX(patchSize * 2 + along) - (centerX + clearHalfWidth)) < 0.00001);
+      assert.ok(Math.abs(positions.getX(patchSize * 3 + along) - (centerX - clearHalfWidth)) < 0.00001);
+    }
+    assert.ok(Math.max(...Array.from(uvs.array)) > 1, 'Rib vault UVs must retain measured metre distances instead of normalized 0-1 stretching');
+    assert.equal(cover.material[0].userData.brickBondSide, 'room_dome_interior');
+    assert.equal(cover.material[1].userData.brickBondSide, 'room_dome');
+  });
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = building;
+  scene.walls = walls;
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(hall);
+  scene.archInfillGroup = new THREE.Group();
+  scene.placementGroup = new THREE.Group();
+  scene.projectInstanceGroup = new THREE.Group();
+  scene.sectionCapGroup = new THREE.Group();
+  scene.clearGroup = (group) => { while (group.children.length) group.remove(group.children[0]); };
+  scene.buildRoomSectionCaps(0, 'x');
+  assert.ok(scene.sectionCapGroup.children.some((cap) => (
+    cap.userData.roomSectionSourcePart === 'rib-vault-cover'
+      && cap.children.some((child) => child.userData.isRoomSectionHatchLine === true)
+  )), 'a cut Rib vault shell must receive the standard hatched section cap');
+});
+
+test('Hall Raised rib vault retains the overlap, lifts above four vaults, and builds vertical transition walls', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallCoverType: 'raised-rib-vault',
+    hallRibVaultEdgeColors: {
+      'rib-vault': '#123456',
+      'raised-rib-vault': '#d17a22',
+    },
+    hallTransitionEnabled: true,
+    domeEnabled: true,
+    hallDomeGuideVisible: true,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: true },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock({
+    ...building,
+    hallTransitionEnabled: true,
+    domeEnabled: true,
+  }, walls);
+  const covers = [];
+  const transitions = [];
+  const domes = [];
+  const intersectionLines = [];
+  hall.traverse((object) => {
+    if (object.userData?.isHallRaisedRibVaultCover) covers.push(object);
+    if (object.userData?.isHallRaisedRibVaultTransition) transitions.push(object);
+    if (object.userData?.roomDomePart === 'dome-shell') domes.push(object);
+    if (object.userData?.isHallRibVaultIntersectionLine) intersectionLines.push(object);
+  });
+
+  assert.equal(building.hallCoverType, 'raised-rib-vault');
+  assert.equal(building.hallTransitionEnabled, false);
+  assert.equal(building.domeEnabled, false);
+  assert.equal(building.hallDomeGuideVisible, false);
+  assert.equal(hall.userData.hallCoverType, 'raised-rib-vault');
+  assert.equal(hall.userData.hallTransitionEnabled, false,
+    'standard Pendentive/Karbandi transition must remain disabled');
+  assert.equal(covers.length, 1);
+  assert.equal(transitions.length, 4);
+  assert.equal(domes.length, 0);
+  assert.equal(intersectionLines.length, 2);
+  intersectionLines.forEach((line) => {
+    assert.equal(line.userData.hallRibVaultIntersectionLineColorSource, 'cover-specific-edge-line-color');
+    assert.equal(line.userData.hallRibVaultIntersectionLineColor, '#d17a22');
+    assert.equal(line.material.color.getHexString(), 'd17a22');
+  });
+
+  const cover = covers[0];
+  assert.equal(cover.geometry.userData.hallRaisedRibVault, true);
+  assert.equal(cover.geometry.userData.hallRibVaultIntradosRule,
+    'minimum-envelope-retains-only-shared-central-x-y-vault-intersection');
+  assert.equal(cover.geometry.userData.hallRaisedRibVaultBooleanRule,
+    'keep-central-overlap-remove-non-overlapping-outer-lobes');
+  assert.ok(cover.geometry.userData.hallRaisedRibVaultVerticalShift > 0);
+  assert.equal(cover.geometry.userData.hallRibVaultSeatRule,
+    'retains-full-overlapping-vault-footprint-at-supporting-vault-centerlines');
+  assert.equal(cover.geometry.userData.hallRibVaultVaultFaceInset, 0);
+  assert.ok(Math.abs(cover.geometry.userData.hallRibVaultClearHalfWidth - building.hallBayWidth / 2) < 0.000001);
+  assert.ok(Math.abs(cover.geometry.userData.hallRibVaultClearHalfDepth - building.hallBayDepth / 2) < 0.000001);
+  assert.ok(cover.geometry.userData.hallRaisedRibVaultTransitionProfiles.xBottom.length > 2);
+  assert.equal(cover.geometry.userData.hallRaisedRibVaultTransitionProfiles.xBottom.length,
+    cover.geometry.userData.hallRaisedRibVaultTransitionProfiles.xTop.length);
+  assert.ok(cover.geometry.userData.hallRaisedRibVaultTransitionProfiles.xTop.every((point) => (
+    Math.abs(point[1] - cover.geometry.userData.hallRaisedRibVaultBearingY) < 0.000001
+  )), 'the raised cover must spring from a flat wall top rather than a second outer arch');
+  assert.ok(cover.geometry.userData.hallRaisedRibVaultTransitionProfiles.yTop.every((point) => (
+    Math.abs(point[1] - cover.geometry.userData.hallRaisedRibVaultBearingY) < 0.000001
+  )));
+  const footprint = cover.geometry.userData.hallRaisedRibVaultFootprint;
+  assert.ok(footprint.northOuter < footprint.northInner);
+  assert.ok(footprint.southInner < footprint.southOuter);
+  assert.ok(footprint.westOuter < footprint.westInner);
+  assert.ok(footprint.eastInner < footprint.eastOuter);
+  const coverPositions = cover.geometry.getAttribute('position');
+  const row = cover.geometry.userData.hallRibVaultSubdivisions + 1;
+  const patchSize = row * row;
+  for (let panel = 0; panel < 4; panel += 1) {
+    for (let along = 0; along < row; along += 1) {
+      assert.ok(Math.abs(
+        coverPositions.getY(panel * patchSize + along)
+        - cover.geometry.userData.hallRaisedRibVaultBearingY
+      ) < 0.00001, 'all four retained central panels must share one level square springing base');
+    }
+    assert.ok(coverPositions.getY(panel * patchSize + (row - 1) * row)
+      > cover.geometry.userData.hallRaisedRibVaultBearingY);
+  }
+
+  assert.deepEqual(
+    new Set(transitions.map((wall) => wall.userData.hallRaisedRibVaultTransitionSide)),
+    new Set(['north', 'south', 'east', 'west']),
+  );
+  hall.updateMatrixWorld(true);
+  const coverBounds = new THREE.Box3().setFromObject(cover);
+  transitions.forEach((wall) => {
+    assert.equal(wall.userData.hallRaisedRibVaultTransitionConstruction,
+      'vertical-solid-wall-from-supporting-vault-extrados-to-raised-cover-soffit');
+    assert.ok(Math.abs(
+      wall.userData.hallRaisedRibVaultTransitionThickness - building.hallArchRibHeight
+    ) < 0.000001);
+    assert.equal(wall.userData.hallRaisedRibVaultTransitionFootprintRule,
+      'bounded-exactly-between-raised-cover-exterior-and-interior-base-edges');
+    assert.equal(wall.userData.roomDomePart, 'raised-rib-vault-transition-wall');
+    assert.ok(wall.geometry.getAttribute('position').count > 0);
+    const wallBounds = new THREE.Box3().setFromObject(wall);
+    assert.ok(wallBounds.min.x >= coverBounds.min.x - 0.00001);
+    assert.ok(wallBounds.max.x <= coverBounds.max.x + 0.00001);
+    assert.ok(wallBounds.min.z >= coverBounds.min.z - 0.00001);
+    assert.ok(wallBounds.max.z <= coverBounds.max.z + 0.00001);
+  });
+});
+
+test('Hall Rib and Raised rib vault coverage cuts a physical square center hole without masking the bond', () => {
+  for (const hallCoverType of ['rib-vault', 'raised-rib-vault']) {
+    const building = normalizeBuilding({
+      type: 'room',
+      buildingType: 'hall',
+      hallGridX: 1,
+      hallGridY: 1,
+      hallCoverType,
+      domePatternCoverage: 23,
+      hallRibVaultCenterOpeningEnabledByCoverType: {
+        'rib-vault': hallCoverType === 'rib-vault',
+        'raised-rib-vault': hallCoverType === 'raised-rib-vault',
+      },
+      hallRibVaultCoverageByCoverType: {
+        'rib-vault': hallCoverType === 'rib-vault' ? 80 : 91,
+        'raised-rib-vault': hallCoverType === 'raised-rib-vault' ? 70 : 92,
+      },
+    });
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: true },
+    }, building);
+    const hall = buildWallSystemWithCanvasMock(building, walls);
+    const cover = hall.children.find((child) => child.userData?.isHallRibVaultCover);
+    const expectedCoverage = hallCoverType === 'rib-vault' ? 80 : 70;
+    assert.ok(cover);
+    assert.equal(cover.userData.hallRibVaultCenterOpeningEnabled, true);
+    assert.equal(cover.userData.hallRibVaultCenterOpeningShape, 'square');
+    assert.equal(cover.userData.hallRibVaultCenterOpeningCoverage, expectedCoverage);
+    assert.equal(cover.userData.hallRibVaultCenterOpeningRule,
+      'physical-square-hole-only-bond-and-pattern-remain-full-coverage');
+    assert.equal(cover.geometry.index, null, 'the exact square boundary is baked into the cover mesh');
+    assert.equal(cover.geometry.groups.length, 3);
+    const halfSize = cover.geometry.userData.hallRibVaultCenterOpeningHalfSize;
+    assert.ok(halfSize > 0);
+    const positions = cover.geometry.getAttribute('position');
+    for (const group of cover.geometry.groups.slice(0, 2)) {
+      for (let index = group.start; index < group.start + group.count; index += 1) {
+        assert.ok(
+          Math.abs(positions.getX(index)) >= halfSize - 0.00001
+            || Math.abs(positions.getZ(index)) >= halfSize - 0.00001,
+          'interior and exterior roof faces must not cover the square opening',
+        );
+      }
+    }
+    assert.ok(cover.geometry.groups[2].count > 0, 'the square hole must expose a closed shell-thickness return');
+    assert.equal(cover.material[0].userData.brickBondSide, 'room_dome_interior');
+    assert.equal(cover.material[1].userData.brickBondSide, 'room_dome');
+    assert.equal(building.domePatternCoverage, 23,
+      'the unrelated dome pattern coverage must not control the Rib vault square hole');
+    const openingRidges = hall.children.filter((child) => child.userData?.isHallRibVaultIntersectionLine);
+    assert.equal(openingRidges.length, 2);
+    openingRidges.forEach((line) => {
+      assert.equal(line.userData.hallRibVaultIntersectionLineSquareOpeningClipped, true);
+      const linePositions = line.geometry.getAttribute('position');
+      for (let index = 0; index < linePositions.count; index += 2) {
+        const midpointX = (linePositions.getX(index) + linePositions.getX(index + 1)) / 2;
+        const midpointZ = (linePositions.getZ(index) + linePositions.getZ(index + 1)) / 2;
+        assert.ok(Math.abs(midpointX) >= halfSize - 0.00001 || Math.abs(midpointZ) >= halfSize - 0.00001,
+          'groin mortar lines must stop at the square opening edge');
+      }
+    });
+  }
+
+  const defaults = normalizeBuilding({ type: 'room', buildingType: 'hall' });
+  assert.deepEqual(defaults.hallRibVaultCenterOpeningEnabledByCoverType, {
+    'rib-vault': false,
+    'raised-rib-vault': false,
+  });
+  assert.deepEqual(defaults.hallRibVaultCoverageByCoverType, {
+    'rib-vault': 85,
+    'raised-rib-vault': 85,
+  });
+});
+
+test('Hall transition checkbox hides transition geometry without changing the selected dome cover', () => {
+  let enabledDomePositions = null;
+  for (const hallTransitionEnabled of [true, false]) {
+    for (const hallCoverType of ['none', 'dome']) {
+      const building = normalizeBuilding({
+        type: 'room',
+        buildingType: 'hall',
+        hallGridX: 1,
+        hallGridY: 1,
+        hallTransitionEnabled,
+        hallTransitionType: 'pendentive',
+        hallCoverType,
+      });
+      const hall = buildWallSystemWithCanvasMock(building, normalizeWallSystem({}, building));
+      const transitions = [];
+      const domes = [];
+      hall.traverse((object) => {
+        if (object.userData?.isHallBayTransition) transitions.push(object);
+        if (object.userData?.isHallBayCover && object.userData?.roomDomePart === 'dome-shell') domes.push(object);
+      });
+      assert.equal(building.hallTransitionEnabled, hallTransitionEnabled);
+      assert.equal(hall.userData.hallTransitionEnabled, hallTransitionEnabled);
+      assert.equal(transitions.length, hallTransitionEnabled ? 1 : 0);
+      assert.equal(domes.length, hallCoverType === 'dome' ? 1 : 0);
+      if (hallCoverType === 'dome') {
+        const positions = Array.from(domes[0].geometry.getAttribute('position').array);
+        if (hallTransitionEnabled) enabledDomePositions = positions;
+        else assert.deepEqual(positions, enabledDomePositions, 'hiding the transition must preserve the Hall dome design');
+      }
+    }
+  }
+});
+
+test('hiding Hall Karbandi retains its solved crown as the unchanged dome bearing', () => {
+  let visibleDome = null;
+  for (const hallTransitionEnabled of [true, false]) {
+    const building = normalizeBuilding({
+      type: 'room',
+      buildingType: 'hall',
+      hallGridX: 1,
+      hallGridY: 1,
+      hallTransitionEnabled,
+      hallTransitionType: 'karbandi',
+      hallCoverType: 'dome',
+    });
+    const hall = buildWallSystemWithCanvasMock(building, normalizeWallSystem({}, building));
+    const transitions = hall.children.filter((object) => object.userData?.isHallBayTransition);
+    const dome = hall.children.find((object) => object.userData?.roomDomePart === 'dome-shell');
+    assert.ok(dome);
+    assert.equal(transitions.length, hallTransitionEnabled ? 16 : 0);
+    assert.equal(dome.userData.hallDomeBaseCenterlineRadius, dome.userData.hallDomeKarbandiCrownRadius);
+    const snapshot = {
+      positions: Array.from(dome.geometry.getAttribute('position').array),
+      springY: dome.userData.roomDomeSpringY,
+      crownRadius: dome.userData.hallDomeKarbandiCrownRadius,
+      interiorRadii: dome.userData.hallDomeInteriorBaseRadii,
+      exteriorRadii: dome.userData.hallDomeExteriorBaseRadii,
+    };
+    if (hallTransitionEnabled) visibleDome = snapshot;
+    else assert.deepEqual(snapshot, visibleDome, 'hidden Karbandi must retain the identical dome crown solve');
+  }
+});
+
+test('Hall brick vaults use running bond along the curve and retain sharp square corners', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 1,
+    hallGridY: 1,
+    hallVaultFinish: 'bricks',
+    hallVaultColor: '#8f5a32',
+  });
+  const walls = normalizeWallSystem({}, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const vaults = [];
+  hall.traverse((object) => {
+    if (object.userData?.isHallVaultArch) vaults.push(object);
+  });
+  assert.equal(vaults.length, 4);
+  vaults.forEach((vault) => {
+    assert.equal(vault.userData.hallVaultFinish, 'bricks');
+    assert.equal(vault.userData.hallVaultBrickCourseDirection, 'follows-vault-curve');
+    assert.equal(vault.geometry.userData.hallVaultUvMapping, 'global-axis-u-and-vault-arc-length-v-shared-with-directional-barrel-cover');
+    assert.equal(vault.geometry.userData.hallVaultSideFaceUvMapping,
+      'profile-height-u-and-vault-arc-length-v-running-bond');
+    assert.equal(vault.geometry.userData.hallVaultSideFaceUvWidth, building.hallArchRibHeight);
+    assert.equal(vault.geometry.userData.hallVaultCourseOrientation, 'horizontal-at-leg-then-rotates-with-arch-curve');
+    const uv = vault.geometry.getAttribute('uv');
+    const positions = vault.geometry.getAttribute('position');
+    const longitudinal = (vertex) => vault.userData.hallVaultDirection === 'x'
+      ? positions.getZ(vertex)
+      : positions.getX(vertex);
+    assert.ok(Math.abs(uv.getX(0) - longitudinal(0)) < 0.000001);
+    assert.ok(Math.abs(uv.getX(1) - longitudinal(1)) < 0.000001);
+    assert.ok(Math.abs(Math.abs(uv.getX(1) - uv.getX(0)) - building.hallArchRibWidth) < 0.000001);
+    assert.equal(uv.getY(0), 0);
+    assert.ok(uv.getY(2) > uv.getY(0), 'brick courses must advance along the vault curve');
+    const sectionCount = vault.geometry.userData.hallVaultProfileSectionCount;
+    [1, 3].forEach((face) => {
+      const faceStart = face * sectionCount * 2;
+      assert.ok(Math.abs(
+        Math.abs(uv.getX(faceStart + 1) - uv.getX(faceStart)) - building.hallArchRibHeight
+      ) < 0.000001, `Hall vault side face ${face} must have a physical UV width instead of a collapsed texture`);
+      assert.ok(uv.getY(faceStart + 2) > uv.getY(faceStart),
+        `Hall vault side face ${face} running bond must advance along the arch curve`);
+    });
+    assert.equal(vault.geometry.userData.hallVaultSharpProfileEdges, true);
+    assert.equal(vault.material.userData.brickBondSelection, 'running');
+    assert.equal(vault.material.userData.hallVaultColor, '#8f5a32');
+    assert.equal(vault.material.userData.hallVaultMortarColor, walls.bricks.mortarColor);
+    assert.equal(vault.material.userData.hallVaultMortarSize, walls.bricks.mortar);
+    assert.equal(vault.material.userData.hallVaultBondAndMortarTextureEnabled, true);
+    assert.ok(vault.material.map);
+  });
+});
+
+test('Hall sections hatch vault profiles and exact boundary-wall masonry above each open arch', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 3,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    height: 5,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = building;
+  scene.walls = walls;
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystemWithCanvasMock(building, walls));
+  scene.archInfillGroup = new THREE.Group();
+  scene.sectionCapGroup = new THREE.Group();
+  scene.clearGroup = (group) => { while (group.children.length) group.remove(group.children[0]); };
+
+  scene.buildRoomSectionCaps(0, 'x');
+  const xCaps = scene.sectionCapGroup.children.filter((cap) => cap.userData.isHallVaultSectionCap === true);
+  assert.equal(xCaps.length, 4);
+  assert.ok(xCaps.every((cap) => cap.material.userData.roomSectionHatch === 'black-45-degree'));
+  assert.ok(xCaps.every((cap) => (
+    cap.material.depthTest === true
+      && cap.userData.hallVaultSectionCapFaceOffset === 0.01
+      && cap.userData.hallVaultSectionCapHatchRule
+        === 'material-clipped-hatch-only-no-free-line-overdraw'
+  )), 'every X Slice vault profile must remain depth-occluded on its exact cut');
+  assert.ok(xCaps.every((cap) => !cap.children.some((child) => (
+    child.userData.isRoomSectionHatchLine === true
+  ))), 'Hall vault caps must not add free-standing hatch lines outside their cap faces');
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('perimeter wall')
+  )).length, 2, 'the two surrounding perimeter walls must retain their real section caps');
+  assert.ok(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('perimeter wall')
+  )).every((cap) => cap.children.some((child) => child.userData.isRoomSectionHatchLine === true)));
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('masonry under boundary vault')
+  )).length, 2);
+  assert.ok(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('masonry under boundary vault')
+  )).every((cap) => (
+    cap.userData.roomSectionCapSource === 'exact-hall-boundary-vault-infill-profile-section'
+      && cap.children.some((child) => child.userData.isRoomSectionHatchLine === true)
+  )));
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionCapSource === 'open-solid-section-envelope-fallback'
+  )).length, 0, 'open Pendentive interfaces must not be closed across the dome opening');
+
+  scene.buildRoomSectionCaps(0, 'y');
+  const yCaps = scene.sectionCapGroup.children.filter((cap) => cap.userData.isHallVaultSectionCap === true);
+  assert.equal(yCaps.length, 4);
+  assert.ok(yCaps.every((cap) => cap.material.userData.roomSectionHatch === 'black-45-degree'));
+  assert.ok(yCaps.every((cap) => (
+    cap.material.depthTest === true
+      && cap.userData.hallVaultSectionCapFaceOffset === 0.01
+      && cap.userData.hallVaultSectionCapHatchRule
+        === 'material-clipped-hatch-only-no-free-line-overdraw'
+  )), 'every Y Slice vault profile must remain depth-occluded on its exact cut');
+  assert.ok(yCaps.every((cap) => !cap.children.some((child) => (
+    child.userData.isRoomSectionHatchLine === true
+  ))), 'Hall vault caps must not add free-standing hatch lines outside their cap faces');
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('perimeter wall')
+  )).length, 2, 'the perpendicular surrounding walls must retain their real section caps');
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('masonry under boundary vault')
+  )).length, 2);
+  assert.ok(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionSourceName?.includes('masonry under boundary vault')
+  )).every((cap) => (
+    cap.userData.roomSectionCapSource === 'exact-hall-boundary-vault-infill-profile-section'
+      && cap.children.some((child) => child.userData.isRoomSectionHatchLine === true)
+  )));
+  assert.equal(scene.sectionCapGroup.children.filter((cap) => (
+    cap.userData.roomSectionCapSource === 'open-solid-section-envelope-fallback'
+  )).length, 0, 'the Y Slice must also preserve every open Pendentive-to-dome interface');
+});
+
+test('Hall section plane stays at the grid center and only its vault cap face shifts camera-side', () => {
+  const oddHall = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 3,
+    hallBayWidth: 4,
+    hallBayDepth: 5,
+    hallVaultConvergenceAdjusted: true,
+  });
+  const oddScene = Object.create(MehrazScene.prototype);
+  oddScene.building = oddHall;
+  assert.equal(oddScene.roomSectionCutCenter('x'), 0);
+  assert.equal(oddScene.roomSectionCutCenter('y'), 0);
+  oddScene.walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, oddHall);
+  oddScene.buildingGroup = new THREE.Group();
+  oddScene.buildingGroup.add(buildWallSystemWithCanvasMock(oddHall, oddScene.walls));
+  oddScene.archInfillGroup = new THREE.Group();
+  oddScene.placementGroup = new THREE.Group();
+  oddScene.projectInstanceGroup = new THREE.Group();
+  oddScene.sectionCapGroup = new THREE.Group();
+  oddScene.clearGroup = (group) => { while (group.children.length) group.remove(group.children[0]); };
+  for (const [axis, expectedProfiles] of [['x', oddHall.hallGridY], ['y', oddHall.hallGridX]]) {
+    oddScene.buildRoomSectionCaps(oddScene.roomSectionCutCenter(axis), axis);
+    const vaultCaps = oddScene.sectionCapGroup.children.filter((cap) => cap.userData.isHallVaultSectionCap);
+    assert.ok(vaultCaps.length >= expectedProfiles,
+      'a centered section must cap every crossed Hall vault band');
+    vaultCaps.forEach((cap) => {
+      assert.equal(cap.material.depthTest, true);
+      assert.equal(cap.userData.hallVaultSectionCapFaceOffset, 0.01);
+      assert.equal(cap.userData.hallVaultSectionCapHatchRule,
+        'material-clipped-hatch-only-no-free-line-overdraw');
+      assert.equal(cap.children.some((child) => child.userData.isRoomSectionHatchLine === true), false);
+      const positions = cap.geometry.getAttribute('position');
+      for (let index = 0; index < positions.count; index += 1) {
+        const faceCoordinate = axis === 'x' ? positions.getX(index) : positions.getZ(index);
+        assert.ok(Math.abs(faceCoordinate - 0.01) < 0.000001,
+          'the cap face—not the section plane—must receive the camera-side offset');
+      }
+    });
+  }
+
+  const evenScene = Object.create(MehrazScene.prototype);
+  evenScene.building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 4,
+    hallVaultConvergenceAdjusted: true,
+  });
+  assert.equal(evenScene.roomSectionCutCenter('x'), 0);
+  assert.equal(evenScene.roomSectionCutCenter('y'), 0);
+
+  const roomScene = Object.create(MehrazScene.prototype);
+  roomScene.building = normalizeBuilding({ type: 'room', buildingType: 'room' });
+  assert.equal(roomScene.roomSectionCutCenter('x'), 0);
+  assert.equal(roomScene.roomSectionCutCenter('y'), 0);
+});
+
+test('Hall section caps the complete longitudinal vault band without open corner wedges', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 2,
+    hallCoverType: 'rib-vault',
+    height: 5,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = building;
+  scene.walls = walls;
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystemWithCanvasMock(building, walls));
+  scene.archInfillGroup = new THREE.Group();
+  scene.placementGroup = new THREE.Group();
+  scene.projectInstanceGroup = new THREE.Group();
+  scene.sectionCapGroup = new THREE.Group();
+  scene.clearGroup = (group) => { while (group.children.length) group.remove(group.children[0]); };
+
+  for (const axis of ['x', 'y']) {
+    scene.buildRoomSectionCaps(0, axis);
+    const longitudinalCaps = scene.sectionCapGroup.children.filter((cap) => (
+      cap.userData.roomSectionCapSource === 'exact-hall-longitudinal-vault-soffit-extrados-envelope'
+    ));
+    assert.equal(longitudinalCaps.length, 2);
+    longitudinalCaps.forEach((cap) => {
+      assert.equal(cap.userData.isHallVaultSectionCap, true);
+      assert.equal(cap.userData.hallVaultSectionCapVisibilityRule,
+        'camera-side-offset-with-normal-depth-occlusion-on-exact-vault-contour');
+      assert.equal(cap.userData.hallVaultSectionCapFaceOffset, 0.01);
+      assert.equal(cap.userData.hallVaultSectionCapHatchRule,
+        'material-clipped-hatch-only-no-free-line-overdraw');
+      assert.equal(cap.material.depthTest, true);
+      assert.ok(cap.geometry.getAttribute('position').count > 20,
+        'the cap must cover the complete curved vault band, not a corner fragment');
+      assert.equal(cap.children.some((child) => (
+        child.userData.isRoomSectionHatchLine === true
+      )), false);
+    });
+  }
+});
+
+test('Portal, Room, Vestibule, and Hall section every cut solid with hatched caps', () => {
+  const cases = [
+    ['Portal', { type: 'iwan', buildingType: 'portal', width: 4, depth: 2, height: 6 }],
+    ['Room', { type: 'room', buildingType: 'room', width: 4, length: 4, height: 6 }],
+    ['Vestibule', { type: 'room', buildingType: 'vestibule', width: 4, length: 4, height: 4 }],
+    ['Hall', { type: 'room', buildingType: 'hall', hallGridX: 1, hallGridY: 1, hallBayWidth: 4, hallBayDepth: 4, height: 5 }],
+  ];
+  cases.forEach(([label, source]) => {
+    const building = normalizeBuilding(source);
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, building);
+    const scene = Object.create(MehrazScene.prototype);
+    scene.building = building;
+    scene.walls = walls;
+    scene.buildingGroup = new THREE.Group();
+    scene.buildingGroup.add(buildWallSystemWithCanvasMock(building, walls));
+    scene.archInfillGroup = new THREE.Group();
+    scene.placementGroup = new THREE.Group();
+    scene.projectInstanceGroup = new THREE.Group();
+    scene.sectionCapGroup = new THREE.Group();
+    scene.clearGroup = (group) => { while (group.children.length) group.remove(group.children[0]); };
+    ['x', 'y'].forEach((axis) => {
+      scene.buildRoomSectionCaps(0, axis);
+      assert.ok(scene.sectionCapGroup.children.length > 0, `${label} ${axis.toUpperCase()} Slice must create cut caps`);
+      assert.ok(scene.sectionCapGroup.children.every((cap) => (
+        cap.material.userData.roomSectionHatch === 'black-45-degree'
+      )), `${label} ${axis.toUpperCase()} Slice caps must all use the section hatch`);
+    });
+  });
+});
+
+test('Hall section shows one camera-facing vault guide and one dome guide', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 3,
+    hallArchGuideVisible: true,
+    hallDomeGuideVisible: true,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = building;
+  scene.walls = walls;
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystemWithCanvasMock(building, walls));
+  const diagrams = [];
+  scene.buildingGroup.traverse((object) => {
+    if (object.userData?.hallConstructionGuidePlane) diagrams.push(object);
+  });
+  assert.equal(diagrams.length, 4, 'Hall keeps one X and one Y representative for each guide category');
+  ['x', 'y'].forEach((axis) => {
+    scene.sectionViewEnabled = true;
+    scene.sectionViewAxis = axis;
+    scene.syncHallSectionConstructionGuides();
+    const visible = diagrams.filter((diagram) => diagram.visible);
+    assert.equal(visible.length, 2);
+    assert.deepEqual(new Set(visible.map((diagram) => diagram.userData.hallConstructionGuideCategory)), new Set(['vault', 'dome']));
+    assert.ok(visible.every((diagram) => diagram.userData.hallConstructionGuidePlane === axis));
+    visible.forEach((diagram) => {
+      const arc = diagram.children.find((child) => child.userData.hallConstructionGuideKind === 'arc');
+      const positions = arc.geometry.getAttribute('position');
+      const coordinates = Array.from({ length: positions.count }, (_, index) => (
+        axis === 'x' ? positions.getX(index) : positions.getZ(index)
+      ));
+      assert.ok(Math.max(...coordinates) - Math.min(...coordinates) < 0.000001,
+        `${axis.toUpperCase()} Slice guide must lie in a camera-facing ${axis === 'x' ? 'YZ' : 'XY'} plane`);
+    });
+    const dome = visible.find((diagram) => diagram.userData.hallConstructionGuideCategory === 'dome');
+    const domeArcs = dome.children.filter((child) => child.userData.hallConstructionGuideKind === 'arc');
+    const domeCenters = dome.children.filter((child) => child.userData.hallConstructionGuideKind === 'center');
+    const domeRadii = dome.children.filter((child) => child.userData.hallConstructionGuideKind === 'radius');
+    assert.equal(domeArcs.length, 2, 'one-point Hall dome must show exactly two mirrored green arcs');
+    assert.ok(domeArcs.every((arc) => arc.name.includes('green arc')));
+    assert.equal(domeCenters.length, 2);
+    assert.equal(domeRadii.length, 2);
+    [...domeArcs, ...domeCenters, ...domeRadii].forEach((part) => {
+      assert.equal(part.userData.hallConstructionGuideCategory, 'dome');
+      assert.deepEqual(part.userData.hallConstructionGuideSourceBay, dome.userData.hallConstructionGuideSourceBay);
+    });
+  });
+  scene.selectedWallSide = 'room_dome';
+  const genericRoomGuideRoot = new THREE.Group();
+  scene.addRoomDomeArchConstructionGuides(genericRoomGuideRoot);
+  assert.equal(genericRoomGuideRoot.children.length, 0,
+    'selecting a Hall dome must not add a second generic Room guide to another bay');
+});
+
+test('two-point Hall dome guide contains two green and two red arcs from one dome only', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 2,
+    hallGridY: 2,
+    hallDomeGuideVisible: true,
+    hallDomeArch: {
+      archType: 'two-point',
+      greenOffsetAuto: false,
+      greenHeightAuto: false,
+      redOffset: -1.2,
+      redRadius: 0.4,
+      greenOffset: 0.4,
+      greenHeightOffset: -0.5,
+    },
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  const dome = [];
+  hall.traverse((object) => {
+    if (object.userData?.hallConstructionGuideCategory === 'dome'
+      && object.userData?.hallConstructionGuidePlane === 'x') dome.push(object);
+  });
+  const diagram = dome.find((object) => object.isGroup);
+  assert.ok(diagram);
+  const arcs = diagram.children.filter((child) => child.userData.hallConstructionGuideKind === 'arc');
+  assert.equal(arcs.filter((arc) => arc.name.includes('green arc')).length, 2);
+  assert.equal(arcs.filter((arc) => arc.name.includes('red arc')).length, 2);
+  assert.equal(diagram.children.filter((child) => child.userData.hallConstructionGuideKind === 'center').length, 4);
+  assert.equal(diagram.children.filter((child) => child.userData.hallConstructionGuideKind === 'radius').length, 4);
+  assert.ok(diagram.children.every((child) => (
+    child.userData.hallConstructionGuideCategory === 'dome'
+      && JSON.stringify(child.userData.hallConstructionGuideSourceBay)
+        === JSON.stringify(diagram.userData.hallConstructionGuideSourceBay)
+  )));
+});
 
 test('Room floor-plan settings normalize direct-bearing cover constraints', () => {
   const circle = normalizeBuilding({
@@ -77,6 +2398,31 @@ test('Room floor-plan settings normalize direct-bearing cover constraints', () =
   assert.equal(circle.roomPlanShape, 'circle');
   assert.equal(circle.domeCoverType, 'dome');
   assert.equal(circle.domeTransitionCoverEnabled, false);
+  assert.equal(circle.domeArch.archType, 'two-point');
+  assert.equal(circle.domeArch.redOffset, 0);
+  assert.equal(circle.domeArch.greenOffset, 1.4);
+  assert.equal(circle.domeArch.greenHeightOffset, -1.45);
+  assert.equal(circle.domeCenterOpeningEnabled, false);
+
+  const octagon = normalizeBuilding({ type: 'room', roomPlanShape: 'octagon' });
+  assert.equal(octagon.domeArch.archType, 'two-point');
+  assert.equal(octagon.domeArch.redOffset, 0);
+  assert.equal(octagon.domeArch.greenOffset, 1.4);
+  assert.equal(octagon.domeArch.greenHeightOffset, -1.45);
+  assert.equal(octagon.domeCenterOpeningEnabled, false);
+
+  for (const domeCoverType of ['none', 'cone', 'pyramid']) {
+    const squareKarbandi = normalizeBuilding({
+      type: 'room',
+      buildingType: 'room',
+      roomPlanShape: 'square',
+      domeTransition: 'karbandi',
+      domeCoverType,
+      domeEnabled: false,
+    });
+    assert.equal(squareKarbandi.domeCoverType, domeCoverType);
+    assert.equal(squareKarbandi.domeEnabled, true);
+  }
 
   assert.equal(normalizeBuilding({ type: 'room', roomPlanShape: 'polygon', roomPolygonSides: 2 }).roomPolygonSides, 3);
   assert.equal(normalizeBuilding({ type: 'room', roomPlanShape: 'polygon', roomPolygonSides: 100 }).roomPolygonSides, 32);
@@ -176,6 +2522,8 @@ test('Portal Octagon and Circle plans build only the half behind the square-plan
     assert.ok(portal.children.some((child) => ['north_sides', 'north_top'].includes(child.userData?.wallSide)));
     if (shape === 'octagon') {
       assert.equal(portal.userData.portalHalfVestibuleFootprint, true);
+      assert.equal(portal.userData.portalHalfPlanJambFlush, true);
+      assert.deepEqual(portal.userData.portalHalfPlanOpeningJambX, [-3, 3]);
       assert.equal(
         portal.userData.roomPlanFootprintSource,
         'south-half-of-vestibule-eight-visible-karbandi-rib-feet',
@@ -183,6 +2531,17 @@ test('Portal Octagon and Circle plans build only the half behind the square-plan
       assert.ok(new Set(
         portal.userData.portalHalfPlanVisibleSegmentLengths.map((length) => length.toFixed(4)),
       ).size > 2, 'the half Vestibule must retain its unequal short and long wall edges');
+      const cutAdjacentSideWalls = plan.children.filter((segment) => (
+        ['east', 'west'].includes(segment.userData.wallSide)
+        && [segment.userData.roomPlanInnerStart, segment.userData.roomPlanInnerEnd]
+          .some((point) => Math.abs(point[1] - cutLineZ) < 0.000001)
+      ));
+      assert.equal(cutAdjacentSideWalls.length, 2);
+      cutAdjacentSideWalls.forEach((segment) => {
+        const expectedJambX = segment.userData.wallSide === 'east' ? 3 : -3;
+        assert.ok(Math.abs(segment.userData.roomPlanInnerStart[0] - expectedJambX) < 0.000001);
+        assert.ok(Math.abs(segment.userData.roomPlanInnerEnd[0] - expectedJambX) < 0.000001);
+      });
     }
   });
 });
@@ -196,10 +2555,16 @@ test('Portal Octagon Karbandi is the clipped half of the same unequal Vestibule 
     iwanDepth: 3,
     height: 4,
   });
-  const walls = portalDefaultWallSystem({
+  const blankWalls = portalDefaultWallSystem({
     ...DEFAULT_WALL_SYSTEM,
     bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
   }, building);
+  const walls = normalizeWallSystem({
+    ...blankWalls,
+    portalTransition: 'karbandi',
+    karbandi: { ...blankWalls.karbandi, enabled: true },
+  }, building);
+  walls.karbandi.coverEnabled = true;
   const portal = buildWallSystem(building, walls);
   const plan = portal.getObjectByName('Portal half-octagon floor-plan walls');
   const karbandiMeshes = [];
@@ -216,15 +2581,90 @@ test('Portal Octagon Karbandi is the clipped half of the same unequal Vestibule 
   assert.equal(portal.userData.roomKarbandiWallSupportFootOctagon.length, 8);
   assert.ok(portal.userData.karbandiClosestWallLegs.every((leg) => leg.distance < 0.000001));
   assert.ok(karbandiMeshes.length > 0);
-  assert.ok(karbandiMeshes.every((mesh) => {
+  const squareCrownPanels = karbandiMeshes.filter((mesh) => (
+    mesh.userData.portalOctagonCrownConstruction === 'square-portal-north-crown-only'
+  ));
+  assert.ok(squareCrownPanels.length > 0, 'the octagonal Portal must reuse the square Portal crown cover');
+  assert.ok(squareCrownPanels.every((mesh) => (
+    mesh.userData.roofType === 'crown'
+    && mesh.userData.webPatchSolver === 'north-crown-sliced-inward-courses'
+    && mesh.userData.webSupportSides.includes('north')
+    && mesh.userData.northWallClipped === true
+  )), 'the replacement crown must close directly to the north wall arch');
+  const northArchSideCovers = karbandiMeshes.filter((mesh) => mesh.userData.portalNorthArchSideCover === true);
+  assert.equal(northArchSideCovers.length, 2, 'both octagonal Portal side bays must follow the north arch');
+  northArchSideCovers.forEach((cover) => {
+    const wallProfile = cover.userData.portalNorthArchWallProfile;
+    const ribProfile = cover.userData.portalWallSupportedRibProfile;
+    assert.equal(cover.userData.portalNorthArchBoundaryRule,
+      'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg');
+    assert.equal(cover.userData.portalSideCoverThicknessRule, 'half-brick');
+    assert.ok(Math.abs(cover.userData.roofThickness - walls.bricks.brickWidth / 2) < 0.000001);
+    assert.equal(cover.userData.webPatchSolver, 'portal-north-arch-to-rib-ruled-half-brick-shell');
+    assert.equal(cover.userData.portalSideCoverConstruction, 'shared-clean-arch-to-rib-half-brick-shell');
+    assert.deepEqual(cover.userData.portalSideCoverClosedReturns, ['north-wall-arch', 'rib', 'spring', 'crown']);
+    assert.equal(cover.userData.portalSideCoverWallSeat, 'north-opening-plane-no-lateral-offset');
+    assert.equal(cover.userData.portalSideCoverSpringJoint,
+      'jamb-aligned-and-overlapped-behind-visible-rib');
+    assert.equal(cover.userData.portalSideCoverCourseRows,
+      'shared-world-height-resampled-wall-and-rib-profiles');
+    assert.equal(wallProfile.length, ribProfile.length);
+    assert.ok(wallProfile.length > 8);
+    const generatedWallProfile = cover.geometry.userData.portalKarbandiSideCoverWallProfile;
+    const generatedRibProfile = cover.geometry.userData.portalKarbandiSideCoverRibProfile;
+    assert.equal(generatedWallProfile.length, generatedRibProfile.length);
+    assert.ok(generatedWallProfile.every((point, index) => (
+      Math.abs(point[1] - generatedRibProfile[index][1]) < 0.000001
+    )), 'every side-cover course must join the wall and rib at one shared elevation');
+    assert.ok(Math.abs(generatedRibProfile[0][0] - generatedWallProfile[0][0]) < 0.000001,
+      'the cover spring must not bend sideways from the jamb-aligned vertical wall');
+    assert.ok(wallProfile.every(([, , z]) => Math.abs(z - portal.userData.portalKarbandiHalfPlaneZ) < 0.000001));
+    assert.ok(wallProfile.at(-1)[1] > wallProfile[0][1], 'the wall boundary must use the rising north arch curve');
+    assert.ok(ribProfile.every(([x], index) => (
+      Math.abs(THREE.MathUtils.clamp(x, -building.width / 2, building.width / 2) - wallProfile[index][0]) < 0.000001
+    )));
+    assert.ok(ribProfile.every(([, , z]) => z >= portal.userData.portalKarbandiHalfPlaneZ - 0.000001));
+    assert.ok(Math.abs(ribProfile.at(-1)[2] - portal.userData.portalKarbandiHalfPlaneZ) < 0.000001,
+      'the visible rib boundary must terminate at the north wall plane');
+    assert.equal(cover.userData.portalSideCoverRibClip,
+      'upper-and-lower-skins-overlap-behind-visible-rib-leg-only');
+    const positions = cover.geometry.getAttribute('position');
+    const surfaceVertexCount = cover.geometry.userData.portalKarbandiSideCoverSurfaceVertexCount;
+    for (let index = 0; index < surfaceVertexCount; index += 2) {
+      assert.ok(Math.abs(positions.getX(index) - positions.getX(index + surfaceVertexCount)) < 0.000001);
+      assert.ok(Math.abs(positions.getY(index) - positions.getY(index + surfaceVertexCount)) < 0.000001);
+      assert.ok(Math.abs(
+        positions.getZ(index) - positions.getZ(index + surfaceVertexCount) + walls.bricks.brickWidth / 2
+      ) < 0.00001, 'the octagonal cover must seat flush without stepping sideways from the north opening');
+    }
+    for (let index = 0; index < surfaceVertexCount; index += 1) {
+      const shellThickness = Math.hypot(
+        positions.getX(index) - positions.getX(index + surfaceVertexCount),
+        positions.getY(index) - positions.getY(index + surfaceVertexCount),
+        positions.getZ(index) - positions.getZ(index + surfaceVertexCount),
+      );
+      assert.ok(Math.abs(shellThickness - walls.bricks.brickWidth / 2) < 0.00001,
+        'the arch-to-rib side cover must keep a uniform half-brick shell');
+    }
+  });
+  assert.equal(portal.userData.portalOctagonRemovedFlatCenterCapCount, 1);
+  assert.equal(karbandiMeshes.some((mesh) => (
+    mesh.userData.webCellClassification === 'InteriorCell'
+    && mesh.userData.webPatchSolver === 'boundary-constrained-polygon'
+    && mesh.userData.webRegionCorners?.length >= 16
+  )), false, 'the clipped Vestibule centre cap must not leave a black surface');
+  assert.ok(karbandiMeshes.filter((mesh) => !squareCrownPanels.includes(mesh)).every((mesh) => {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     return materials.every((material) => material.clippingPlanes?.some((plane) => (
       plane.normal.z === 1
       && Math.abs(plane.constant + portal.userData.portalKarbandiHalfPlaneZ) < 0.000001
     )));
-  }), 'every visible Karbandi mesh must be cut at the Portal facade plane');
+  }), 'the retained half-Vestibule ribs and wall-edge covers must be cut at the Portal facade plane');
   assert.deepEqual(
-    portal.userData.roomPlanVertices.map(([x, z]) => [Number(x.toFixed(6)), Number(z.toFixed(6))]),
+    portal.userData.portalHalfPlanKarbandiBearingVertices.map(([x, z]) => [
+      Number(x.toFixed(6)),
+      Number(z.toFixed(6)),
+    ]),
     portal.userData.roomKarbandiWallSupportFootOctagon.map(({ point: [x, , z] }) => [
       Number(x.toFixed(6)),
       Number(z.toFixed(6)),
@@ -395,7 +2835,7 @@ test('Vestibule Karbandi ribs seat on its octagonal wall top and carry the trans
   assert.ok(vestibule.getObjectByName('Room circular dome cover'));
 });
 
-test('Octagon and Circle plans seed the requested default arched door', () => {
+test('Room plans start without openings and preserve explicitly supplied openings', () => {
   const defaultDoor = createRoomPlanOpening('door', 'default-door');
   assert.deepEqual(defaultDoor, {
     id: 'default-door',
@@ -406,6 +2846,7 @@ test('Octagon and Circle plans seed the requested default arched door', () => {
     sillHeight: 0,
     head: 'arch',
     arch: {
+      archType: 'two-point',
       redOffset: -0.15,
       greenOffset: 0.55,
       greenHeight: 0.8,
@@ -414,8 +2855,7 @@ test('Octagon and Circle plans seed the requested default arched door', () => {
   });
   for (const roomPlanShape of ['octagon', 'circle']) {
     const seeded = roomPlanOpeningsWithDefaultDoor([], roomPlanShape, `${roomPlanShape}-door`);
-    assert.equal(seeded.length, 1);
-    assert.deepEqual(seeded[0], { ...defaultDoor, id: `${roomPlanShape}-door` });
+    assert.deepEqual(seeded, []);
   }
   assert.deepEqual(roomPlanOpeningsWithDefaultDoor([], 'polygon', 'unused'), []);
   assert.equal(roomPlanOpeningsWithDefaultDoor([defaultDoor], 'circle', 'unused')[0], defaultDoor);
@@ -430,6 +2870,111 @@ test('Octagon and Circle plans seed the requested default arched door', () => {
   assert.equal(normalized.roomPlanOpenings[0].arch.greenHeight, 0.8);
 });
 
+test('raised doors cut from their sill and build automatic skirt-stone steps', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'octagon',
+    width: 6,
+    length: 5,
+    height: 4,
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    stoneBase: {
+      ...DEFAULT_WALL_SYSTEM.stoneBase,
+      color: '#887766',
+      slabWidth: 0.55,
+      mortar: 0.012,
+      mortarColor: '#332211',
+    },
+    roomWallOpenings: {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings,
+      north: {
+        ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north,
+        door: {
+          ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.door,
+          enabled: true,
+          width: 1.8,
+          height: 1.8,
+          head: 'lintel',
+          sillHeight: 0.55,
+        },
+      },
+    },
+  }, building);
+  const room = buildWallSystemWithCanvasMock(building, walls);
+  const steps = room.getObjectByName('north door stone steps');
+  assert.ok(steps);
+  assert.equal(steps.userData.doorSillHeight, 0.55);
+  assert.equal(steps.userData.doorStepCount, 4);
+  assert.ok(steps.userData.doorStepRiserHeight <= 0.18);
+  assert.equal(steps.userData.doorStepWidth, 1.8);
+  assert.equal(steps.children.length, 4);
+  assert.equal(steps.children.at(-1).userData.doorStepTopY, 0.55);
+  assert.ok(steps.children.every((step) => step.geometry.parameters.width === 1.8));
+  assert.ok(steps.children.every((step) => Number.isFinite(step.rotation.y)));
+  const stepMaterial = steps.children[0].material;
+  assert.equal(stepMaterial.userData.isDoorStepStoneMaterial, true);
+  assert.equal(stepMaterial.userData.doorStepStoneSource, 'building-skirt');
+  assert.equal(stepMaterial.userData.stoneBaseColor, '#887766');
+  assert.equal(stepMaterial.userData.stoneBaseSlabWidth, 0.55);
+  assert.equal(stepMaterial.userData.stoneBaseMortar, 0.012);
+  assert.equal(stepMaterial.userData.stoneBaseMortarColor, '#332211');
+  const northWall = room.getObjectByName('Room north south-style wall');
+  assert.ok(northWall.userData.roomWallOpeningTypes.includes('door'));
+  assert.equal(northWall.userData.roomWallDoorSillHeight, 0.55);
+  const northBody = northWall.children.find((object) => object.userData?.isRoomWallBody === true);
+  assert.equal(northBody.userData.roomWallOpeningProfiles.door.bottom, 0.55);
+  const raisedFloor = room.getObjectByName('Building interior fill and raised floor');
+  assert.ok(raisedFloor);
+  assert.equal(raisedFloor.userData.raisedInteriorFloorHeight, 0.55);
+  assert.equal(raisedFloor.userData.raisedInteriorFloorTopY, 0.55);
+  const raisedFloorBounds = new THREE.Box3().setFromObject(raisedFloor);
+  assert.ok(Math.abs(raisedFloorBounds.max.y - 0.55) < 0.000001);
+  assert.ok(Math.abs(raisedFloorBounds.min.x + 3) < 0.000001);
+  assert.ok(Math.abs(raisedFloorBounds.max.x - 3) < 0.000001);
+
+  const groundDoorWalls = normalizeWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const groundDoorRoom = buildWallSystemWithCanvasMock(building, groundDoorWalls);
+  assert.equal(groundDoorRoom.getObjectByName('north door stone steps'), undefined);
+  assert.equal(groundDoorRoom.getObjectByName('Building interior fill and raised floor'), undefined);
+});
+
+test('radial raised doors use the same automatic door-width stone stair', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'octagon',
+    width: 6,
+    length: 6,
+    height: 4,
+  });
+  const door = { ...createRoomPlanOpening('door', 'raised-radial-door'), width: 1.25, sillHeight: 0.36 };
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    roomPlanOpenings: [door],
+  }, building);
+  const room = buildWallSystemWithCanvasMock(building, walls);
+  const steps = [...room.children].find((object) => (
+    object.userData?.isDoorStepAssembly === true
+    && object.userData?.doorOpeningId === 'raised-radial-door'
+  ));
+  assert.ok(steps);
+  assert.equal(steps.userData.doorStepCount, 2);
+  assert.equal(steps.userData.doorStepWidth, 1.25);
+  assert.equal(steps.children.at(-1).userData.doorStepTopY, 0.36);
+  assert.ok(steps.children.every((step) => Number.isFinite(step.rotation.y)));
+  const outerNorthZ = Math.min(...room.userData.roomPlanOuterVertices.map(([, z]) => z));
+  const lowestStepZ = Math.min(...steps.children.map((step) => new THREE.Box3().setFromObject(step).min.z));
+  assert.ok(lowestStepZ < outerNorthZ - 0.1, 'the staircase must project visibly beyond the exterior wall face');
+  const raisedFloor = room.getObjectByName('Building interior fill and raised floor');
+  assert.ok(raisedFloor);
+  assert.equal(raisedFloor.userData.raisedInteriorFloorPlanShape, 'octagon');
+  const floorBounds = new THREE.Box3().setFromObject(raisedFloor);
+  assert.ok(Math.abs(floorBounds.max.y - 0.36) < 0.000001);
+});
+
 test('Room exterior edge column settings default off and normalize their dimensions', () => {
   const defaults = normalizeBuilding({ type: 'room' });
   assert.equal(defaults.roomExteriorColumnsEnabled, false);
@@ -437,6 +2982,7 @@ test('Room exterior edge column settings default off and normalize their dimensi
   assert.equal(defaults.roomExteriorColumnRadius, 0.2);
   assert.equal(defaults.roomExteriorSquareColumnRotation, 0);
   assert.equal(defaults.roomExteriorCircleColumnCount, 8);
+  assert.equal(defaults.roomExteriorCircleColumnBoundaryMode, 'columns');
 
   const clamped = normalizeBuilding({
     type: 'room',
@@ -445,13 +2991,16 @@ test('Room exterior edge column settings default off and normalize their dimensi
     roomExteriorColumnRadius: 9,
     roomExteriorSquareColumnRotation: 900,
     roomExteriorCircleColumnCount: 100,
+    roomExteriorCircleColumnBoundaryMode: 'building',
   });
   assert.equal(clamped.roomExteriorColumnsEnabled, true);
   assert.equal(clamped.roomExteriorColumnProfile, 'square');
   assert.equal(clamped.roomExteriorColumnRadius, 2);
   assert.equal(clamped.roomExteriorSquareColumnRotation, 360);
   assert.equal(clamped.roomExteriorCircleColumnCount, 64);
+  assert.equal(clamped.roomExteriorCircleColumnBoundaryMode, 'building');
   assert.equal(normalizeBuilding({ type: 'room', roomExteriorColumnProfile: 'triangle' }).roomExteriorColumnProfile, 'circle');
+  assert.equal(normalizeBuilding({ type: 'room', roomExteriorCircleColumnBoundaryMode: 'invalid' }).roomExteriorCircleColumnBoundaryMode, 'columns');
 });
 
 test('Room exterior columns follow polygon vertices and Circle count on the exterior edge', () => {
@@ -519,6 +3068,59 @@ test('Room exterior columns follow polygon vertices and Circle count on the exte
   const resizedColumn = buildWallSystem(resizedCircle, wallsFor(resizedCircle))
     .getObjectByName('Room exterior edge column 1');
   assert.ok(Math.abs(Math.hypot(resizedColumn.position.x, resizedColumn.position.z) - (5 * Math.cos(Math.PI / 64) + 0.4)) < 0.000001);
+
+  const containedBuilding = normalizeBuilding({
+    ...circleBuilding,
+    roomExteriorColumnRadius: 0.3,
+    roomExteriorCircleColumnBoundaryMode: 'building',
+    innerDomeEnabledByTransition: {
+      ...circleBuilding.innerDomeEnabledByTransition,
+      [circleBuilding.domeTransition]: true,
+    },
+  });
+  const containedRoom = buildWallSystem(containedBuilding, wallsFor(containedBuilding));
+  const containedColumns = containedRoom.getObjectByName('Room exterior edge columns');
+  assert.equal(containedColumns.userData.roomExteriorCircleColumnBoundaryMode, 'building');
+  containedColumns.children.forEach((column) => {
+    const centerRadius = Math.hypot(column.position.x, column.position.z);
+    assert.ok(Math.abs(centerRadius + 0.3 - expectedExteriorRadius) < 0.000001);
+    assert.equal(column.userData.roomExteriorColumnCenterAlignment, 'inset-by-column-radial-extent-from-room-exterior-edge');
+  });
+  const containedInteriorRadius = Math.hypot(...containedRoom.userData.roomPlanVertices[0]);
+  const containedOuterVertices = containedRoom.userData.roomPlanOuterVertices
+    .map(([x, z]) => new THREE.Vector2(x, z));
+  const containedWallExteriorRadius = containedOuterVertices[0].clone().add(containedOuterVertices[1])
+    .multiplyScalar(0.5).length();
+  const containedColumnCenterRadius = Math.hypot(
+    containedColumns.children[0].position.x,
+    containedColumns.children[0].position.z,
+  );
+  const containedSkirt = containedRoom.getObjectByName('Independent stone skirt');
+  const exteriorDome = containedRoom.getObjectByName('Room circular dome cover');
+  const innerDome = containedRoom.getObjectByName('Room inner dome cover');
+  const containedDrum = containedRoom.getObjectByName('Room dome cylindrical drum');
+  assert.ok(containedInteriorRadius < 3, 'the circular vertical wall body must resize inside the fixed boundary');
+  assert.ok(Math.abs(containedWallExteriorRadius - containedColumnCenterRadius) < 0.000001);
+  assert.ok(Math.abs(containedSkirt.userData.stoneSkirtBoundaryRadius - expectedExteriorRadius) < 0.000001);
+  assert.ok(Math.abs(exteriorDome.userData.roomDomeRadius - expectedExteriorRadius) < 0.000001,
+    'the exterior cover must remain flush with the fixed skirt boundary');
+  assert.equal(exteriorDome.userData.roomDomeBaseExteriorFaceAlignment,
+    'outer-cover-base-flush-with-stone-skirt-outer-surface');
+  assert.ok(containedDrum);
+  assert.ok(Math.abs(containedDrum.geometry.userData.roomDomeDrumInnerApothem - containedInteriorRadius) < 0.000001,
+    'the drum interior face must remain flush with the resized vertical-wall interior face');
+  assert.equal(containedDrum.userData.roomDomeDrumInteriorAlignment, 'flush-with-room-wall-interior-face');
+  assert.equal(containedDrum.userData.roomDomeDrumThicknessSource,
+    'from-skirt-exterior-to-vertical-wall-interior-face');
+  assert.ok(innerDome);
+  assert.ok(Math.abs(innerDome.userData.roomDomeRadius - containedInteriorRadius) < 0.000001,
+    'the inner dome must remain flush with the resized vertical-wall interior face');
+
+  const coneBuilding = normalizeBuilding({ ...containedBuilding, domeCoverType: 'cone' });
+  const cone = buildWallSystem(coneBuilding, wallsFor(coneBuilding)).getObjectByName('Room circular dome cover');
+  assert.equal(cone.userData.roomDomeCoverType, 'cone');
+  assert.ok(Math.abs(cone.userData.roomDomeRadius - expectedExteriorRadius) < 0.000001,
+    'other exterior cover profiles must use the same fixed skirt boundary');
 });
 
 test('Room exterior columns continue the exterior wall brick bond and vertical courses', () => {
@@ -1146,6 +3748,28 @@ test('construction remains cumulative through the guide, south wall, and arch st
   assert.ok(northArchParts.every((child) => !child.visible), 'Ahang must not animate a duplicate north guide arch');
 });
 
+test('construction clipping caps the exposed masonry course as a solid piece', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.walls = normalizeWallSystem(DEFAULT_WALL_SYSTEM, normalizeBuilding({}));
+  scene.constructionCapGroup = new THREE.Group();
+  scene.constructionCapCache = new WeakMap();
+  const geometry = new THREE.BoxGeometry(2, 2, 1);
+  geometry.translate(0, 1, 0);
+  const wall = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: '#b88954' }));
+  scene.setConstructionClip(wall, 0.5, 'y', 0, 2, 0.25);
+  const caps = [];
+  scene.constructionCapGroup.traverse((child) => {
+    if (child.isMesh && child.userData?.constructionSolidCap === true) caps.push(child);
+  });
+  assert.equal(caps.length, 1);
+  assert.ok(caps[0].geometry.getAttribute('position').count >= 4);
+  const bounds = new THREE.Box3().setFromObject(caps[0]);
+  assert.ok(Math.abs(bounds.max.y - 1) < 0.001, 'cap must close the active brick-course top');
+  assert.equal(caps[0].material.side, THREE.DoubleSide);
+  scene.clearConstructionClip(wall);
+  assert.equal(scene.constructionCapGroup.children[0].visible, false);
+});
+
 test('construction animation omits wall-decoration steps that have no decoration', () => {
   const scene = constructionScene();
   const decorationSteps = CONSTRUCTION_STEPS.filter((step) => step.id.startsWith('decorate-'));
@@ -1159,6 +3783,545 @@ test('construction animation omits wall-decoration steps that have no decoration
   assert.equal(scene.hasConstructionStepContent('decorate-west'), false);
 });
 
+test('construction step lists match every selectable building and cover combination', () => {
+  const ids = (building, wallOptions = {}) => constructionStepsForBuilding(
+    normalizeBuilding(building),
+    wallOptions,
+  ).map((step) => step.id);
+  const portalBase = { type: 'iwan', buildingType: 'portal' };
+  assert.deepEqual(ids(portalBase, { portalCover: 'ahang', portalTransition: 'squinch' }).slice(0, 7), [
+    'empty', 'lower-walls', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill', 'north-upper-wall',
+  ]);
+  assert.deepEqual(ids(portalBase, { portalCover: 'none', portalTransition: 'karbandi' }).slice(0, 7), [
+    'empty', 'lower-walls', 'north-arch-guide', 'karbandi-reference-rib', 'karbandi-ribs', 'karbandi-roof', 'north-upper-wall',
+  ]);
+  const portalDome = ids({
+    ...portalBase, domeCoverType: 'dome', domeEnabled: true,
+    domeOuterRingEnabledByCoverType: { dome: true },
+    domeOuterRingEnabledByTransitionAndCoverType: { squinch: { dome: true } },
+  }, { portalCover: 'dome', portalTransition: 'squinch' });
+  assert.ok(portalDome.indexOf('portal-transition') < portalDome.indexOf('portal-cover'));
+  assert.ok(portalDome.indexOf('portal-outer-ring') < portalDome.indexOf('portal-cover'));
+  if (portalDome.includes('portal-drum')) {
+    assert.ok(portalDome.indexOf('portal-transition') < portalDome.indexOf('portal-drum'));
+    assert.ok(portalDome.indexOf('portal-drum') < portalDome.indexOf('portal-cover'));
+  }
+  if (portalDome.includes('portal-extra-leg')) {
+    assert.ok(portalDome.indexOf('portal-drum') < portalDome.indexOf('portal-extra-leg'));
+    assert.ok(portalDome.indexOf('portal-extra-leg') < portalDome.indexOf('portal-cover'));
+  }
+  assert.equal(portalDome.includes('arch-fill'), false);
+  const portalRaisedRib = ids(portalBase, {
+    portalCover: 'raised-rib-vault',
+    portalTransition: 'none',
+  });
+  assert.ok(portalRaisedRib.includes('portal-cover'));
+  assert.ok(portalRaisedRib.indexOf('north-upper-wall') < portalRaisedRib.indexOf('portal-cover'));
+
+  ['squinch', 'pendentive', 'muqarnas'].forEach((domeTransition) => {
+    const room = ids({
+      type: 'room', buildingType: 'room', roomPlanShape: 'square', domeTransition,
+      domeTransitionCoverEnabled: true, domeEnabled: true,
+      domeCoverType: 'dome', domeOuterRingEnabledByCoverType: { dome: true },
+      domeOuterRingEnabledByTransitionAndCoverType: { [domeTransition]: { dome: true } },
+    });
+    if (domeTransition === 'squinch') {
+      assert.ok(room.indexOf('lower-walls') < room.indexOf('room-squinch-arches'));
+      assert.ok(room.indexOf('room-squinch-arches') < room.indexOf('room-squinch-under-arch-walls'));
+      assert.ok(room.indexOf('room-squinch-under-arch-walls') < room.indexOf('room-transition-cover'));
+      assert.equal(room.includes('room-transition-structure'), false);
+    } else {
+      assert.ok(room.indexOf('lower-walls') < room.indexOf('room-transition-structure'));
+      assert.ok(room.indexOf('room-transition-structure') < room.indexOf('room-transition-cover'));
+    }
+    assert.ok(room.indexOf('room-transition-cover') < room.indexOf('room-dome'));
+    assert.ok(room.indexOf('room-outer-ring') < room.indexOf('room-dome'));
+    assert.equal(room.includes('room-karbandi-ribs'), false);
+  });
+  const karbandiRoom = ids({
+    type: 'room', buildingType: 'room', roomPlanShape: 'square', domeTransition: 'karbandi',
+    domeTransitionCoverEnabled: true, domeEnabled: true,
+  });
+  assert.ok(karbandiRoom.indexOf('room-karbandi-ribs') < karbandiRoom.indexOf('room-karbandi-roof'));
+  assert.ok(karbandiRoom.indexOf('room-karbandi-ribs') < karbandiRoom.indexOf('room-transition-structure'));
+  assert.ok(karbandiRoom.indexOf('room-transition-structure') < karbandiRoom.indexOf('room-karbandi-roof'));
+  assert.ok(karbandiRoom.indexOf('room-karbandi-roof') < karbandiRoom.indexOf('room-transition-cover'));
+  assert.equal(karbandiRoom.includes('room-transition-structure'), true);
+  const circularRoom = ids({
+    type: 'room', buildingType: 'room', roomPlanShape: 'circle', domeTransition: 'squinch', domeEnabled: true,
+  });
+  assert.equal(circularRoom.some((id) => id.startsWith('room-transition')), false);
+  const vestibule = ids({ type: 'room', buildingType: 'vestibule', domeEnabled: true });
+  assert.ok(vestibule.includes('room-karbandi-ribs'));
+
+  const hallIds = (hallCoverType, hallTransitionEnabled = true) => ids({
+    type: 'room', buildingType: 'hall', hallGridX: 1, hallGridY: 1,
+    hallCoverType, hallTransitionEnabled,
+    domeOuterRingEnabledByCoverType: { dome: true },
+    domeOuterRingEnabledByTransitionAndCoverType: {
+      karbandi: { dome: true }, squinch: { dome: true }, pendentive: { dome: true }, muqarnas: { dome: true },
+    },
+  });
+  assert.deepEqual(hallIds('none'), [
+    'empty', 'lower-walls', 'hall-vaults', 'hall-walls', 'room-decoration', 'complete',
+  ]);
+  assert.deepEqual(hallIds('dome'), [
+    'empty', 'lower-walls', 'hall-vaults', 'hall-walls', 'hall-cover', 'room-decoration', 'complete',
+  ]);
+  assert.deepEqual(hallIds('rib-vault'), [
+    'empty', 'lower-walls', 'hall-vaults', 'hall-walls', 'hall-cover', 'room-decoration', 'complete',
+  ]);
+  assert.deepEqual(hallIds('barrel'), [
+    'empty', 'lower-walls', 'hall-transverse-vaults', 'hall-barrel-spandrels',
+    'hall-barrel-axis-vaults', 'hall-barrel-surrounding-walls',
+    'hall-barrel-under-vault-walls', 'hall-cover', 'room-decoration', 'complete',
+  ]);
+  assert.deepEqual(hallIds('raised-rib-vault'), [
+    'empty', 'lower-walls', 'hall-vaults', 'hall-walls', 'hall-transition', 'hall-cover', 'room-decoration', 'complete',
+  ]);
+  assert.equal(hallIds('dome', false).includes('hall-transition'), false);
+});
+
+test('Portal Raised rib cover rises in horizontal courses after the north wall', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = normalizeBuilding({
+    type: 'iwan', buildingType: 'portal', width: 8, depth: 4, height: 6, openingWidth: 5,
+  });
+  scene.walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    portalTransition: 'none',
+    portalCover: 'raised-rib-vault',
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, scene.building);
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+  ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+    'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+  scene.selectedWallSide = null;
+  scene.wallSurfaceHighlight = null;
+  scene.updateWallSurfaceHighlight = () => {};
+  scene.invalidate = () => {};
+  const cover = [];
+  scene.wallSystemRoot().traverse((child) => {
+    if (child.isMesh && child.userData?.isPortalHalfBayCover === true) cover.push(child);
+  });
+  assert.equal(cover.length, 1);
+
+  scene.applyConstructionStep(CONSTRUCTION_STEPS.findIndex((step) => step.id === 'north-upper-wall'), 1);
+  assert.equal(cover[0].visible, false, 'cover must wait until the north wall is complete');
+
+  scene.applyConstructionStep(CONSTRUCTION_STEPS.findIndex((step) => step.id === 'portal-cover'), 0.5);
+  assert.equal(cover[0].visible, true);
+  assert.equal(
+    cover[0].userData.portalRaisedRibConstructionSequence,
+    'horizontal-brick-courses-bottom-to-crown',
+  );
+  assert.equal(cover[0].userData.constructionVerticalCourseSequence?.direction, 'bottom-to-top');
+  assert.ok((Array.isArray(cover[0].material) ? cover[0].material : [cover[0].material])
+    .every((material) => material.clippingPlanes?.some((plane) => plane.normal.y === -1)));
+});
+
+test('Hall construction animates columns, vaults, transitions, and each selected cover in order', () => {
+  ['none', 'dome', 'rib-vault', 'raised-rib-vault'].forEach((hallCoverType) => {
+    const scene = Object.create(MehrazScene.prototype);
+    scene.building = normalizeBuilding({
+      type: 'room', buildingType: 'hall', hallGridX: 1, hallGridY: 1,
+      hallBayWidth: 3, hallBayDepth: 3, hallCoverType, hallTransitionEnabled: true,
+      domeOuterRingEnabledByCoverType: { dome: true },
+      domeOuterRingEnabledByTransitionAndCoverType: {
+        karbandi: { dome: true }, squinch: { dome: true }, pendentive: { dome: true }, muqarnas: { dome: true },
+      },
+    });
+    scene.walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, scene.building);
+    scene.buildingGroup = new THREE.Group();
+    scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+    ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup', 'zoneGroup', 'zoneDecorationGroup']
+      .forEach((key) => { scene[key] = new THREE.Group(); });
+    scene.updateWallSurfaceHighlight = () => {};
+    const stepIndex = (id) => CONSTRUCTION_STEPS.findIndex((step) => step.id === id);
+    const objects = [];
+    scene.wallSystemRoot().traverse((child) => {
+      if (child.isMesh || child.isLine || child.isLineSegments) objects.push(child);
+    });
+    const columns = objects.filter((child) => child.userData?.isHallBearingColumn === true);
+    const vaults = objects.filter((child) => child.userData?.isHallVaultArch === true);
+    const transitions = objects.filter((child) => child.userData?.isHallBayTransition === true);
+    const walls = objects.filter((child) => (
+      child.userData?.isHallPerimeterWall === true
+        || child.userData?.isHallBoundaryVaultInfill === true
+    ));
+    const perimeterWalls = walls.filter((child) => child.userData?.isHallPerimeterWall === true);
+    const underVaultWalls = walls.filter((child) => child.userData?.isHallBoundaryVaultInfill === true);
+    const covers = objects.filter((child) => (
+      child.userData?.isHallBayCover === true
+        && child.userData?.isHallBayTransition !== true
+        && child.userData?.roomDomePart !== 'springing-ring'
+    ));
+    assert.ok(columns.length && vaults.length);
+    scene.applyConstructionStep(stepIndex('lower-walls'), 1);
+    assert.ok(columns.every((child) => child.visible));
+    assert.ok(vaults.every((child) => !child.visible));
+    assert.ok(walls.every((child) => !child.visible));
+    scene.applyConstructionStep(stepIndex('hall-vaults'), 0.999);
+    const startedVaults = vaults.filter((child) => child.visible);
+    assert.ok(startedVaults.length > 0);
+    assert.ok(startedVaults.every((child) => (
+      (Array.isArray(child.material) ? child.material : [child.material]).every((material) => (
+        material.userData.constructionRevealMode === 'two-sided-vault-courses-feet-to-crown'
+      ))
+      && child.userData.constructionVaultCourseSequence?.direction === 'both-springing-feet-to-crown'
+    )), 'Hall and Grid vault ribs must rise symmetrically from both feet to the crown');
+    scene.applyConstructionStep(stepIndex('hall-vaults'), 1);
+    assert.ok(vaults.every((child) => child.visible));
+    assert.ok(walls.every((child) => !child.visible));
+    assert.ok(covers.every((child) => !child.visible));
+    scene.applyConstructionStep(stepIndex('hall-walls'), 0.25);
+    assert.ok(perimeterWalls.every((child) => child.visible && child.userData.constructionOriginalMaterial));
+    assert.ok(underVaultWalls.every((child) => !child.visible),
+      'under-vault masonry must wait for the lower vertical wall courses');
+    scene.applyConstructionStep(stepIndex('hall-walls'), 0.75);
+    assert.ok(walls.every((child) => child.visible && child.userData.constructionOriginalMaterial));
+    assert.ok(covers.every((child) => !child.visible));
+    if (transitions.length) {
+      assert.equal(scene.hasConstructionStepContent('hall-transition'), true);
+      scene.applyConstructionStep(stepIndex('hall-transition'), 1);
+      assert.ok(transitions.every((child) => child.visible));
+      assert.ok(covers.every((child) => !child.visible));
+    } else assert.equal(scene.hasConstructionStepContent('hall-transition'), false);
+    if (covers.length) {
+      assert.equal(scene.hasConstructionStepContent('hall-cover'), true);
+      scene.applyConstructionStep(stepIndex('hall-cover'), 1);
+      assert.ok(covers.every((child) => child.visible));
+    } else assert.equal(scene.hasConstructionStepContent('hall-cover'), false);
+  });
+});
+
+test('every Hall and Grid Barrel phase receives progressive playback instead of an immediate complete state', () => {
+  [
+    'lower-walls',
+    'hall-transverse-vaults',
+    'hall-barrel-spandrels',
+    'hall-barrel-axis-vaults',
+    'hall-barrel-surrounding-walls',
+    'hall-barrel-under-vault-walls',
+    'hall-cover',
+  ].forEach((stepId) => assert.equal(ANIMATED_CONSTRUCTION_STEP_IDS.has(stepId), true, stepId));
+});
+
+test('Hall and Grid Barrel construction follows lower vault, spandrel, higher vault, wall, under-vault, and bay-cover order', () => {
+  ['hall', 'grid'].forEach((buildingType) => {
+    ['x', 'y'].forEach((hallBarrelAxis) => {
+      const scene = Object.create(MehrazScene.prototype);
+      scene.building = normalizeBuilding({
+        type: 'room', buildingType, hallGridX: 2, hallGridY: 2,
+        hallBayWidth: 3, hallBayDepth: 3,
+        gridBaySpansX: [3, 3], gridBaySpansY: [3, 3],
+        hallCoverType: 'barrel', hallBarrelAxis,
+      });
+      scene.walls = normalizeWallSystem({
+        ...DEFAULT_WALL_SYSTEM,
+        bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      }, scene.building);
+      scene.buildingGroup = new THREE.Group();
+      scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+      ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+        'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+      scene.updateWallSurfaceHighlight = () => {};
+      const columns = [];
+      const transverseVaults = [];
+      const axisVaults = [];
+      const spandrels = [];
+      const surroundingWalls = [];
+      const underHigherVaultWalls = [];
+      const barrelCovers = [];
+      scene.wallSystemRoot().traverse((child) => {
+        if (child.isMesh && child.userData?.isHallBearingColumn === true) columns.push(child);
+        if (child.isMesh && child.userData?.isHallVaultArch === true) {
+          if (child.userData.hallVaultDirection === hallBarrelAxis) axisVaults.push(child);
+          else transverseVaults.push(child);
+        }
+        if (child.isMesh && child.userData?.isHallBarrelSpandrelInfill === true) spandrels.push(child);
+        if (child.isMesh && child.userData?.isHallPerimeterWall === true) surroundingWalls.push(child);
+        if (child.isMesh && child.userData?.isHallBoundaryVaultInfill === true) underHigherVaultWalls.push(child);
+        if (child.isMesh && child.userData?.isHallBarrelCover === true) barrelCovers.push(child);
+      });
+      assert.ok(
+        columns.length > 0 && transverseVaults.length > 0 && spandrels.length > 0 && axisVaults.length > 0
+          && surroundingWalls.length > 0 && underHigherVaultWalls.length > 0,
+        `${buildingType}:${hallBarrelAxis} transverse=${transverseVaults.length} spandrels=${spandrels.length} axis=${axisVaults.length} surrounding=${surroundingWalls.length} under=${underHigherVaultWalls.length}`,
+      );
+      assert.equal(barrelCovers.length, 4);
+      const stepIndex = (id) => CONSTRUCTION_STEPS.findIndex((step) => step.id === id);
+
+      scene.applyConstructionStep(stepIndex('lower-walls'), 0.25);
+      assert.ok(columns.every((column) => (
+        column.visible
+          && column.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+          && column.userData.constructionVerticalCourseSequence.revealedCourses > 0
+          && column.userData.constructionVerticalCourseSequence.revealedCourses
+            < column.userData.constructionVerticalCourseSequence.courseCount
+      )), `${buildingType}:${hallBarrelAxis} columns must rise together in discrete bottom-to-top courses`);
+
+      scene.applyConstructionStep(stepIndex('hall-transverse-vaults'), 0.125);
+      const startedTransverseBays = new Set(transverseVaults
+        .filter((vault) => vault.visible)
+        .map((vault) => vault.userData.hallConstructionBay?.join(':')));
+      assert.equal(startedTransverseBays.size, 1);
+      assert.ok(transverseVaults.filter((vault) => vault.visible).every((vault) => (
+        vault.userData.constructionVaultCourseSequence?.direction === 'both-springing-feet-to-crown'
+          && vault.userData.constructionVaultCourseSequence.progress > 0
+          && vault.userData.constructionVaultCourseSequence.progress < 1
+      )));
+
+      scene.applyConstructionStep(stepIndex('hall-transverse-vaults'), 1);
+      assert.ok(transverseVaults.every((vault) => vault.visible));
+      assert.ok(spandrels.every((wall) => !wall.visible));
+      assert.ok(axisVaults.every((vault) => !vault.visible));
+      assert.ok(surroundingWalls.every((wall) => !wall.visible));
+      assert.ok(underHigherVaultWalls.every((wall) => !wall.visible));
+      assert.ok(barrelCovers.every((cover) => !cover.visible));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-spandrels'), 0.5);
+      assert.ok(transverseVaults.every((vault) => vault.visible));
+      assert.ok(spandrels.every((wall) => (
+        wall.visible
+          && wall.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+          && wall.userData.constructionVerticalCourseSequence.progress === 0.5
+      )));
+      assert.ok(axisVaults.every((vault) => !vault.visible));
+      assert.ok(surroundingWalls.every((wall) => !wall.visible));
+      assert.ok(underHigherVaultWalls.every((wall) => !wall.visible));
+      assert.ok(barrelCovers.every((cover) => !cover.visible));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-spandrels'), 1);
+      scene.applyConstructionStep(stepIndex('hall-barrel-axis-vaults'), 0.125);
+      const startedAxisBays = new Set(axisVaults
+        .filter((vault) => vault.visible)
+        .map((vault) => vault.userData.hallConstructionBay?.join(':')));
+      assert.equal(startedAxisBays.size, 1);
+      assert.ok(axisVaults.filter((vault) => vault.visible).every((vault) => (
+        vault.userData.constructionVaultCourseSequence?.direction === 'both-springing-feet-to-crown'
+          && vault.userData.constructionVaultCourseSequence.progress > 0
+          && vault.userData.constructionVaultCourseSequence.progress < 1
+      )));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-axis-vaults'), 1);
+      assert.ok(axisVaults.every((vault) => vault.visible));
+      assert.ok(surroundingWalls.every((wall) => !wall.visible));
+      assert.ok(underHigherVaultWalls.every((wall) => !wall.visible));
+      assert.ok(barrelCovers.every((cover) => !cover.visible));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-surrounding-walls'), 0.5);
+      assert.ok(surroundingWalls.every((wall) => (
+        wall.visible
+          && wall.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+          && wall.userData.constructionVerticalCourseSequence.progress === 0.5
+      )));
+      assert.ok(underHigherVaultWalls.every((wall) => !wall.visible));
+      assert.ok(barrelCovers.every((cover) => !cover.visible));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-surrounding-walls'), 1);
+      scene.applyConstructionStep(stepIndex('hall-barrel-under-vault-walls'), 0.5);
+      assert.ok(underHigherVaultWalls.every((wall) => (
+        wall.visible
+          && wall.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+          && wall.userData.constructionVerticalCourseSequence.progress === 0.5
+      )));
+      assert.ok(barrelCovers.every((cover) => !cover.visible));
+
+      scene.applyConstructionStep(stepIndex('hall-barrel-under-vault-walls'), 1);
+      scene.applyConstructionStep(stepIndex('hall-cover'), 0.125);
+      const firstBayCovers = barrelCovers.filter((cover) => cover.userData.hallConstructionBay?.join(':') === '0:0');
+      const laterBayCovers = barrelCovers.filter((cover) => cover.userData.hallConstructionBay?.join(':') !== '0:0');
+      assert.ok(firstBayCovers.length > 0 && firstBayCovers.every((cover) => cover.visible));
+      assert.ok(laterBayCovers.length > 0 && laterBayCovers.every((cover) => !cover.visible));
+      assert.ok(firstBayCovers.every((cover) => (
+        cover.userData.constructionBarrelSpanSequence?.direction === 'one-supporting-vault-to-the-next'
+          && cover.userData.constructionBarrelSpanSequence.progress > 0
+          && cover.userData.constructionBarrelSpanSequence.progress < 1
+          && cover.userData.constructionBarrelSpanSequence.longitudinalAxis
+            === (hallBarrelAxis === 'x' ? 'z' : 'x')
+      )));
+    });
+  });
+});
+
+test('Room and Portal Squinch vault ribs construct symmetrically from both feet to the crown', () => {
+  [
+    { type: 'room', buildingType: 'room', stepId: 'room-transition-structure' },
+    { type: 'iwan', buildingType: 'portal', stepId: 'portal-transition' },
+  ].forEach(({ type, buildingType, stepId }) => {
+    const scene = Object.create(MehrazScene.prototype);
+    scene.building = normalizeBuilding({
+      type,
+      buildingType,
+      width: 6,
+      length: 6,
+      depth: 4,
+      height: 4,
+      domeTransition: 'squinch',
+      domeCoverType: 'none',
+      domeEnabled: false,
+    });
+    scene.walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      portalTransition: buildingType === 'portal' ? 'squinch' : 'none',
+      portalCover: 'none',
+      karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, scene.building);
+    scene.buildingGroup = new THREE.Group();
+    scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+    ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+      'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+    scene.selectedWallSide = null;
+    scene.wallSurfaceHighlight = null;
+    scene.updateWallSurfaceHighlight = () => {};
+    const ribs = [];
+    scene.wallSystemRoot().traverse((child) => {
+      if (child.isMesh && child.userData?.roomDomePart === 'squinch-transition-rib') ribs.push(child);
+    });
+    assert.ok(ribs.length > 0, `${buildingType} must expose its Squinch vault ribs`);
+    scene.applyConstructionStep(CONSTRUCTION_STEPS.findIndex((step) => step.id === stepId), 0.5);
+    assert.ok(ribs.every((rib) => (
+      rib.visible
+      && (Array.isArray(rib.material) ? rib.material : [rib.material]).every((material) => (
+        material.userData.constructionRevealMode === 'two-sided-vault-courses-feet-to-crown'
+      ))
+      && rib.userData.constructionVaultCourseSequence?.direction === 'both-springing-feet-to-crown'
+    )));
+  });
+});
+
+test('Hall and Grid construction complete every vault in one bay before starting the next bay', () => {
+  ['hall', 'grid'].forEach((buildingType) => {
+    const scene = Object.create(MehrazScene.prototype);
+    scene.building = normalizeBuilding({
+      type: 'room', buildingType, hallGridX: 2, hallGridY: 1,
+      hallBayWidth: 3, hallBayDepth: 3, hallCoverType: 'none',
+    });
+    scene.walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, scene.building);
+    scene.buildingGroup = new THREE.Group();
+    scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+    ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+      'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+    scene.updateWallSurfaceHighlight = () => {};
+    const vaults = [];
+    const underVaultWalls = [];
+    scene.wallSystemRoot().traverse((child) => {
+      if (child.isMesh && child.userData?.isHallVaultArch === true) vaults.push(child);
+      if (child.isMesh && child.userData?.isHallBoundaryVaultInfill === true) underVaultWalls.push(child);
+    });
+    scene.applyConstructionStep(
+      CONSTRUCTION_STEPS.findIndex((step) => step.id === 'hall-vaults'),
+      0.25,
+    );
+    const firstBay = vaults.filter((vault) => vault.userData.hallConstructionBay?.join(':') === '0:0');
+    const secondBay = vaults.filter((vault) => vault.userData.hallConstructionBay?.join(':') === '1:0');
+    assert.ok(firstBay.length > 1 && secondBay.length > 1);
+    assert.ok(underVaultWalls.length > 0);
+    assert.ok(firstBay.every((vault) => (
+      vault.visible
+      && vault.userData.constructionVaultCourseSequence?.progress === 0.5
+    )), `${buildingType} must construct all first-bay vaults together`);
+    assert.ok(underVaultWalls.every((wall) => !wall.visible),
+      `${buildingType} vertical and under-vault walls must wait until every bay vault is complete`);
+    assert.ok(secondBay.every((vault) => !vault.visible),
+      `${buildingType} must not start the next bay before the first bay is complete`);
+    scene.applyConstructionStep(
+      CONSTRUCTION_STEPS.findIndex((step) => step.id === 'hall-walls'),
+      0.75,
+    );
+    assert.ok(underVaultWalls.every((wall) => wall.visible && wall.userData.constructionOriginalMaterial),
+      `${buildingType} under-vault walls must rise vertically after all bay vaults`);
+  });
+});
+
+test('Hall and Grid build Pendentive transitions and upper covers one bay at a time', () => {
+  ['hall', 'grid'].forEach((buildingType) => {
+    const scene = Object.create(MehrazScene.prototype);
+    scene.building = normalizeBuilding({
+      type: 'room', buildingType, hallGridX: 2, hallGridY: 1,
+      hallBayWidth: 3, hallBayDepth: 3,
+      gridBaySpansX: [3, 3], gridBaySpansY: [3],
+      hallTransitionEnabled: true, hallTransitionType: 'pendentive', hallCoverType: 'dome',
+    });
+    scene.walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      edges: { ...DEFAULT_WALL_SYSTEM.edges, enabled: true },
+    }, scene.building);
+    scene.buildingGroup = new THREE.Group();
+    scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+    ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+      'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+    scene.updateWallSurfaceHighlight = () => {};
+    const transitions = [];
+    const covers = [];
+    const filteredJointEdges = [];
+    scene.wallSystemRoot().traverse((child) => {
+      if (child.isMesh && child.userData?.isHallBayTransition === true) transitions.push(child);
+      if (child.isMesh && child.userData?.isHallBayCover === true
+        && child.userData?.isHallBayTransition !== true) covers.push(child);
+      if (child.isLineSegments && child.userData?.wallEdgeExcludedHorizontalY?.length) {
+        filteredJointEdges.push(child);
+      }
+    });
+    const seamlessSurfaces = [
+      ...transitions.filter((child) => child.userData?.isHallFourVaultPendentive === true),
+      ...covers.filter((child) => child.userData?.roomDomePart === 'dome-shell'),
+    ];
+    assert.ok(seamlessSurfaces.length >= 4);
+    assert.ok(seamlessSurfaces.every((child) => (
+      child.castShadow === true
+        && child.receiveShadow === false
+        && child.userData.hallPendentiveDomeShadowRule === 'shared-soft-light-without-joint-self-shadow'
+    )), `${buildingType} Pendentive and dome shading must remain continuous across their joint`);
+    assert.ok(seamlessSurfaces.every((child) => (
+      child.userData.hallPendentiveDomeJointRule === 'direct-tangent-interface-without-rendered-boundary-edge'
+        && child.userData.hallPendentiveDomeCoursesPreserved === true
+    )), `${buildingType} must suppress only the false joint outline without changing brick courses`);
+    assert.equal(filteredJointEdges.length, seamlessSurfaces.length);
+    filteredJointEdges.forEach((edge) => {
+      const position = edge.geometry.getAttribute('position');
+      const targetY = edge.userData.wallEdgeExcludedHorizontalY[0];
+      for (let vertex = 0; vertex + 1 < position.count; vertex += 2) {
+        assert.equal(
+          Math.abs(position.getY(vertex) - targetY) <= 0.002
+            && Math.abs(position.getY(vertex + 1) - targetY) <= 0.002,
+          false,
+          `${buildingType} must not render a structural edge along the dome-Pendentive contact circle`,
+        );
+      }
+    });
+    const stepIndex = (id) => CONSTRUCTION_STEPS.findIndex((step) => step.id === id);
+    scene.applyConstructionStep(stepIndex('hall-transition'), 0.25);
+    const firstTransitions = transitions.filter((child) => child.userData.hallConstructionBay?.join(':') === '0:0');
+    const secondTransitions = transitions.filter((child) => child.userData.hallConstructionBay?.join(':') === '1:0');
+    assert.ok(firstTransitions.length > 0 && secondTransitions.length > 0);
+    assert.ok(firstTransitions.every((child) => child.visible));
+    assert.ok(secondTransitions.every((child) => !child.visible));
+    assert.ok(firstTransitions.filter((child) => child.userData?.isHallFourVaultPendentive === true)
+      .every((child) => (Array.isArray(child.material) ? child.material : [child.material]).every((material) => (
+        material.userData.roomConstructionRevealMode === 'continuous-circular-brick-by-brick-bottom-to-top'
+      ))), `${buildingType} Pendentive must build in rotating brick courses`);
+    scene.applyConstructionStep(stepIndex('hall-transition'), 1);
+    scene.applyConstructionStep(stepIndex('hall-cover'), 0.25);
+    const firstCovers = covers.filter((child) => child.userData.hallConstructionBay?.join(':') === '0:0');
+    const secondCovers = covers.filter((child) => child.userData.hallConstructionBay?.join(':') === '1:0');
+    assert.ok(firstCovers.length > 0 && secondCovers.length > 0);
+    assert.ok(firstCovers.every((child) => child.visible));
+    assert.ok(secondCovers.every((child) => !child.visible));
+  });
+});
+
 test('construction playback keeps orbit and editing enabled without recompiling unchanged reveal materials', () => {
   const scene = constructionScene();
   scene.controls = {
@@ -1168,7 +4331,14 @@ test('construction playback keeps orbit and editing enabled without recompiling 
     _pointerPositions: { 17: { x: 10, y: 20 } },
   };
   scene.transformControls = { enabled: false, dragging: false };
-  scene.renderer = { domElement: { style: { pointerEvents: 'none' } } };
+  const releasedPointers = [];
+  scene.renderer = {
+    domElement: {
+      style: { pointerEvents: 'none' },
+      hasPointerCapture: () => true,
+      releasePointerCapture: (pointerId) => releasedPointers.push(pointerId),
+    },
+  };
   scene.nightLightDrag = null;
   scene.transformHandleActive = false;
   assert.equal(scene.ensureConstructionInteractionAvailable(), true);
@@ -1192,6 +4362,7 @@ test('construction playback keeps orbit and editing enabled without recompiling 
   assert.equal(scene.controls.state, -1);
   assert.deepEqual(scene.controls._pointers, []);
   assert.deepEqual(scene.controls._pointerPositions, {});
+  assert.deepEqual(releasedPointers, [17]);
 
   const wall = scene.wallSystemRoot().children.find((child) => child.isMesh && child.userData?.wallSide === 'east');
   scene.setConstructionClip(wall, 0.25, 'y');
@@ -1224,6 +4395,83 @@ test('construction playback applies the complete snapshot once and releases inte
   assert.equal(scene.released, true);
   assert.equal(scene.constructionAnimationFrame, null);
   assert.equal(done, 1);
+  scene.applied = [];
+  scene.released = false;
+  scene.showCompleteConstruction();
+  assert.deepEqual(scene.applied, [{ index: CONSTRUCTION_STEPS.length - 1, progress: 1 }]);
+  assert.equal(scene.released, true, 'manual completion must restore the model and release stage interaction');
+});
+
+test('changing building type cancels construction without completing geometry that will be discarded', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.constructionRunId = 4;
+  scene.constructionStepIndex = 3;
+  scene.constructionStepProgress = 0.45;
+  scene.constructionTimer = null;
+  scene.constructionAnimationFrame = null;
+  scene.constructionWatchdog = null;
+  scene.restoreConstructionMaterials = () => { scene.restoreCount = (scene.restoreCount || 0) + 1; };
+  scene.ensureConstructionInteractionAvailable = () => true;
+  scene.applyConstructionStep = () => {
+    throw new Error('the outgoing building must not render its complete snapshot');
+  };
+
+  scene.prepareForArchitectureChange();
+
+  assert.equal(scene.constructionRunId, 5, 'the outgoing animation callback must be invalidated');
+  assert.equal(scene.restoreCount, 1, 'temporary reveal materials must be restored before disposal');
+  assert.equal(scene.constructionStepIndex, CONSTRUCTION_STEPS.length - 1);
+  assert.equal(scene.constructionStepProgress, 1);
+});
+
+test('completed Room construction leaves no circular-course shader attached to the dome', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = normalizeBuilding({
+    buildingType: 'room',
+    type: 'room',
+    domeTransition: 'direct',
+    domeCoverType: 'dome',
+    domeEnabled: true,
+  });
+  scene.walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, scene.building);
+  const wallSystem = new THREE.Group();
+  wallSystem.userData.wallSystem = true;
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(2, 12, 8),
+    new THREE.MeshStandardMaterial(),
+  );
+  dome.userData.roomDomePart = 'dome-shell';
+  wallSystem.add(dome);
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(wallSystem);
+  ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup',
+    'zoneGroup', 'zoneDecorationGroup'].forEach((key) => { scene[key] = new THREE.Group(); });
+  scene.selectedWallSide = null;
+  scene.wallSurfaceHighlight = null;
+  scene.constructionMaterialsActive = false;
+  scene.constructionStepIndex = CONSTRUCTION_STEPS.length - 1;
+  scene.constructionStepProgress = 1;
+  scene.updateWallSurfaceHighlight = () => {};
+  scene.ensureConstructionInteractionAvailable = () => true;
+  scene.invalidate = () => {};
+  scene.setConstructionStepOrder();
+  const roomDomeStep = CONSTRUCTION_STEPS.findIndex((step) => step.id === 'room-dome');
+
+  scene.applyConstructionStep(roomDomeStep, 0.5);
+  assert.equal(scene.constructionMaterialsActive, true);
+  assert.ok(dome.userData.constructionOriginalMaterial);
+
+  scene.restoreCompletedConstructionSnapshot();
+
+  assert.equal(scene.constructionMaterialsActive, false);
+  assert.equal(dome.userData.constructionOriginalMaterial, undefined);
+  assert.equal(dome.userData.constructionOriginalCustomDepthMaterial, undefined);
+  assert.equal(dome.customDepthMaterial, undefined,
+    'an absent custom depth material must be deleted rather than restored as null');
+  assert.equal(dome.material.userData.roomConstructionCourseRevealUniforms, undefined);
 });
 
 test('Karbandi construction builds the north guide arch before clipped ribs and finishes the north wall afterward', () => {
@@ -1307,7 +4555,11 @@ test('Karbandi construction builds the north guide arch before clipped ribs and 
   assert.equal(visible(covers).length, 1, 'roof panels should begin only after every rib is visible');
   scene.applyConstructionStep(stepIndex('karbandi-roof'), 1);
   assert.equal(visible(covers).length, covers.length);
-  assert.ok(covers.every((cover) => cover.userData.roofThickness === scene.walls.karbandi.web.roofThickness));
+  assert.ok(covers.every((cover) => cover.userData.roofThickness === (
+    cover.userData.portalSideCoverThicknessRule === 'half-brick'
+      ? scene.walls.bricks.brickWidth / 2
+      : scene.walls.karbandi.web.roofThickness
+  )));
 
   scene.applyConstructionStep(stepIndex('north-upper-wall'), 1);
   assert.equal(scene.constructionGuideGroup.children.length, 1, 'the completed guide arch remains while upper brickwork is constructed');
@@ -1322,20 +4574,40 @@ test('Karbandi construction builds the north guide arch before clipped ribs and 
   assert.ok(finishedNorthArchParts.every((child) => child.visible));
 });
 
-test('Room construction progresses from walls through ribs, roof, drum, and layered dome', () => {
+test('Room construction progresses from skirt and walls with exterior columns through the layered cover', () => {
   const scene = Object.create(MehrazScene.prototype);
   scene.building = normalizeBuilding({
     type: 'room',
     width: 5,
     length: 5,
     domeTransition: 'karbandi',
+    domeCoverType: 'dome',
+    domeEnabled: true,
     domeTransitionCoverEnabled: true,
     domeDrumHeight: 0.5,
+    domeDrumHeightByTransition: { karbandi: 0.5 },
+    domeOuterLegExtensionByCoverType: { dome: 0.4 },
+    domeOuterLegExtensionByTransitionAndCoverType: { karbandi: { dome: 0.4 } },
+    domeOuterRingEnabledByCoverType: { dome: true },
+    domeOuterRingEnabledByTransitionAndCoverType: { karbandi: { dome: true } },
+    roomExteriorColumnsEnabled: true,
   });
   scene.walls = normalizeWallSystem({
     ...DEFAULT_WALL_SYSTEM,
     bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
     karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true, coverEnabled: true },
+    roomWallOpenings: {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings,
+      north: {
+        ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north,
+        door: {
+          ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.door,
+          enabled: true,
+          width: 1.2,
+          sillHeight: 0.45,
+        },
+      },
+    },
   }, scene.building);
   scene.walls = normalizeWallSystem({
     ...scene.walls,
@@ -1348,6 +4620,17 @@ test('Room construction progresses from walls through ribs, roof, drum, and laye
   }, scene.building);
   scene.buildingGroup = new THREE.Group();
   scene.buildingGroup.add(buildWallSystem(scene.building, scene.walls));
+  // Karbandi's optional exterior transition-wall skin is intentionally hidden
+  // in the current model. Keep a classified wall continuation in this focused
+  // animation fixture so its vertical-course phase remains regression-tested.
+  const transitionWallFixture = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 0.2),
+    new THREE.MeshStandardMaterial(),
+  );
+  transitionWallFixture.name = 'Room Karbandi animation wall continuation fixture';
+  transitionWallFixture.position.y = scene.building.height + 0.5;
+  transitionWallFixture.userData.roomDomePart = 'exterior-aligned-octagon-wall';
+  scene.wallSystemRoot().add(transitionWallFixture);
   ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup', 'zoneGroup', 'zoneDecorationGroup']
     .forEach((key) => { scene[key] = new THREE.Group(); });
   scene.selectedWallSide = null;
@@ -1360,37 +4643,84 @@ test('Room construction progresses from walls through ribs, roof, drum, and laye
   const ribs = meshes.filter((mesh) => mesh.userData?.isKarbandi === true);
   const roofs = meshes.filter((mesh) => mesh.userData?.isKarbandiCover === true);
   const drums = partMeshes('dome-drum');
+  const extraLegs = partMeshes('dome-extra-leg');
   const domes = partMeshes('dome-shell');
+  const outerRings = partMeshes('springing-ring');
+  const exteriorColumns = meshes.filter((mesh) => mesh.userData?.isRoomExteriorColumn === true);
+  const raisedFloors = meshes.filter((mesh) => mesh.userData?.isRaisedInteriorFloor === true);
+  const doorSteps = meshes.filter((mesh) => mesh.userData?.isDoorStep === true);
+  const transitionWalls = meshes.filter((mesh) => (
+    ['exterior-aligned-octagon-wall', 'octagon-inherited-opening-soldier']
+      .includes(mesh.userData?.roomDomePart)
+  ));
   const verticalWalls = meshes.filter((mesh) => (
     ['north', 'east', 'south', 'west'].includes(mesh.userData?.wallSide)
       && !mesh.userData?.roomDomePart
       && mesh.userData?.isBrickFace !== true
   ));
-  assert.ok(ribs.length > 4 && roofs.length && drums.length && domes.length);
-  assert.deepEqual(
-    constructionStepsForBuilding('room').map((step) => step.id),
-    ['empty', 'lower-walls', 'room-karbandi-ribs', 'room-karbandi-roof', 'room-transition-cover', 'room-drum', 'room-dome', 'room-decoration', 'complete'],
-  );
+  const wallBodies = verticalWalls.filter((mesh) => mesh.userData?.isRoomWallBody === true);
+  assert.ok(ribs.length > 4 && roofs.length && transitionWalls.length
+    && drums.length && extraLegs.length && outerRings.length && domes.length && exteriorColumns.length
+    && raisedFloors.length && doorSteps.length > 1 && wallBodies.length);
+  const roomConstructionIds = constructionStepsForBuilding(scene.building, scene.walls)
+    .map((step) => step.id);
+  assert.ok(roomConstructionIds.indexOf('room-karbandi-ribs')
+    < roomConstructionIds.indexOf('room-transition-structure'));
+  assert.ok(roomConstructionIds.indexOf('room-skirt') < roomConstructionIds.indexOf('lower-walls'));
+  assert.ok(roomConstructionIds.indexOf('room-transition-structure')
+    < roomConstructionIds.indexOf('room-karbandi-roof'));
+  assert.ok(roomConstructionIds.indexOf('room-drum') < roomConstructionIds.indexOf('room-extra-leg'));
+  assert.ok(roomConstructionIds.indexOf('room-extra-leg') < roomConstructionIds.indexOf('room-outer-ring'));
+  assert.ok(roomConstructionIds.indexOf('room-outer-ring') < roomConstructionIds.indexOf('room-dome'));
   assert.equal(scene.hasConstructionStepContent('north-arch-guide'), false);
   assert.equal(scene.hasConstructionStepContent('decorate-arch'), false);
   assert.equal(scene.hasConstructionStepContent('room-karbandi-ribs'), true);
+  assert.equal(scene.hasConstructionStepContent('room-skirt'), true);
 
   const originalWallMaterial = Array.isArray(verticalWalls[0].material)
     ? verticalWalls[0].material[0]
     : verticalWalls[0].material;
   assert.match(originalWallMaterial.customProgramCacheKey(), /stone-base/);
-  scene.applyConstructionStep(stepIndex('lower-walls'), 1);
+  scene.applyConstructionStep(stepIndex('room-skirt'), 0.5);
+  assert.ok(wallBodies.every((mesh) => mesh.visible), 'the embedded stone skirt must appear in its own first phase');
+  assert.ok(raisedFloors.every((mesh) => (
+    mesh.visible
+      && mesh.userData.roomConstructionRaisedFloorSequence === 'with-stone-skirt-bottom-to-top'
+      && mesh.userData.constructionVerticalCourseSequence?.progress === 0.5
+  )), 'raised-door interior fill must rise together with the stone skirt');
+  assert.equal(doorSteps.filter((mesh) => mesh.visible).length, Math.ceil(doorSteps.length * 0.5));
+  assert.ok(doorSteps.filter((mesh) => mesh.visible).every((mesh) => (
+    mesh.userData.roomConstructionDoorStepSequence === 'one-tread-and-riser-at-a-time'
+  )), 'raised-door access steps must build one complete level at a time');
+
+  scene.applyConstructionStep(stepIndex('lower-walls'), 0.5);
   const animatedWallMaterial = Array.isArray(verticalWalls[0].material)
     ? verticalWalls[0].material[0]
     : verticalWalls[0].material;
   assert.equal(animatedWallMaterial.onBeforeCompile, originalWallMaterial.onBeforeCompile,
     'construction material cloning must preserve the stone-skirt shader');
   assert.match(animatedWallMaterial.customProgramCacheKey(), /stone-base/);
-  assert.ok(verticalWalls.length > 0 && verticalWalls.every((mesh) => (
+  assert.ok(wallBodies.every((mesh) => (
     mesh.visible
       && mesh.userData.roomConstructionIncludesStoneBase === true
-      && mesh.userData.roomConstructionStoneBaseSequence === 'bottom-stone-first-then-wall-brick-courses'
-  )), 'Room stone bases must animate from the bottom as the first part of the vertical-wall stage');
+      && mesh.userData.roomConstructionStoneBaseSequence === 'skirt-first-then-walls-with-exterior-columns'
+      && mesh.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+  )), 'Room walls must rise above the completed stone skirt in bottom-to-top courses');
+  assert.ok(exteriorColumns.every((mesh) => (
+    mesh.visible
+      && mesh.userData.roomConstructionColumnSequence === 'with-walls-bottom-to-top'
+      && mesh.userData.constructionVerticalCourseSequence?.direction === 'bottom-to-top'
+  )), 'Room exterior columns must rise together with the walls, from bottom to top');
+  const sharedWallCourseTops = new Set(wallBodies.map((mesh) => (
+    mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY
+  )));
+  const sharedColumnCourseTops = new Set(exteriorColumns.map((mesh) => (
+    mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY
+  )));
+  assert.equal(sharedWallCourseTops.size, 1);
+  assert.deepEqual(sharedColumnCourseTops, sharedWallCourseTops,
+    'walls and exterior columns must use the exact same world-height construction course');
+  assert.ok(doorSteps.every((mesh) => mesh.visible), 'all access steps remain complete while walls rise');
   assert.equal(ribs.some((mesh) => mesh.visible), false);
   assert.equal(scene.constructionGuideGroup.visible, false, 'Room construction must not use the Iwan guide arch');
 
@@ -1415,10 +4745,19 @@ test('Room construction progresses from walls through ribs, roof, drum, and laye
     'Room ribs must begin one rib index at a time');
   scene.applyConstructionStep(stepIndex('room-karbandi-ribs'), 1);
   assert.ok(ribs.every((mesh) => mesh.visible));
+  assert.equal(transitionWalls.some((mesh) => mesh.visible), false);
+  assert.equal(roofs.some((mesh) => mesh.visible), false);
+
+  scene.applyConstructionStep(stepIndex('room-transition-structure'), 0.5);
+  assert.ok(transitionWalls.every((mesh) => mesh.visible));
+  assert.ok(transitionWalls.every((mesh) => mesh.userData.constructionOriginalMaterial),
+    'Karbandi wall continuations must rise vertically by brick-height courses');
   assert.equal(roofs.some((mesh) => mesh.visible), false);
 
   scene.applyConstructionStep(stepIndex('room-karbandi-roof'), 1);
   assert.ok(roofs.every((mesh) => mesh.visible));
+  assert.ok(roofs.every((mesh) => mesh.userData.constructionOriginalMaterial),
+    'Karbandi panels adjacent to walls must continue upward in vertical brick courses');
   scene.applyConstructionStep(stepIndex('room-transition-cover'), 1);
   assert.equal(drums.some((mesh) => mesh.visible), false);
   scene.applyConstructionStep(stepIndex('room-drum'), 0.5);
@@ -1430,6 +4769,24 @@ test('Room construction progresses from walls through ribs, roof, drum, and laye
       && mesh.userData.roomConstructionCourseSequence?.courseOrder === 'complete-current-ring-before-next-course'
       && mesh.userData.roomConstructionCourseSequence?.progress === 0.5
   )), 'the drum must rotate brick by brick around each course before advancing upward');
+  assert.equal(extraLegs.some((mesh) => mesh.visible), false);
+  assert.equal(domes.some((mesh) => mesh.visible), false);
+  scene.applyConstructionStep(stepIndex('room-extra-leg'), 0.5);
+  assert.ok(extraLegs.every((mesh) => (
+    mesh.visible
+      && (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every((material) => (
+        material.userData.roomConstructionRevealMode === 'continuous-circular-brick-by-brick-bottom-to-top'
+      ))
+  )), 'the extended leg must build in rotating courses after the drum');
+  assert.equal(outerRings.some((mesh) => mesh.visible), false);
+  assert.equal(domes.some((mesh) => mesh.visible), false);
+  scene.applyConstructionStep(stepIndex('room-outer-ring'), 0.5);
+  assert.ok(outerRings.every((mesh) => (
+    mesh.visible
+      && (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every((material) => (
+        material.userData.roomConstructionRevealMode === 'continuous-circular-brick-by-brick-bottom-to-top'
+      ))
+  )), 'the outer ring must animate in rotation before the cover');
   assert.equal(domes.some((mesh) => mesh.visible), false);
   scene.applyConstructionStep(stepIndex('room-dome'), 0.5);
   assert.ok(domes.every((mesh) => (
@@ -1441,6 +4798,109 @@ test('Room construction progresses from walls through ribs, roof, drum, and laye
       && mesh.userData.roomConstructionCourseSequence?.courseHeight
         === scene.walls.bricks.brickHeight + scene.walls.bricks.mortar
   )), 'the dome must complete each rotating brick course before starting the next layer');
+});
+
+test('Room Squinch construction builds arches, under-arch walls, and upper infill in separate ordered courses', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    roomPlanShape: 'square',
+    width: 6,
+    length: 6,
+    height: 4,
+    domeTransition: 'squinch',
+    domeTransitionCoverEnabled: true,
+    domeCoverType: 'dome',
+    domeEnabled: true,
+  });
+  scene.walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    roomWallOpenings: {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings,
+      north: {
+        ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north,
+        door: {
+          ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.door,
+          enabled: true,
+          width: 1.4,
+          height: 2,
+          head: 'lintel',
+        },
+      },
+      east: {
+        ...DEFAULT_WALL_SYSTEM.roomWallOpenings.east,
+        window: {
+          ...DEFAULT_WALL_SYSTEM.roomWallOpenings.east.window,
+          enabled: true,
+          width: 1,
+          height: 1,
+          sillHeight: 1.2,
+          head: 'arch',
+        },
+      },
+    },
+  }, scene.building);
+  scene.buildingGroup = new THREE.Group();
+  scene.buildingGroup.add(buildWallSystemWithCanvasMock(scene.building, scene.walls));
+  ['constructionGuideGroup', 'archInfillGroup', 'placementGroup', 'placementMaskGroup', 'zoneGroup', 'zoneDecorationGroup']
+    .forEach((key) => { scene[key] = new THREE.Group(); });
+  scene.selectedWallSide = null;
+  scene.wallSurfaceHighlight = null;
+  scene.updateWallSurfaceHighlight = () => {};
+  const stepIndex = (id) => CONSTRUCTION_STEPS.findIndex((step) => step.id === id);
+  const meshes = [];
+  scene.wallSystemRoot().traverse((child) => { if (child.isMesh) meshes.push(child); });
+  const arches = meshes.filter((mesh) => mesh.userData?.roomDomePart === 'squinch-transition-rib');
+  const underArchWalls = meshes.filter((mesh) => mesh.userData?.isRoomSquinchVerticalWallExtension === true);
+  const upperInfills = meshes.filter((mesh) => mesh.userData?.roomDomePart === 'squinch-transition-cover');
+  const soldierCourses = meshes.filter((mesh) => mesh.userData?.isSoldierCourse === true);
+  const wallBodies = meshes.filter((mesh) => mesh.userData?.isRoomWallBody === true);
+  assert.equal(arches.length, 8);
+  assert.ok(underArchWalls.length && upperInfills.length && soldierCourses.length && wallBodies.length);
+
+  const ids = constructionStepsForBuilding(scene.building, scene.walls).map((step) => step.id);
+  assert.ok(ids.indexOf('room-squinch-arches') < ids.indexOf('room-squinch-under-arch-walls'));
+  assert.ok(ids.indexOf('room-squinch-under-arch-walls') < ids.indexOf('room-transition-cover'));
+  assert.equal(ids.includes('room-transition-structure'), false);
+
+  scene.applyConstructionStep(stepIndex('lower-walls'), 1);
+  assert.ok(soldierCourses.every((mesh) => (
+    mesh.visible
+      && mesh.userData.roomConstructionOpeningCourseSequence === 'same-world-height-course-as-attached-wall'
+  )));
+  const wallCourseTops = new Set(wallBodies.map((mesh) => mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY));
+  assert.deepEqual(
+    new Set(soldierCourses.map((mesh) => mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY)),
+    wallCourseTops,
+    'door and window soldier masonry must follow the exact attached-wall course height',
+  );
+
+  scene.applyConstructionStep(stepIndex('room-squinch-arches'), 0.01);
+  assert.equal(arches.filter((mesh) => mesh.visible).length, 1);
+  assert.ok(arches.filter((mesh) => mesh.visible).every((mesh) => (
+    mesh.userData.roomSquinchConstructionSequence === 'one-arch-at-a-time-both-feet-to-crown'
+      && mesh.userData.constructionVaultCourseSequence?.direction === 'both-springing-feet-to-crown'
+  )));
+  assert.ok(underArchWalls.every((mesh) => !mesh.visible));
+  assert.ok(upperInfills.every((mesh) => !mesh.visible));
+
+  scene.applyConstructionStep(stepIndex('room-squinch-under-arch-walls'), 0.5);
+  assert.ok(arches.every((mesh) => mesh.visible));
+  assert.ok(underArchWalls.some((mesh) => mesh.visible));
+  assert.ok(underArchWalls.filter((mesh) => mesh.visible).every((mesh) => (
+    mesh.userData.roomSquinchConstructionSequence === 'after-all-arches-shared-bottom-to-top-wall-courses'
+      && Number.isFinite(mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY)
+  )));
+  assert.ok(upperInfills.every((mesh) => !mesh.visible));
+
+  scene.applyConstructionStep(stepIndex('room-transition-cover'), 0.5);
+  assert.ok(underArchWalls.every((mesh) => mesh.visible));
+  assert.ok(upperInfills.some((mesh) => mesh.visible));
+  assert.ok(upperInfills.filter((mesh) => mesh.visible).every((mesh) => (
+    mesh.userData.roomSquinchConstructionSequence === 'after-under-arch-walls-shared-courses-to-drum'
+      && Number.isFinite(mesh.userData.constructionVerticalCourseSequence?.sharedCourseTopY)
+  )));
 });
 
 test('optional Karbandi rotation guide shows rib divisions, clipped ghosts, and layered support highlights at wall top', () => {
@@ -1668,9 +5128,19 @@ test('Portal Karbandi shifts the north arch and wall crown to the lowest rib int
     depth: 3,
     height: 4,
   });
-  const defaults = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const blankDefaults = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const defaults = normalizeWallSystem({
+    ...blankDefaults,
+    portalTransition: 'karbandi',
+    karbandi: { ...blankDefaults.karbandi, enabled: true },
+  }, building);
   const walls = normalizeWallSystem({
     ...defaults,
+    karbandi: {
+      ...defaults.karbandi,
+      ...solveKarbandiWallSeating(defaults.karbandi, building, defaults),
+      enabled: true,
+    },
     bricks: { ...defaults.bricks, enabled: false },
   }, building);
   const portal = buildWallSystem(building, walls);
@@ -1954,14 +5424,14 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(building.domeCoverType, 'dome');
   assert.equal(building.domeCoverHeight, 5);
   assert.equal(building.domeTransition, 'karbandi');
-  assert.equal(building.domeDrumHeight, 0.5);
+  assert.equal(building.domeDrumHeight, 0);
   assert.equal(building.domeColor, '#49b5ca');
   assert.equal(building.domeExtraLegColor, '#49b5ca');
   assert.equal(building.domeRingColor, '#49b5ca');
   assert.deepEqual(building.domeOuterRingEnabledByCoverType, {
-    dome: true,
-    cone: true,
-    pyramid: true,
+    dome: false,
+    cone: false,
+    pyramid: false,
   });
   assert.equal(building.domePatternCoverage, 85);
   assert.equal(building.innerDomeEnabled, false);
@@ -1977,7 +5447,7 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(building.betweenDomeSupportWallsCoverage, 60);
   assert.equal(building.innerDomeArch.redOffset, -0.75);
   assert.equal(building.innerDomeArch.greenOffset, 0.95);
-  assert.equal(building.height + building.domeTransitionHeight + building.domeDrumHeight + building.innerDomeArch.greenHeightOffset, 5.95);
+  assert.equal(building.height + building.domeTransitionHeight + building.domeDrumHeight + building.innerDomeArch.greenHeightOffset, 5.45);
   const defaultSquinchInnerDome = normalizeBuilding({ type: 'room', domeTransition: 'squinch' });
   assert.equal(defaultSquinchInnerDome.innerDomeEnabled, true);
   const editedSquinchInnerDome = normalizeBuilding({
@@ -1992,31 +5462,75 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(normalizeBuilding({ domeTransition: 'karbandi', innerDomeEnabled: true }).innerDomeEnabled, true,
     'the old single visibility value must migrate only to its saved transition');
   assert.equal(building.domeDrumColor, '#b3a62c');
-  assert.equal(building.domeArch.redOffset, 0);
-  assert.equal(building.domeArch.greenOffset, 2);
+  assert.equal(building.domeArch.archType, 'one-point');
+  assert.equal(building.domeArch.greenOffset, 0.75);
   assert.equal(building.domeArch.legExtension, 0);
-  assert.deepEqual(building.domeOuterLegExtensionByCoverType, { dome: 0, cone: 1, pyramid: 1 });
+  assert.deepEqual(building.domeOuterLegExtensionByCoverType, { dome: 0, cone: 0, pyramid: 0 });
   const coneLegBuilding = normalizeBuilding({ ...building, domeCoverType: 'cone' });
-  assert.equal(coneLegBuilding.domeArch.legExtension, 1);
+  assert.equal(coneLegBuilding.domeArch.legExtension, 0);
   const editedConeLegBuilding = normalizeBuilding({
     ...coneLegBuilding,
-    domeOuterLegExtensionByCoverType: {
-      ...coneLegBuilding.domeOuterLegExtensionByCoverType,
-      cone: 2.25,
+    domeOuterLegExtensionByTransitionAndCoverType: {
+      ...coneLegBuilding.domeOuterLegExtensionByTransitionAndCoverType,
+      karbandi: {
+        ...coneLegBuilding.domeOuterLegExtensionByTransitionAndCoverType.karbandi,
+        cone: 2.25,
+      },
     },
   });
   assert.equal(editedConeLegBuilding.domeArch.legExtension, 2.25);
-  assert.equal(normalizeBuilding({ ...editedConeLegBuilding, domeCoverType: 'pyramid' }).domeArch.legExtension, 1);
+  assert.equal(normalizeBuilding({ ...editedConeLegBuilding, domeCoverType: 'pyramid' }).domeArch.legExtension, 0);
   assert.equal(normalizeBuilding({ ...editedConeLegBuilding, domeCoverType: 'dome' }).domeArch.legExtension, 0);
   assert.equal(normalizeBuilding({
     type: 'room',
+    domeTransition: 'squinch',
     domeCoverType: 'cone',
     domeColor: '#ab6723',
     domeArch: { legExtension: 0.4 },
   }).domeOuterLegExtensionByCoverType.cone, 0.4, 'legacy shared legs migrate to their saved cover type');
   assert.equal(normalizeBuilding({ domeColor: '#ab6723' }).domeExtraLegColor, '#ab6723',
     'legacy projects inherit their dome color for the newly independent extra leg');
-  assert.equal(building.height + building.domeTransitionHeight + building.domeDrumHeight + building.domeArch.greenHeightOffset, 4);
+  const roomKarbandi = normalizeBuilding({ type: 'room', domeTransition: 'karbandi' });
+  assert.equal(roomKarbandi.domeDrumHeight, 0);
+  assert.equal(roomKarbandi.domeArch.legExtension, 0);
+  assert.equal(roomKarbandi.domeOuterRingEnabledByCoverType.dome, false);
+  const roomSquinch = normalizeBuilding({ ...roomKarbandi, domeTransition: 'squinch' });
+  assert.equal(roomSquinch.domeDrumHeight, 0.5);
+  assert.equal(roomSquinch.domeArch.legExtension, 0.5);
+  assert.equal(roomSquinch.domeOuterRingEnabledByCoverType.dome, true);
+  const editedRoomSquinch = normalizeBuilding({
+    ...roomSquinch,
+    domeDrumHeightByTransition: {
+      ...roomSquinch.domeDrumHeightByTransition,
+      squinch: 1.1,
+    },
+    domeOuterLegExtensionByTransitionAndCoverType: {
+      ...roomSquinch.domeOuterLegExtensionByTransitionAndCoverType,
+      squinch: {
+        ...roomSquinch.domeOuterLegExtensionByTransitionAndCoverType.squinch,
+        dome: 1.4,
+      },
+    },
+    domeOuterRingEnabledByTransitionAndCoverType: {
+      ...roomSquinch.domeOuterRingEnabledByTransitionAndCoverType,
+      squinch: {
+        ...roomSquinch.domeOuterRingEnabledByTransitionAndCoverType.squinch,
+        dome: false,
+      },
+    },
+  });
+  const returnedKarbandi = normalizeBuilding({ ...editedRoomSquinch, domeTransition: 'karbandi' });
+  assert.equal(returnedKarbandi.domeDrumHeight, 0);
+  assert.equal(returnedKarbandi.domeArch.legExtension, 0);
+  assert.equal(returnedKarbandi.domeOuterRingEnabledByCoverType.dome, false);
+  const restoredSquinch = normalizeBuilding({ ...returnedKarbandi, domeTransition: 'squinch' });
+  assert.equal(restoredSquinch.domeDrumHeight, 1.1);
+  assert.equal(restoredSquinch.domeArch.legExtension, 1.4);
+  assert.equal(restoredSquinch.domeOuterRingEnabledByCoverType.dome, false);
+  const defaultKarbandiRoom = normalizeBuilding({ type: 'room', buildingType: 'room' });
+  assert.equal(defaultKarbandiRoom.domeArch.archType, 'one-point');
+  assert.equal(defaultKarbandiRoom.domeArch.greenOffset, 0.75);
+  assert.equal(defaultKarbandiRoom.domeArch.greenHeightOffset, -2);
   assert.equal(building.domeTransitionSettings.karbandi.ribCount, 16);
   assert.equal(building.domeTransitionSettings.squinch.facetCount, 8);
   assert.equal(building.domeTransitionSettings.squinch.archCount, 8);
@@ -2054,7 +5568,7 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(walls.northWall.archTopExtension, 0.7);
   assert.equal(walls.northWall.outwardWidth, 1);
   assert.equal(walls.northBoundary.enabled, true);
-  assert.equal(walls.southOpenings.door.enabled, true);
+  assert.equal(walls.southOpenings.door.enabled, false);
   assert.equal(walls.southOpenings.door.head, 'lintel');
   assert.equal(walls.southOpenings.door.width, 2);
   assert.equal(walls.southOpenings.door.height, 1.6);
@@ -2071,7 +5585,7 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(walls.southOpenings.window.arch.redRadius, 0.5);
   assert.equal(walls.southOpenings.window.arch.greenOffset, 0.5);
   assert.equal(walls.southOpenings.window.arch.greenHeight, 4.7);
-  assert.equal(walls.roomWallOpenings.north.door.enabled, true);
+  assert.equal(walls.roomWallOpenings.north.door.enabled, false);
   assert.equal(walls.roomWallOpenings.north.door.head, 'arch');
   assert.equal(walls.roomWallOpenings.north.door.width, 2);
   assert.equal(walls.roomWallOpenings.north.door.height, 3);
@@ -2088,6 +5602,8 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(walls.bricks.sideBonds.room_inner_dome_exterior.builtIn, 'running');
   assert.equal(walls.bricks.sideBonds.room_inner_dome_interior.builtIn, 'running');
   assert.equal(walls.stoneBase.enabled, true);
+  assert.equal(walls.stoneBase.planShape, 'follow');
+  assert.equal(walls.stoneBase.polygonSides, 6);
   assert.equal(walls.stoneBase.height, 1);
   assert.equal(walls.stoneBase.slabWidth, 0.6);
   assert.equal(walls.stoneBase.color, '#b7a68a');
@@ -2095,9 +5611,9 @@ test('new Mehraz projects use the requested architectural defaults', () => {
   assert.equal(walls.stoneBase.mortarColor, '#9a8f7e');
   assert.equal(walls.interiorGypsum.enabled, false);
   assert.equal(walls.interiorGypsum.color, '#f1eee7');
-  assert.equal(portalDefaults.portalTransition, 'karbandi');
+  assert.equal(portalDefaults.portalTransition, 'none');
   assert.equal(portalDefaults.portalCover, 'none');
-  assert.equal(portalDefaults.karbandi.enabled, true);
+  assert.equal(portalDefaults.karbandi.enabled, false);
   assert.equal(portalDefaults.ahang.enabled, false, 'new Portals default to No cover');
   assert.equal(normalizeWallSystem({ portalTransition: 'muqarnas' }).portalTransition, 'muqarnas');
   assert.equal(
@@ -2111,17 +5627,23 @@ test('new Mehraz projects use the requested architectural defaults', () => {
     ahang: { enabled: true },
     karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true },
   }, normalizeBuilding());
-  assert.equal(portalAhangWithKarbandiTransition.ahang.enabled, true,
-    'Ahang remains the Portal cover while Karbandi is selected as its transition');
-  assert.equal(portalAhangWithKarbandiTransition.portalCover, 'ahang');
+  assert.equal(portalAhangWithKarbandiTransition.ahang.enabled, false,
+    'Barrel is unavailable while Karbandi is selected as the Portal transition');
+  assert.equal(portalAhangWithKarbandiTransition.portalCover, 'none');
   assert.equal(portalAhangWithKarbandiTransition.karbandi.enabled, true);
   for (const portalCover of ['none', 'ahang', 'dome']) {
-    const normalizedCover = normalizeWallSystem({ portalCover });
+    const normalizedCover = normalizeWallSystem({
+      portalCover,
+      portalTransition: portalCover === 'none' ? 'none' : 'squinch',
+    });
     assert.equal(normalizedCover.portalCover, portalCover);
     assert.equal(normalizedCover.ahang.enabled, portalCover === 'ahang');
   }
   assert.equal(normalizeWallSystem({ portalCover: 'pyramid' }).portalCover, 'dome');
   assert.equal(normalizeWallSystem({ portalCover: 'cone' }).portalCover, 'dome');
+  assert.equal(normalizeWallSystem({ portalTransition: 'none', portalCover: 'dome' }).portalCover, 'none');
+  assert.equal(normalizeWallSystem({ portalTransition: 'none', portalCover: 'rib-vault' }).portalCover, 'raised-rib-vault');
+  assert.equal(normalizeWallSystem({ portalTransition: 'none', portalCover: 'raised-rib-vault' }).portalCover, 'raised-rib-vault');
   assert.equal(walls.karbandi.span, 4.1);
   assert.equal(walls.karbandi.groupScale, 0.95);
   assert.equal(walls.karbandi.redOffset, -0.6);
@@ -2167,18 +5689,74 @@ test('selecting Vestibule applies its independent ring, drum, and outer-dome def
     cone: false,
     pyramid: false,
   });
-  assert.equal(vestibule.domeArch.redOffset, -1.2);
-  assert.equal(vestibule.domeArch.greenOffset, 1.75);
+  assert.equal(vestibule.domeArch.archType, 'one-point');
+  assert.equal(vestibule.domeArch.greenOffset, 0.75);
   assert.equal(vestibule.domePatternCoverage, 85);
-  const outerSpringHeight = 6.75
-    + vestibule.domeTransitionHeight
-    + vestibule.domeDrumHeight
-    + vestibule.domeArch.legExtension;
-  assert.ok(Math.abs(outerSpringHeight + vestibule.domeArch.greenHeightOffset - 2) < 0.000001);
+  assert.equal(vestibule.domeArch.greenHeightOffset, -2);
 
   const roomAgain = buildingForSelectedType(vestibule, 'room');
   assert.equal(roomAgain.buildingType, 'room');
   assert.equal(roomAgain.roomPlanShape, 'square');
+});
+
+test('green point heights remain fixed distances below their arch leg levels', () => {
+  const room = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    height: 6,
+    domeTransitionHeight: 1.2,
+    domeArch: { greenHeightOffset: -2 },
+    innerDomeArch: { greenHeightOffset: -1.75 },
+    domeTransitionSettings: { squinch: { greenHeightOffset: -0.65 } },
+  });
+  const raisedRoom = normalizeBuilding({ ...room, height: 9, domeTransitionHeight: 3.5 });
+  assert.equal(raisedRoom.domeArch.greenHeightOffset, -2);
+  assert.equal(raisedRoom.innerDomeArch.greenHeightOffset, -1.75);
+  assert.equal(raisedRoom.domeTransitionSettings.squinch.greenHeightOffset, -0.65);
+
+  const walls = normalizeWallSystem({ karbandi: { greenHeightOffset: -1.25 } }, room);
+  const raisedWalls = normalizeWallSystem(walls, raisedRoom);
+  assert.equal(raisedWalls.karbandi.greenHeightOffset, -1.25);
+  assert.equal(raisedWalls.pointedArch.greenHeightOffset, walls.pointedArch.greenHeightOffset);
+});
+
+test('Karbandi defaults build the cover without a drum, outer extension, or visible ring in every building', () => {
+  for (const source of [
+    { type: 'room', buildingType: 'room', roomPlanShape: 'square' },
+    { type: 'vestibule', buildingType: 'vestibule' },
+  ]) {
+    const building = normalizeBuilding({ ...source, domeTransition: 'karbandi' });
+    const walls = normalizeWallSystem({
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true, coverEnabled: true },
+    }, building);
+    const model = buildWallSystem(building, walls);
+    const cover = model.getObjectByName('Room circular dome cover');
+    const ring = model.getObjectByName('Room dome springing ring');
+    assert.ok(cover, `${building.buildingType} Karbandi must retain its outer cover`);
+    assert.equal(model.getObjectByName('Room dome cylindrical drum'), undefined);
+    assert.equal(model.getObjectByName('Room dome independent extra leg'), undefined);
+    assert.ok(ring);
+    assert.equal(ring.visible, false);
+    assert.equal(cover.userData.roomDomeLegExtension, 0);
+  }
+
+  const portalBuilding = normalizeBuilding({
+    type: 'iwan',
+    buildingType: 'portal',
+    portalPlanShape: 'square',
+  });
+  const portalWalls = normalizeWallSystem({
+    portalTransition: 'karbandi',
+    portalCover: 'dome',
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true, coverEnabled: true },
+  }, portalBuilding);
+  const portal = buildWallSystem(portalBuilding, portalWalls);
+  assert.ok(portal.getObjectByName('Portal circular dome cover'));
+  assert.equal(portal.getObjectByName('Portal dome cylindrical drum'), undefined);
+  assert.equal(portal.getObjectByName('Portal dome independent extra leg'), undefined);
+  assert.equal(portal.getObjectByName('Portal dome springing ring'), undefined);
 });
 
 test('Iwan and Room Karbandi rib counts start at eight and advance only in multiples of four', () => {
@@ -2291,7 +5869,11 @@ test('Room building type closes four walls and builds selectable square-to-circl
     rib.geometry.computeBoundingBox();
     return rib.geometry.boundingBox.max.y;
   }));
-  assert.equal(crownY, exposedDome.userData.roomDomeSpringY, 'without a drum, the dome must spring exactly at the Iwan-generated Karbandi rib crown');
+  assert.equal(
+    crownY + exposedBuilding.domeOuterLegExtensionByCoverType.dome,
+    exposedDome.userData.roomDomeSpringY,
+    'without a drum, the independent extra leg must rise from the Iwan-generated Karbandi rib crown',
+  );
   ['squinch', 'pendentive'].forEach((domeTransition) => {
     const structuralBuilding = normalizeBuilding({ type: 'room', domeTransition });
     const structuralRoom = buildWallSystem(structuralBuilding, normalizeWallSystem({
@@ -2432,6 +6014,7 @@ test('Room Squinch builds eight configurable arches, four wall and four corner r
   assert.ok(drum);
   assert.equal(drum.userData.roomDomeDrumSideCount, 16);
   assert.equal(drum.geometry.parameters.segments, 16);
+  assert.ok(Math.abs(drum.rotation.y + Math.PI / 16) < 0.000001);
   assert.ok(Math.abs(
     drum.userData.roomDomeDrumBaseY
       - (arches[0].userData.roomDomeCrownY + building.domeTransitionSettings.squinch.ribWidth / 2)
@@ -2550,7 +6133,7 @@ test('Room Squinch builds eight configurable arches, four wall and four corner r
     assert.equal(panel.userData.roomSquinchFinishSide, 'room_dome_transition');
     assert.equal(
       panel.userData.roomSquinchFinishIndependence,
-      'lower-octagon-independent-from-sixteen-sided-drum',
+      'transition-cover-independent-from-vertical-walls-and-drum',
     );
     assert.equal(
       panel.geometry.userData.roomSquinchExteriorBrickMapping,
@@ -2566,7 +6149,7 @@ test('Room Squinch builds eight configurable arches, four wall and four corner r
     assert.equal(planDepths.size, 2, 'each lower drum panel must stay on one vertical arch plane without an inward fold');
   });
   assert.equal(drum.userData.roomSquinchBrickCourseMapping, 'shared-metric-circumference-and-drum-foot-origin');
-  assert.equal(drumSkirt.userData.roomSquinchBrickCourseMapping, 'one-continuous-unequal-octagon-perimeter-running-course-aligned-to-drum-foot');
+  assert.equal(drumSkirt.userData.roomSquinchBrickCourseMapping, 'independent-transition-cover-interior-and-exterior-perimeter-courses');
   assert.equal(drumSkirt.userData.roomSquinchSpandrelJoint, 'four-widened-corner-faces-overlap-four-straight-faces-with-continuous-bond-phase');
   let expectedSpandrelPhase = 0;
   drumSkirt.children.forEach((panel) => {
@@ -2662,7 +6245,10 @@ test('Room Squinch builds eight configurable arches, four wall and four corner r
   );
   assert.ok(Math.abs(
     dome.userData.roomDomeSpringY
-      - (referenceConstruction.apexPoint.y + building.domeTransitionSettings.squinch.ribWidth / 2 + building.domeDrumHeight)
+      - (referenceConstruction.apexPoint.y
+        + building.domeTransitionSettings.squinch.ribWidth / 2
+        + building.domeDrumHeight
+        + building.domeOuterLegExtensionByCoverType.dome)
   ) < 0.000001, 'the north-wall reference arch apex must automatically set the Squinch transition height');
   const differentLegacyHeight = normalizeBuilding({ ...building, domeTransitionHeight: 9 });
   const differentLegacyHeightRoom = buildWallSystem(differentLegacyHeight, normalizeWallSystem({
@@ -2842,7 +6428,7 @@ test('Room Squinch uses an independent masonry extra leg with the ring between i
     'the inner dome room-facing spring edge must be flush with the Squinch drum interior face');
   assert.equal(
     innerDome.userData.roomDomeSpringAlignment,
-    'room-facing-shell-flush-with-sixteen-sided-drum-inner-face-apothem',
+    'room-facing-shell-flush-with-vertical-wall-interior-face',
   );
   innerRoomProfile.forEach(([roomRadius, roomY], index) => {
     const [cavityRadius, cavityY] = innerCavityProfile[index];
@@ -2865,9 +6451,9 @@ test('Room Squinch uses an independent masonry extra leg with the ring between i
   const nonSquinchRoom = buildWallSystem(nonSquinchBuilding, normalizeWallSystem({
     bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
   }, nonSquinchBuilding));
-  assert.equal(nonSquinchRoom.getObjectByName('Room circular dome cover').userData.roomDomeLegExtension, legExtension,
-    'the outer-cover leg setting must remain available for every transition');
-  assert.equal(nonSquinchRoom.getObjectByName('Room dome independent extra leg').userData.roomDomeExtraLegHeight, legExtension);
+  assert.equal(nonSquinchRoom.getObjectByName('Room circular dome cover').userData.roomDomeLegExtension, 0.5,
+    'each transition must retain its own outer-cover leg setting');
+  assert.equal(nonSquinchRoom.getObjectByName('Room dome independent extra leg').userData.roomDomeExtraLegHeight, 0.5);
 });
 
 test('Room Cone and octagonal Pyramid covers replace only the exterior dome shell', () => {
@@ -3057,6 +6643,72 @@ test('Room Cone and octagonal Pyramid covers replace only the exterior dome shel
   assert.equal(customPolygonRing.geometry.userData.roomDomeRingProfile, 'circle');
 });
 
+test('Non-Karbandi dual-shell covers align their two bases with the exterior and interior wall faces', () => {
+  const wallThickness = 0.55;
+  const width = 6;
+  const expectedInteriorApothem = width / 2 * Math.cos(Math.PI / 8);
+  const expectedExteriorApothem = expectedInteriorApothem + wallThickness;
+
+  ['dome', 'cone', 'pyramid'].forEach((domeCoverType) => {
+    const building = normalizeBuilding({
+      type: 'room',
+      roomPlanShape: 'octagon',
+      width,
+      length: width,
+      wallThickness,
+      domeTransition: 'squinch',
+      domeCoverType,
+    });
+    const room = buildWallSystem(building, normalizeWallSystem({
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, building));
+    const outerCover = room.getObjectByName('Room circular dome cover');
+    const innerDome = room.getObjectByName('Room inner dome cover');
+
+    assert.ok(outerCover && innerDome, `${domeCoverType} must build both independent shells`);
+    assert.equal(outerCover.userData.roomDomeTransitionType, 'direct');
+    assert.equal(outerCover.userData.roomDomeDualShellWallFlush, true);
+    assert.equal(
+      outerCover.userData.roomDomeBaseExteriorFaceAlignment,
+      'outer-cover-base-flush-with-vertical-wall-exterior-face',
+    );
+    assert.ok(Math.abs(outerCover.userData.roomDomeRadius - expectedExteriorApothem) < 0.000001,
+      `${domeCoverType} exterior base apothem must reach the vertical-wall exterior face`);
+    assert.ok(Math.abs(
+      outerCover.userData.roomDomeBaseExteriorFaceTargetRadius - expectedExteriorApothem
+    ) < 0.000001);
+    assert.ok(Math.abs(innerDome.userData.roomDomeSpringInteriorRadius - expectedInteriorApothem) < 0.000001,
+      `${domeCoverType} inner-dome room face must meet the vertical-wall interior face`);
+    assert.ok(Math.abs(
+      innerDome.userData.roomDomeBaseInteriorFaceTargetRadius - expectedInteriorApothem
+    ) < 0.000001);
+    if (domeCoverType === 'pyramid') {
+      assert.ok(Math.abs(
+        outerCover.userData.roomDomeGeometryBaseRadius * Math.cos(Math.PI / 8)
+          - expectedExteriorApothem
+      ) < 0.000001, 'the Pyramid facets, rather than its vertices, must be flush with the exterior wall faces');
+    } else {
+      assert.ok(Math.abs(
+        outerCover.userData.roomDomeGeometryBaseRadius - expectedExteriorApothem
+      ) < 0.000001);
+    }
+  });
+
+  const karbandiBuilding = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'square',
+    domeTransition: 'karbandi',
+    innerDomeEnabledByTransition: { karbandi: true },
+  });
+  const karbandiRoom = buildWallSystem(karbandiBuilding, normalizeWallSystem({
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, karbandiBuilding));
+  const karbandiCover = karbandiRoom.getObjectByName('Room circular dome cover');
+  assert.equal(karbandiCover.userData.roomDomeDualShellWallFlush, false,
+    'Karbandi must retain its crown-derived cover bearing radius');
+  assert.equal(karbandiCover.userData.roomDomeBaseExteriorFaceTargetRadius, null);
+});
+
 test('Room Squinch can leave all four non-corner arch bays fully open', () => {
   const building = normalizeBuilding({
     type: 'room',
@@ -3092,6 +6744,371 @@ test('Room Squinch can leave all four non-corner arch bays fully open', () => {
   assert.equal(coverAssembly.userData.roomSquinchRoofAssembly.openWallArchBays, true);
 });
 
+test('Room Squinch keeps vertical wall extensions when the transition cover is disabled', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    width: 6,
+    length: 5,
+    height: 4,
+    domeTransition: 'squinch',
+    domeTransitionCoverEnabled: false,
+  });
+  const room = buildWallSystem(building, normalizeWallSystem({
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building));
+  const wallAssembly = room.getObjectByName('Room Squinch vertical walls clipped below arches');
+  assert.ok(wallAssembly);
+  assert.equal(wallAssembly.children.length, 12);
+  assert.ok(wallAssembly.children.every((panel) => (
+    panel.userData.isRoomSquinchVerticalWallExtension === true
+    && panel.userData.isRoomDomeTransitionCover === false
+  )));
+  assert.equal(room.getObjectByName('Room squinch square-to-circle transition cover'), undefined);
+  assert.equal(room.getObjectByName('Room Squinch vertical drum brick extension clipped above arches'), undefined);
+});
+
+test('Room Squinch keeps one continuous door or window cut across the lower and transition walls', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    width: 6,
+    length: 5,
+    height: 4,
+    domeTransition: 'squinch',
+    domeTransitionCoverEnabled: false,
+  });
+  const crossingWindow = {
+    ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.window,
+    enabled: true,
+    width: 1,
+    height: 1,
+    sillHeight: 3.5,
+    position: 0.7,
+    head: 'lintel',
+  };
+  const crossingDoor = {
+    ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.door,
+    enabled: true,
+    width: 0.7,
+    height: 4.5,
+    sillHeight: 0,
+    position: -0.7,
+    head: 'lintel',
+  };
+  const roomWallOpenings = Object.fromEntries(['north', 'east', 'south', 'west'].map((side) => [
+    side,
+    {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings[side],
+      door: crossingDoor,
+      window: crossingWindow,
+    },
+  ]));
+  const room = buildWallSystem(building, normalizeWallSystem({
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    roomWallOpenings,
+  }, building));
+  room.updateMatrixWorld(true);
+
+  ['north', 'east', 'south', 'west'].forEach((side) => {
+    const lowerWall = room.getObjectByName(`Room ${side} south-style wall`);
+    const lowerWallBody = lowerWall.children.find((child) => child.userData?.isRoomWallBody);
+    const transitionWall = room.getObjectByName(`Room Squinch ${side} wall extension clipped under arch`);
+    assert.deepEqual(lowerWall.userData.roomWallOpeningTypes, ['door', 'window'], `${side} lower wall keeps both halves`);
+    assert.ok(lowerWall.userData.roomWallTransitionContinuationTypes.includes('door'));
+    assert.ok(lowerWall.userData.roomWallTransitionContinuationTypes.includes('window'));
+    assert.deepEqual(transitionWall.userData.roomSquinchOpeningTypes, ['door', 'window']);
+
+    lowerWall.traverse((object) => {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.filter(Boolean).forEach((material) => { material.side = THREE.DoubleSide; });
+    });
+    transitionWall.material.forEach((material) => { material.side = THREE.DoubleSide; });
+    [-0.7, 0.7].forEach((openingCenter) => {
+      const lowerRayOrigin = lowerWall.localToWorld(new THREE.Vector3(openingCenter, 3.75, -1));
+      const lowerRayDirection = new THREE.Vector3(0, 0, 1).transformDirection(lowerWall.matrixWorld);
+      assert.equal(
+        new THREE.Raycaster(lowerRayOrigin, lowerRayDirection, 0, 3).intersectObject(lowerWall, true).length,
+        0,
+        `${side} lower masonry must stay open below the transition boundary`,
+      );
+      const shelfRayOrigin = lowerWall.localToWorld(new THREE.Vector3(
+        openingCenter,
+        building.height + 0.2,
+        lowerWallBody.userData.roomWallDepth / 2,
+      ));
+      const shelfRayDirection = new THREE.Vector3(0, -1, 0).transformDirection(lowerWall.matrixWorld);
+      assert.equal(
+        new THREE.Raycaster(shelfRayOrigin, shelfRayDirection, 0, 0.4)
+          .intersectObject(lowerWallBody, false).length,
+        0,
+        `${side} crossing opening must not leave a horizontal shelf at the wall-transition seam`,
+      );
+      const rayOrigin = transitionWall.localToWorld(new THREE.Vector3(openingCenter, 4.25, -1));
+      const rayDirection = new THREE.Vector3(0, 0, 1).transformDirection(transitionWall.matrixWorld);
+      assert.equal(
+        new THREE.Raycaster(rayOrigin, rayDirection, 0, 3).intersectObject(transitionWall, false).length,
+        0,
+        `${side} transition masonry must be open at each continuing door or window`,
+      );
+    });
+    const cappedMasonryOrigin = lowerWall.localToWorld(new THREE.Vector3(
+      (side === 'north' || side === 'south' ? building.width : building.length) / 2 - 0.15,
+      building.height + 0.2,
+      lowerWallBody.userData.roomWallDepth / 2,
+    ));
+    const cappedMasonryDirection = new THREE.Vector3(0, -1, 0).transformDirection(lowerWall.matrixWorld);
+    assert.ok(
+      new THREE.Raycaster(cappedMasonryOrigin, cappedMasonryDirection, 0, 0.4)
+        .intersectObject(lowerWallBody, false).length > 0,
+      `${side} wall top must remain capped outside continuing openings`,
+    );
+  });
+});
+
+test('Room Squinch open wall bays retain brick spandrel above a crossing arched door', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    width: 6,
+    length: 5,
+    height: 4,
+    domeTransition: 'squinch',
+    domeTransitionCoverEnabled: false,
+    domeTransitionSettings: {
+      squinch: {
+        ...normalizeBuilding().domeTransitionSettings.squinch,
+        openWallArchBays: true,
+      },
+    },
+  });
+  const door = {
+    ...DEFAULT_WALL_SYSTEM.roomWallOpenings.south.door,
+    enabled: true,
+    width: 1.4,
+    height: 4.15,
+    sillHeight: 0,
+    position: 0,
+    head: 'arch',
+  };
+  const roomWallOpenings = Object.fromEntries(['north', 'east', 'south', 'west'].map((side) => [
+    side,
+    {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings[side],
+      door: {
+        ...DEFAULT_WALL_SYSTEM.roomWallOpenings[side].door,
+        ...(side === 'south' ? door : {}),
+        enabled: side === 'south',
+      },
+      window: { ...DEFAULT_WALL_SYSTEM.roomWallOpenings[side].window, enabled: false },
+    },
+  ]));
+  const room = buildWallSystem(building, normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    roomWallOpenings,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building));
+  room.updateMatrixWorld(true);
+  const transitionWall = room.getObjectByName('Room Squinch south wall extension clipped under arch');
+  assert.ok(transitionWall, 'a crossing door must retain its surrounding transition masonry');
+  const dedicatedSpandrel = room.getObjectByName('Room Squinch south door full opening-head spandrel');
+  assert.ok(dedicatedSpandrel, 'the complete wall above the door must be a dedicated full-depth spandrel');
+  assert.equal(
+    dedicatedSpandrel.userData.roomSquinchOpeningHeadSpandrelRule,
+    'complete-solid-wall-between-soldier-head-and-squinch-soffit',
+  );
+  assert.equal(
+    dedicatedSpandrel.userData.roomSquinchOpeningHeadProfileSource,
+    'exact-lower-wall-visible-soldier-profile',
+  );
+  assert.equal(
+    transitionWall.userData.roomSquinchOpeningSpandrelRule,
+    'retain-at-least-one-brick-course-between-opening-head-and-squinch-soffit',
+  );
+  assert.equal(transitionWall.userData.roomSquinchMinimumOpeningSpandrel, 0.0001);
+  assert.equal(
+    transitionWall.geometry.userData.roomSquinchOpeningSpandrelConstruction,
+    'solid-curve-to-curve-strips-extruded-through-full-wall-depth',
+  );
+  assert.ok(transitionWall.geometry.userData.roomSquinchOpeningSpandrelStripCount >= 2);
+  assert.equal(dedicatedSpandrel.geometry.userData.roomSquinchOpeningSpandrelStripCount, 1);
+  assert.equal(
+    room.getObjectByName('Room Squinch vertical walls clipped below arches').children
+      .filter((panel) => panel.userData.roomSquinchRoofPanelType === 'wall').length,
+    1,
+  );
+  transitionWall.material.forEach((material) => { material.side = THREE.DoubleSide; });
+  const wallExtensionAssembly = room.getObjectByName('Room Squinch vertical walls clipped below arches');
+  const profile = southOpeningProfile(door, 0, building.width, building.height, 0);
+  assert.deepEqual(
+    dedicatedSpandrel.userData.roomSquinchOpeningHeadProfile,
+    profile.archPoints.map((point) => point.toArray()),
+    'the fill must start on the visible door soldier curve, not a second taller arch',
+  );
+  const rayDirection = new THREE.Vector3(0, 0, 1).transformDirection(transitionWall.matrixWorld);
+  const hitsAt = (height, x = 0) => new THREE.Raycaster(
+    transitionWall.localToWorld(new THREE.Vector3(x, height, -1)),
+    rayDirection,
+    0,
+    3,
+  ).intersectObject(wallExtensionAssembly, true).length;
+  assert.equal(hitsAt(profile.top - 0.05), 0, 'the door void must continue through the transition wall');
+  assert.ok(hitsAt(profile.top + 0.05) > 0, 'brick masonry must fill between the door head and Squinch arch');
+  const doorHeadAt = (x) => profile.archPoints.reduce((height, point, index) => {
+    const next = profile.archPoints[index + 1];
+    if (!next || x < Math.min(point.x, next.x) || x > Math.max(point.x, next.x)) return height;
+    const span = next.x - point.x;
+    const progress = Math.abs(span) < 0.000001 ? 0 : (x - point.x) / span;
+    return Math.max(height, THREE.MathUtils.lerp(point.y, next.y, progress));
+  }, 0);
+  [-0.4, 0, 0.4].forEach((x) => {
+    const doorHeadY = doorHeadAt(x);
+    assert.ok(hitsAt(doorHeadY + 0.03, x) > 0,
+      `the full Squinch spandrel must remain solid above the door head at x=${x}`);
+  });
+  transitionWall.geometry.computeBoundingBox();
+  assert.ok(
+    hitsAt(transitionWall.geometry.boundingBox.max.y - transitionWall.userData.roomSquinchMinimumOpeningSpandrel / 2) > 0,
+    'the doorway must never cut all the way through the masonry immediately beneath the Squinch arch',
+  );
+});
+
+test('Room Karbandi cuts wall-adjacent transition masonry but preserves every rib', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    width: 5,
+    length: 5,
+    height: 4,
+    domeTransition: 'karbandi',
+    domeTransitionCoverEnabled: true,
+  });
+  const crossingDoor = {
+    ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north.door,
+    enabled: true,
+    width: 1.2,
+    height: 4.2,
+    sillHeight: 0,
+    position: 0,
+    head: 'arch',
+  };
+  let walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    roomWallOpenings: {
+      ...DEFAULT_WALL_SYSTEM.roomWallOpenings,
+      north: { ...DEFAULT_WALL_SYSTEM.roomWallOpenings.north, door: crossingDoor },
+    },
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true, ribCount: 16, autoClip: true },
+  }, building);
+  walls = normalizeWallSystem({
+    ...walls,
+    karbandi: {
+      ...walls.karbandi,
+      ...solveKarbandiWallSeating(walls.karbandi, building, walls),
+      enabled: true,
+      autoClip: true,
+    },
+  }, building);
+  const room = buildWallSystemWithCanvasMock(building, walls);
+  const northCoverMaterials = [];
+  room.traverse((child) => {
+    if (!child.isMesh || child.userData?.isKarbandiCover !== true
+      || child.userData?.wallContinuationSide !== 'north') return;
+    (Array.isArray(child.material) ? child.material : [child.material]).forEach((material) => {
+      if (material?.userData?.roomKarbandiOpeningClipRegions) northCoverMaterials.push(material);
+    });
+  });
+  assert.ok(northCoverMaterials.length > 0, 'north wall-adjacent Karbandi transition masonry must receive the opening cut');
+  northCoverMaterials.forEach((material) => {
+    assert.equal(
+      material.userData.roomKarbandiOpeningClipRule,
+      'discard-only-wall-adjacent-transition-masonry-inside-exact-inherited-opening-profile',
+    );
+    const inherited = material.userData.roomKarbandiOpeningClipRegions.find((region) => (
+      region.side === 'north' && region.openingType === 'door'
+    ));
+    assert.ok(inherited?.profile?.archPoints?.length > 2, 'the cut must retain the pointed arch, not a rectangular bound');
+    const shader = {
+      uniforms: {},
+      vertexShader: 'void main() {\n#include <project_vertex>\n}',
+      fragmentShader: 'void main() {\n#include <opaque_fragment>\n}',
+    };
+    material.onBeforeCompile(shader, {});
+    assert.match(shader.fragmentShader, /discard;/, 'the opening discard must be injected before Three.js opaque output');
+  });
+  const structuralRibs = [];
+  room.traverse((child) => {
+    if (child.isMesh && child.userData?.isKarbandi === true && child.userData?.isKarbandiVisualGuide !== true) {
+      structuralRibs.push(child);
+    }
+  });
+  assert.ok(structuralRibs.length > 0);
+  assert.ok(structuralRibs.every((rib) => (
+    !(Array.isArray(rib.material) ? rib.material : [rib.material])
+      .some((material) => material?.userData?.roomKarbandiOpeningClipRegions)
+  )), 'door and window openings must never cut structural Karbandi ribs');
+  const northWall = room.getObjectByName('Room north south-style wall');
+  const archReveal = northWall.children.find((child) => (
+    child.userData?.wallFace === 'reveal'
+      && child.userData?.openingType === 'door'
+      && child.userData?.soldierCourseRole === 'arch-head'
+  ));
+  assert.ok(archReveal, 'the interior and exterior door soldiers must be joined by a brick arch reveal');
+  archReveal.geometry.computeBoundingBox();
+  assert.ok(archReveal.geometry.boundingBox.max.y > building.height,
+    'the connected soldier reveal must continue into the Karbandi transition opening');
+  assert.ok(Math.abs(archReveal.geometry.boundingBox.min.z) < 0.000001);
+  assert.ok(Math.abs(
+    archReveal.geometry.boundingBox.max.z - walls.roomWallThicknesses.north
+  ) < 0.000001, 'the arch reveal must fill the complete distance between both soldier faces');
+});
+
+test('Hall assigns a crossing door to one boundary vault bay and removes its wall-top shelf', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'hall',
+    hallGridX: 3,
+    hallGridY: 1,
+    hallBayWidth: 4,
+    hallBayDepth: 4,
+    height: 4,
+  });
+  const door = {
+    ...createRoomPlanOpening('door', 'single-bay-door'),
+    rotation: 330,
+    width: 1,
+    height: 4.6,
+    sillHeight: 0,
+    head: 'lintel',
+  };
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    roomPlanOpenings: [door],
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const hall = buildWallSystemWithCanvasMock(building, walls);
+  hall.updateMatrixWorld(true);
+  const northInfills = hall.children.filter((child) => (
+    child.userData?.isHallBoundaryVaultInfill && child.userData.wallSide === 'north'
+  ));
+  assert.equal(northInfills.length, 3);
+  assert.equal(
+    northInfills.filter((infill) => infill.userData.hallTransitionOpeningIds.includes('single-bay-door')).length,
+    1,
+    'only the boundary vault directly adjacent to the door may inherit its opening',
+  );
+
+  const northWall = hall.getObjectByName('Hall north perimeter wall');
+  northWall.material.forEach((material) => { material.side = THREE.DoubleSide; });
+  assert.equal(
+    new THREE.Raycaster(
+      new THREE.Vector3(-4, building.height + 0.2, -building.depth / 2),
+      new THREE.Vector3(0, -1, 0),
+      0,
+      0.4,
+    ).intersectObject(northWall, false).length,
+    0,
+    'the Hall wall must not retain a horizontal closure surface beneath the continuing door',
+  );
+});
+
 test('Portal Squinch reuses the rear half of the square-room transition behind its facade', () => {
   const building = normalizeBuilding({
     type: 'iwan',
@@ -3100,6 +7117,7 @@ test('Portal Squinch reuses the rear half of the square-room transition behind i
     iwanDepth: 3,
     depth: 3,
     height: 4,
+    domeDrumHeightByTransition: { squinch: 0.8 },
     domeTransitionCoverEnabled: true,
     domeTransitionSettings: {
       squinch: {
@@ -3120,7 +7138,16 @@ test('Portal Squinch reuses the rear half of the square-room transition behind i
     portalCover: 'dome',
     ahang: { enabled: false },
     karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
-    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    bricks: {
+      ...DEFAULT_WALL_SYSTEM.bricks,
+      enabled: true,
+      sideBonds: {
+        ...DEFAULT_WALL_SYSTEM.bricks.sideBonds,
+        south: { ...DEFAULT_WALL_SYSTEM.bricks.sideBonds.south, builtIn: 'stack' },
+        east: { ...DEFAULT_WALL_SYSTEM.bricks.sideBonds.east, builtIn: 'flemish' },
+        west: { ...DEFAULT_WALL_SYSTEM.bricks.sideBonds.west, builtIn: 'stack' },
+      },
+    },
   }, building);
   const portal = buildWallSystem(building, walls);
   const sliceZ = -building.depth / 2 - walls.sideOffsets.north;
@@ -3185,7 +7212,8 @@ test('Portal Squinch reuses the rear half of the square-room transition behind i
   assert.ok(dome);
   assert.ok(drum, 'a square Portal Squinch Dome must include its upper drum');
   assert.equal(drum.userData.roomDomeDrumSideCount, 16);
-  assert.equal(drum.userData.roomDomeDrumHeight, 0.5);
+  assert.equal(drum.userData.roomDomeDrumHeight, 0.8);
+  assert.ok(Math.abs(drum.rotation.y + Math.PI / 16) < 0.000001);
   assert.equal(drum.userData.portalCoverDrumRule, 'square-squinch-sixteen-sided-drum-beneath-dome');
   assert.equal(ring, undefined, 'Portal covers do not include a springing ring');
   assert.equal(portal.getObjectByName('Portal dome independent extra leg'), undefined,
@@ -3229,6 +7257,35 @@ test('Portal Squinch reuses the rear half of the square-room transition behind i
   });
   assert.equal(drumSkirtCount, 1);
   assert.equal(cover.userData.roomSquinchRoofAssembly.upperDrumSideCount, 16);
+  const portalWallExtensions = portal.getObjectByName('Portal Squinch vertical walls clipped below arches');
+  assert.ok(portalWallExtensions);
+  assert.equal(portalWallExtensions.children.length, 7);
+  const portalStructuralWall = (side) => portal.children.find((child) => (
+    child.isMesh
+    && child.userData?.wallSide === side
+    && child.userData?.roomDomePart == null
+    && child.userData?.isBrickFace !== true
+    && child.userData?.isKarbandi !== true
+  ));
+  portalWallExtensions.children.forEach((panel) => {
+    const side = panel.userData.wallSide;
+    const wall = portalStructuralWall(side);
+    const wallMaterials = Array.isArray(wall.material) ? wall.material : [wall.material];
+    const visibleBondFace = portal.children.find((child) => (
+      child.isMesh
+      && child.userData?.wallSide === side
+      && child.userData?.isBrickFace === true
+      && child.userData?.wallFace !== 'exterior'
+    ));
+    const expectedInterior = visibleBondFace?.material
+      || (side === 'east' ? wallMaterials[1] : wallMaterials[0]);
+    assert.equal(panel.material[0], expectedInterior,
+      `${side} under-arch masonry must reuse the actual Portal wall-face material`);
+    assert.equal(
+      panel.geometry.userData.roomSquinchWallCourseUvMapping.source,
+      'exact-adjoining-vertical-wall-coordinate-system',
+    );
+  });
 
   const guideScene = Object.create(MehrazScene.prototype);
   guideScene.building = building;
@@ -3277,6 +7334,41 @@ test('Portal Squinch reuses the rear half of the square-room transition behind i
   ) < 0.000002, 'Portal Squinch guide plane must sit directly on the placed south arch face');
 });
 
+test('Portal Squinch continues a facade opening through its south transition wall', () => {
+  const building = normalizeBuilding({
+    type: 'iwan',
+    buildingType: 'portal',
+    width: 6,
+    iwanDepth: 3,
+    depth: 3,
+    height: 4,
+    domeTransition: 'squinch',
+    domeTransitionCoverEnabled: false,
+  });
+  const walls = normalizeWallSystem({
+    portalTransition: 'squinch',
+    portalCover: 'dome',
+    ahang: { ...DEFAULT_WALL_SYSTEM.ahang, enabled: false },
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    southOpenings: {
+      door: { ...DEFAULT_WALL_SYSTEM.southOpenings.door, enabled: false },
+      window: {
+        ...DEFAULT_WALL_SYSTEM.southOpenings.window,
+        enabled: true,
+        width: 1,
+        height: 1,
+        sillHeight: 3.5,
+        position: 0,
+        head: 'lintel',
+      },
+    },
+  }, building);
+  const portal = buildWallSystem(building, walls);
+  const transitionWall = portal.getObjectByName('Room Squinch south wall extension clipped under arch');
+  assert.ok(transitionWall);
+  assert.deepEqual(transitionWall.userData.roomSquinchOpeningTypes, ['window']);
+});
+
 test('Portal Dome adds a clipped shell while No cover and Ahang do not', () => {
   const building = normalizeBuilding({
     type: 'iwan',
@@ -3295,7 +7387,7 @@ test('Portal Dome adds a clipped shell while No cover and Ahang do not', () => {
       karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
       bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
     }, building);
-    const portal = buildWallSystem(building, walls);
+    const portal = buildWallSystemWithCanvasMock(building, walls);
     const shell = portal.children.find((child) => child.userData?.roomDomePart === 'dome-shell');
     assert.ok(shell, `${portalCover} must add an upper Portal shell`);
     assert.equal(shell.userData.roomDomeCoverType, portalCover);
@@ -3397,7 +7489,12 @@ test('Portal Dome adds a clipped shell while No cover and Ahang do not', () => {
     );
   }
 
-  const seatedKarbandiWalls = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const blankKarbandiWalls = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const seatedKarbandiWalls = normalizeWallSystem({
+    ...blankKarbandiWalls,
+    portalTransition: 'karbandi',
+    karbandi: { ...blankKarbandiWalls.karbandi, enabled: true },
+  }, building);
   for (const portalCover of ['dome']) {
     const karbandiPortal = buildWallSystem(building, normalizeWallSystem({
       ...seatedKarbandiWalls,
@@ -3539,7 +7636,7 @@ test('Portal Dome adds a clipped shell while No cover and Ahang do not', () => {
   }
 });
 
-test('Room Squinch non-corner covers inherit both connected wall faces and bonds', () => {
+test('Room Squinch separates wall masonry below ribs from the independent transition cover above', () => {
   const building = normalizeBuilding({
     type: 'room',
     width: 6,
@@ -3555,6 +7652,10 @@ test('Room Squinch non-corner covers inherit both connected wall faces and bonds
       enabled: true,
       sideBonds: {
         ...DEFAULT_WALL_SYSTEM.bricks.sideBonds,
+        room_dome_transition: {
+          ...DEFAULT_WALL_SYSTEM.bricks.sideBonds.room_dome_transition,
+          builtIn: 'stack',
+        },
         room_dome_transition_exterior: {
           ...DEFAULT_WALL_SYSTEM.bricks.sideBonds.room_dome_transition_exterior,
           builtIn: 'flemish',
@@ -3580,9 +7681,10 @@ test('Room Squinch non-corner covers inherit both connected wall faces and bonds
     assert.ok(Array.isArray(panel.material));
     assert.equal(panel.material[0].map, lowerBody.material[interiorIndex].map);
     assert.equal(panel.material[0].userData.brickBondSide, side);
-    assert.notEqual(panel.material[1].map, lowerBody.material[exteriorIndex].map);
-    assert.equal(panel.material[1].userData.brickBondSide, 'room_dome_transition_exterior');
-    assert.equal(panel.material[1].userData.brickBondSelection, 'flemish');
+    assert.equal(panel.material[0], lowerBody.material[interiorIndex]);
+    assert.equal(panel.material[1], lowerBody.material[exteriorIndex]);
+    assert.equal(panel.material[1].userData.brickBondSide, `${side}_exterior`);
+    assert.equal(panel.material[2], lowerBody.material[lowerBody.userData.roomWallReturnMaterialIndex]);
     assert.equal(panel.geometry.userData.roomWallInteriorMaterialIndex, 0);
     assert.equal(panel.geometry.userData.roomWallExteriorMaterialIndex, 1);
     assert.equal(
@@ -3591,6 +7693,10 @@ test('Room Squinch non-corner covers inherit both connected wall faces and bonds
     );
     const materialGroups = new Set(panel.geometry.groups.map((group) => group.materialIndex));
     assert.ok(materialGroups.has(0) && materialGroups.has(1) && materialGroups.has(2));
+    assert.equal(
+      panel.geometry.userData.roomSquinchWallCourseUvMapping.source,
+      'exact-adjoining-vertical-wall-coordinate-system',
+    );
 
     const panelBounds = new THREE.Box3().setFromObject(panel);
     const wallBounds = new THREE.Box3().setFromObject(lowerBody);
@@ -3603,24 +7709,52 @@ test('Room Squinch non-corner covers inherit both connected wall faces and bonds
     }
   });
 
+  const transitionSpandrels = room
+    .getObjectByName('Room Squinch vertical drum brick extension clipped above arches')
+    .children;
+  assert.equal(transitionSpandrels.length, 8);
+  transitionSpandrels.forEach((panel) => {
+    assert.equal(panel.userData.wallSide, 'room_dome_transition');
+    assert.equal(panel.material[0].userData.brickBondSide, 'room_dome_transition');
+    assert.equal(panel.material[0].userData.brickBondSelection, 'stack');
+    assert.equal(panel.material[1].userData.brickBondSide, 'room_dome_transition_exterior');
+    assert.equal(panel.material[1].userData.brickBondSelection, 'flemish');
+    assert.equal(panel.userData.roomSquinchFinishIndependence, 'transition-cover-independent-from-vertical-walls-and-drum');
+    assert.equal(panel.userData.roomSquinchWallBondSource, 'independent-transition-cover-interior-and-exterior');
+    const materialGroups = new Set(panel.geometry.groups.map((group) => group.materialIndex));
+    assert.ok(materialGroups.has(0) && materialGroups.has(1) && materialGroups.has(2));
+  });
+
   const cornerPanels = [];
   room.traverse((child) => {
     if (child.userData?.roomSquinchRoofPanelType === 'corner') cornerPanels.push(child);
   });
   assert.equal(cornerPanels.length, 8);
-  const sharedExteriorMaterial = panels[0].material[1];
-  [...panels, ...cornerPanels].forEach((panel) => {
-    assert.equal(panel.material[1], sharedExteriorMaterial);
-    assert.equal(panel.userData.roomSquinchExteriorBondSide, 'room_dome_transition_exterior');
-    assert.equal(panel.userData.roomSquinchExteriorBondAssembly, 'all-transition-covers-one-object');
-  });
   cornerPanels.forEach((panel) => {
+    const side = panel.userData.wallSide;
+    const lowerBody = room
+      .getObjectByName(`Room ${side} south-style wall`)
+      .children.find((child) => child.userData?.isRoomWallBody === true);
     assert.ok(Array.isArray(panel.material));
-    assert.equal(panel.material[0].userData.brickBondSide, panel.userData.wallSide);
+    assert.equal(panel.material[0], lowerBody.material[lowerBody.userData.roomWallInteriorMaterialIndex]);
+    assert.equal(panel.material[1], lowerBody.material[lowerBody.userData.roomWallExteriorMaterialIndex]);
+    assert.equal(panel.material[2], lowerBody.material[lowerBody.userData.roomWallReturnMaterialIndex]);
+    assert.equal(panel.userData.isRoomSquinchVerticalWallExtension, true);
+    assert.equal(panel.userData.isRoomDomeTransitionCover, false);
+    assert.equal(panel.userData.roomSquinchExteriorBondSide, `${side}_exterior`);
+    assert.equal(panel.userData.roomSquinchExteriorBondAssembly, 'connected-vertical-wall-exterior-face');
+    assert.equal(
+      panel.geometry.userData.roomSquinchWallCourseUvMapping.source,
+      'exact-adjoining-vertical-wall-coordinate-system',
+    );
     assert.equal(panel.geometry.userData.roomSquinchCornerRoofInteriorMaterialIndex, 0);
     assert.equal(panel.geometry.userData.roomSquinchCornerRoofExteriorMaterialIndex, 1);
     assert.equal(panel.geometry.userData.roomSquinchCornerRoofReturnMaterialIndex, 2);
   });
+  const wallAssembly = room.getObjectByName('Room Squinch vertical walls clipped below arches');
+  assert.ok(wallAssembly);
+  assert.equal(wallAssembly.children.length, 12);
+  assert.ok(wallAssembly.children.every((panel) => panel.userData.isRoomSquinchVerticalWallExtension === true));
 });
 
 test('Room dome, extra leg, drum, and transition use independent bonds and brick colors', () => {
@@ -3631,9 +7765,12 @@ test('Room dome, extra leg, drum, and transition use independent bonds and brick
     domeTransition: 'karbandi',
     domeTransitionCoverEnabled: true,
     domeDrumHeight: 0.8,
+    domeDrumHeightByTransition: { karbandi: 0.8 },
     domeColor: '#2468ac',
     domeExtraLegColor: '#3a8f5d',
     domeOuterLegExtensionByCoverType: { dome: 0.6 },
+    domeOuterLegExtensionByTransitionAndCoverType: { karbandi: { dome: 0.6 } },
+    domeOuterRingEnabledByTransitionAndCoverType: { karbandi: { dome: true } },
     domeRingColor: '#7a36c4',
     domePatternCoverage: 85,
     innerDomeEnabled: true,
@@ -4071,7 +8208,10 @@ test('Room Karbandi uses the Iwan rib generator and solutions around the Room ce
     .filter(Number.isFinite);
   const crownRadius = crownRadii.reduce((sum, radius) => sum + radius, 0) / crownRadii.length;
   const dome = room.getObjectByName('Room circular dome cover');
-  assert.equal(dome.userData.roomDomeSpringY, crownY + building.domeDrumHeight);
+  assert.equal(
+    dome.userData.roomDomeSpringY,
+    crownY + building.domeDrumHeight + building.domeOuterLegExtensionByCoverType.dome,
+  );
   assert.ok(Math.abs(room.userData.roomKarbandiCrownRadius - crownRadius) < 0.000001);
   assert.ok(Math.abs(dome.userData.roomDomeRadius - crownRadius) < 0.000001);
   assert.equal(dome.userData.roomDomeDiameterSource, 'retained-karbandi-rib-crown-centerline-ring');
@@ -4560,6 +8700,148 @@ test.skip('removed feature: four Room Karbandi wall legs build an upper square t
   });
 });
 
+test('Karbandi wall-leg toggle keeps the rib count and switches square Rooms between eight and four bearings', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    width: 5,
+    length: 5,
+    domeTransition: 'karbandi',
+    domeTransitionCoverEnabled: false,
+  });
+  const buildMode = (wallLegMode) => {
+    let walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      karbandi: {
+        ...DEFAULT_WALL_SYSTEM.karbandi,
+        enabled: true,
+        ribCount: 16,
+        wallLegMode,
+        autoClip: true,
+      },
+    }, building);
+    const solved = wallLegMode === 'one'
+      ? solveKarbandiOneLegCornerSeating(walls.karbandi, building, walls)
+      : solveKarbandiWallSeating(walls.karbandi, building, walls);
+    walls = normalizeWallSystem({
+      ...walls,
+      karbandi: {
+        ...walls.karbandi,
+        ...solved,
+        wallLegMode,
+        enabled: true,
+        autoClip: true,
+      },
+    }, building);
+    return { walls, room: buildWallSystem(building, walls) };
+  };
+
+  const paired = buildMode('two');
+  assert.equal(paired.walls.karbandi.ribCount, 16);
+  assert.equal(paired.room.userData.karbandiWallLegMode, 'two');
+  assert.equal(paired.room.userData.roomKarbandiWallSupportFootOctagon.length, 8);
+  assert.equal(paired.room.userData.roomKarbandiTransitionSideCount, 8);
+
+  const single = buildMode('one');
+  assert.equal(single.walls.karbandi.ribCount, 16, 'the leg solution must not change the designed rib count');
+  assert.ok(single.walls.karbandi.referenceAngle < 180);
+  assert.equal(single.room.userData.karbandiWallLegMode, 'one');
+  assert.equal(single.room.userData.karbandiClosestWallLegs.length, 4);
+  assert.equal(single.room.userData.karbandiWallSupportedLegKeys.length, 4);
+  assert.equal(single.room.userData.roomKarbandiWallSupportFootOctagon.length, 4);
+  assert.equal(single.room.userData.roomKarbandiTransitionSideCount, 4);
+  assert.equal(new Set(single.room.userData.roomKarbandiWallSupportFootOctagon.map(({ wall }) => wall)).size, 4);
+  single.room.userData.roomKarbandiWallSupportFootOctagon.forEach(({ point: [x, , z] }) => {
+    assert.ok(Math.abs(Math.abs(x) - building.width / 2) < 0.05);
+    assert.ok(Math.abs(Math.abs(z) - building.length / 2) < 0.05);
+  });
+  const cappedWallBodies = [];
+  single.room.traverse((object) => {
+    if (object.userData?.isRoomWallBody === true) cappedWallBodies.push(object);
+  });
+  assert.equal(cappedWallBodies.length, 4);
+  cappedWallBodies.forEach((body) => {
+    assert.equal(body.userData.roomWallTopCapRetainedBelowKarbandi, true);
+    const positions = body.geometry.getAttribute('position');
+    const index = body.geometry.getIndex();
+    const vertexCount = index?.count ?? positions.count;
+    const vertexAt = (offset) => index ? index.getX(offset) : offset;
+    let topTriangleCount = 0;
+    for (let triangle = 0; triangle < vertexCount; triangle += 3) {
+      const a = vertexAt(triangle);
+      const b = vertexAt(triangle + 1);
+      const c = vertexAt(triangle + 2);
+      if ([a, b, c].every((vertex) => Math.abs(positions.getY(vertex) - building.height) < 0.000001)) {
+        topTriangleCount += 1;
+      }
+    }
+    assert.ok(topTriangleCount > 0, 'each vertical Room wall must retain a closed horizontal top cap');
+  });
+  const nextSingleSolution = solveKarbandiOneLegCornerSeating(
+    single.walls.karbandi,
+    building,
+    single.walls,
+    { stepDirection: 1 },
+  );
+  assert.notEqual(nextSingleSolution.referenceAngle, single.walls.karbandi.referenceAngle);
+  assert.equal(nextSingleSolution.oneLegCornerSolutionValid, true);
+  assert.equal(nextSingleSolution.oneLegCornerLegCount, 4);
+});
+
+test('Portal one-leg clipping retains mirrored side and rear bearings', () => {
+  const building = normalizeBuilding({ type: 'iwan', buildingType: 'portal' });
+  const portalDefaults = portalDefaultWallSystem(DEFAULT_WALL_SYSTEM, building);
+  const walls = normalizeWallSystem({
+    ...portalDefaults,
+    portalTransition: 'karbandi',
+    bricks: { ...portalDefaults.bricks, enabled: false },
+    karbandi: {
+      ...portalDefaults.karbandi,
+      enabled: true,
+      wallLegMode: 'one',
+      autoClip: true,
+    },
+  }, building);
+  const portal = buildWallSystemWithCanvasMock(building, walls);
+  let network = null;
+  portal.traverse((object) => {
+    if (object.userData?.karbandiWallLegMode === 'one') network = object;
+  });
+  const bearings = network.userData.karbandiClosestWallLegs;
+  assert.equal(bearings.filter((bearing) => bearing.wall === 'west').length, 1);
+  assert.equal(bearings.filter((bearing) => bearing.wall === 'east').length, 1);
+  assert.equal(bearings.filter((bearing) => bearing.wall === 'south').length, 2);
+
+  portal.updateMatrixWorld(true);
+  const points = [];
+  portal.traverse((object) => {
+    if (!object.isMesh
+      || object.userData?.isKarbandi !== true
+      || object.userData?.isKarbandiCover === true
+      || object.userData?.isKarbandiVisualGuide === true) return;
+    const positions = object.geometry.getAttribute('position');
+    for (let index = 0; index < positions.count; index += 1) {
+      points.push(new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(object.matrixWorld));
+    }
+  });
+  const pointKey = (point) => [point.x, point.y, point.z]
+    .map((coordinate) => Math.round(coordinate * 100))
+    .join(':');
+  const pointKeys = new Set(points.map(pointKey));
+  assert.ok(points.every((point) => pointKeys.has(pointKey(new THREE.Vector3(-point.x, point.y, point.z)))),
+    'every clipped left rib vertex must have an exact mirrored right rib vertex');
+});
+
+test('Vestibule normalization always retains the two-leg Karbandi solution', () => {
+  const building = normalizeBuilding({ type: 'room', buildingType: 'vestibule' });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: true, wallLegMode: 'one' },
+  }, building);
+  assert.equal(walls.karbandi.wallLegMode, 'two');
+});
+
 test.skip('removed feature: corner rib feet build an upper square transition', () => {
   const building = normalizeBuilding({
     type: 'room',
@@ -4790,6 +9072,120 @@ test.skip('removed feature: window guides transfer into upper octagon transition
   assert.ok(Math.abs(guide.userData.archConstructionApexY - inheritedOpening.topY) < 0.000001);
 });
 
+test('every visible arch and dome construction guide faces the active X or Y section camera', () => {
+  const assertSectionFacing = (guide, axis, label) => {
+    assert.ok(guide, `${label} guide must be generated`);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      guide.getWorldQuaternion(new THREE.Quaternion()),
+    ).normalize();
+    const expected = axis === 'y' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(-1, 0, 0);
+    assert.ok(normal.distanceTo(expected) < 0.000001, `${label} guide plane must face the ${axis.toUpperCase()} Slice camera`);
+    assert.equal(guide.userData.archConstructionSectionAxis, axis);
+    assert.ok(guide.children.some((child) => child.userData?.archConstructionRole?.endsWith('-circle')),
+      `${label} must keep its construction circles visible`);
+    assert.ok(guide.children.some((child) => child.userData?.archConstructionRole?.endsWith('-center')),
+      `${label} must keep its construction centres visible`);
+  };
+
+  const northScene = Object.create(MehrazScene.prototype);
+  northScene.building = normalizeBuilding({ type: 'room' });
+  northScene.walls = normalizeWallSystem({}, northScene.building);
+  northScene.selectedWallSide = 'north_top';
+  northScene.sectionViewEnabled = true;
+  northScene.sectionViewAxis = 'y';
+  northScene.renderer = null;
+  const northRoot = new THREE.Group();
+  northScene.addNorthArchConstructionGuides(northRoot);
+  assertSectionFacing(
+    northRoot.getObjectByName('North arch symmetric red and green construction circles'),
+    'y',
+    'north-wall arch',
+  );
+
+  const openingScene = Object.create(MehrazScene.prototype);
+  openingScene.building = normalizeBuilding({ type: 'room' });
+  openingScene.walls = normalizeWallSystem({
+    roomWallOpenings: {
+      east: {
+        door: {
+          ...DEFAULT_WALL_SYSTEM.roomWallOpenings.east.door,
+          enabled: true,
+          head: 'arch',
+        },
+      },
+    },
+  }, openingScene.building);
+  openingScene.selectedOpeningGuide = 'east:door';
+  openingScene.sectionViewEnabled = true;
+  openingScene.sectionViewAxis = 'x';
+  openingScene.renderer = null;
+  openingScene.buildingGroup = new THREE.Group();
+  const openingRoot = new THREE.Group();
+  openingScene.addRoomWallOpeningConstructionGuides(openingRoot);
+  assertSectionFacing(
+    openingRoot.getObjectByName('east wall door arch symmetric red and green construction circles'),
+    'x',
+    'east-wall door arch',
+  );
+
+  const radialBuilding = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'octagon',
+    width: 6,
+    length: 6,
+  });
+  const radialOpening = { ...createRoomPlanOpening('door', 'section-facing-door'), head: 'arch' };
+  const radialWalls = normalizeWallSystem({ roomPlanOpenings: [radialOpening] }, radialBuilding);
+  const radialScene = Object.create(MehrazScene.prototype);
+  radialScene.building = radialBuilding;
+  radialScene.walls = radialWalls;
+  radialScene.selectedOpeningGuide = `plan:${radialOpening.id}`;
+  radialScene.sectionViewEnabled = true;
+  radialScene.sectionViewAxis = 'y';
+  radialScene.renderer = null;
+  radialScene.buildingGroup = new THREE.Group();
+  radialScene.buildingGroup.add(buildWallSystemWithCanvasMock(radialBuilding, radialWalls));
+  const radialRoot = new THREE.Group();
+  radialScene.addRoomPlanOpeningConstructionGuide(radialRoot);
+  assertSectionFacing(
+    radialRoot.getObjectByName(`Room plan door ${radialOpening.id} arch symmetric red and green construction circles and radii`),
+    'y',
+    'radial-plan opening arch',
+  );
+
+  const ribScene = karbandiConstructionScene();
+  ribScene.karbandiRibArchEditing = true;
+  ribScene.sectionViewEnabled = true;
+  ribScene.sectionViewAxis = 'x';
+  ribScene.renderer = null;
+  const ribRoot = new THREE.Group();
+  ribScene.addKarbandiRibArchConstructionGuides(ribRoot);
+  assertSectionFacing(
+    ribRoot.getObjectByName('Karbandi rib arch symmetric red and green construction circles'),
+    'x',
+    'Karbandi rib arch',
+  );
+
+  const domeBuilding = normalizeBuilding({ type: 'room', domeTransition: 'squinch' });
+  const domeWalls = normalizeWallSystem({}, domeBuilding);
+  const domeScene = Object.create(MehrazScene.prototype);
+  domeScene.building = domeBuilding;
+  domeScene.walls = domeWalls;
+  domeScene.selectedWallSide = 'room_dome';
+  domeScene.sectionViewEnabled = true;
+  domeScene.sectionViewAxis = 'y';
+  domeScene.renderer = null;
+  domeScene.buildingGroup = new THREE.Group();
+  domeScene.buildingGroup.add(buildWallSystemWithCanvasMock(domeBuilding, domeWalls));
+  const domeRoot = new THREE.Group();
+  domeScene.addRoomDomeArchConstructionGuides(domeRoot);
+  assertSectionFacing(
+    domeRoot.getObjectByName('Room dome symmetric red and green construction circles'),
+    'y',
+    'outer dome arch',
+  );
+});
+
 test('Room section view clips the east half at the north-south center plane and restores materials', () => {
   const scene = Object.create(MehrazScene.prototype);
   scene.building = normalizeBuilding({ type: 'room', width: 6, length: 5, height: 4 });
@@ -4820,6 +9216,12 @@ test('Room section view clips the east half at the north-south center plane and 
   const originalPosition = scene.camera.position.clone();
   assert.equal(MehrazScene.prototype.setRoomSectionView.call(scene, true), true);
   assert.equal(material.clippingPlanes.length, 2);
+  assert.ok(scene.sectionCapGroup.children.some((cap) => (
+    cap.userData.roomSectionCapSource === 'mesh-intersection'
+  )), 'a cut staged project must receive the same hatched section cap as the active building');
+  assert.ok(scene.sectionCapGroup.children.every((cap) => (
+    cap.material.userData.roomSectionHatch === 'black-45-degree'
+  )));
   assert.equal(material.clippingPlanes[0], permanentPlane);
   assert.ok(scene.sectionCapGroup.children.length > 0);
   assert.ok(scene.sectionCapGroup.children.every((cap) => (
@@ -4828,7 +9230,7 @@ test('Room section view clips the east half at the north-south center plane and 
       && cap.material.userData.roomSectionHatch === 'black-45-degree'
   )));
   const sectionPlane = material.clippingPlanes[1];
-  const expectedCenterX = ((-3 - 0.2) + (3 + 0.4)) / 2;
+  const expectedCenterX = 0;
   assert.ok(Math.abs(sectionPlane.distanceToPoint(new THREE.Vector3(expectedCenterX, 2, 0))) < 0.000001);
   assert.ok(sectionPlane.distanceToPoint(new THREE.Vector3(expectedCenterX + 1, 2, 0)) < 0,
     'the east half must be removed while the north-south center section remains visible');
@@ -4863,6 +9265,14 @@ test('Portal enables X and Y slices for its own walls, transition, and cover geo
   scene.projectInstanceGroup = new THREE.Group();
   const material = new THREE.MeshStandardMaterial();
   scene.buildingGroup.add(new THREE.Mesh(new THREE.BoxGeometry(6, 4, 5), material));
+  const groundMaterial = new THREE.MeshStandardMaterial();
+  scene.groundMesh = new THREE.Mesh(new THREE.BoxGeometry(40, 0.12, 40), groundMaterial);
+  scene.groundMesh.userData.isStageSurface = true;
+  scene.buildingGroup.add(scene.groundMesh);
+  const gridMaterial = new THREE.LineBasicMaterial();
+  scene.grid = new THREE.LineSegments(new THREE.BufferGeometry(), gridMaterial);
+  scene.grid.userData.isStageSurface = true;
+  scene.buildingGroup.add(scene.grid);
   scene.camera = new THREE.PerspectiveCamera(42, 1, 0.05, 160);
   scene.camera.position.set(-8, 6, -9);
   scene.controls = { target: new THREE.Vector3(0, 2, 0), update() {} };
@@ -4875,12 +9285,16 @@ test('Portal enables X and Y slices for its own walls, transition, and cover geo
   assert.equal(MehrazScene.prototype.setRoomSectionView.call(scene, true, 'x'), true);
   assert.equal(scene.sectionViewAxis, 'x');
   assert.equal(material.clippingPlanes.length, 1);
+  assert.equal(groundMaterial.clippingPlanes, null, 'X Slice must leave the stage ground whole');
+  assert.equal(gridMaterial.clippingPlanes, null, 'X Slice must leave the stage grid whole');
   assert.ok(scene.sectionCapGroup.children.length > 0);
   assert.ok(scene.sectionCapGroup.children.every((cap) => cap.userData.roomSectionAxis === 'x'));
 
   assert.equal(MehrazScene.prototype.setRoomSectionView.call(scene, true, 'y'), true);
   assert.equal(scene.sectionViewAxis, 'y');
   assert.equal(material.clippingPlanes.length, 1);
+  assert.equal(groundMaterial.clippingPlanes, null, 'Y Slice must leave the stage ground whole');
+  assert.equal(gridMaterial.clippingPlanes, null, 'Y Slice must leave the stage grid whole');
   assert.ok(scene.sectionCapGroup.children.length > 0);
   assert.ok(scene.sectionCapGroup.children.every((cap) => cap.userData.roomSectionAxis === 'y'));
 
@@ -4889,7 +9303,7 @@ test('Portal enables X and Y slices for its own walls, transition, and cover geo
   assert.equal(scene.sectionCapGroup.children.length, 0);
 });
 
-test('Slice applies a transformed local-center clipping plane to every staged project', () => {
+test('Slice applies one world plane through the stage-grid centre to every staged project', () => {
   const scene = Object.create(MehrazScene.prototype);
   scene.building = normalizeBuilding({ type: 'iwan', width: 5, depth: 6, height: 4 });
   scene.walls = normalizeWallSystem({}, scene.building);
@@ -4927,22 +9341,17 @@ test('Slice applies a transformed local-center clipping plane to every staged pr
   assert.equal(MehrazScene.prototype.setRoomSectionView.call(scene, true), true);
   assert.equal(material.clippingPlanes.length, 2);
   assert.equal(material.clippingPlanes[0], permanentPlane);
-  project.updateWorldMatrix(true, true);
-  const center = new THREE.Vector3(0.25, 1, 0).applyMatrix4(project.matrixWorld);
-  const removedSide = new THREE.Vector3(1.25, 1, 0).applyMatrix4(project.matrixWorld);
   const projectPlane = material.clippingPlanes[1];
-  assert.ok(Math.abs(projectPlane.distanceToPoint(center)) < 0.000001);
-  assert.ok(projectPlane.distanceToPoint(removedSide) < 0,
-    'each project must remove its own local east half after move, rotation, and scale');
+  assert.ok(Math.abs(projectPlane.distanceToPoint(new THREE.Vector3(0, 1, 0))) < 0.000001);
+  assert.ok(projectPlane.distanceToPoint(new THREE.Vector3(1, 1, 0)) < 0,
+    'X Slice must remove the world east half across the complete staged composition');
 
   assert.equal(MehrazScene.prototype.setRoomSectionView.call(scene, true, 'y'), true);
   assert.equal(material.clippingPlanes.length, 2);
-  const perpendicularCenter = new THREE.Vector3(0, 1, -0.4).applyMatrix4(project.matrixWorld);
-  const perpendicularRemovedSide = new THREE.Vector3(0, 1, 0.6).applyMatrix4(project.matrixWorld);
   const perpendicularPlane = material.clippingPlanes[1];
-  assert.ok(Math.abs(perpendicularPlane.distanceToPoint(perpendicularCenter)) < 0.000001);
-  assert.ok(perpendicularPlane.distanceToPoint(perpendicularRemovedSide) < 0,
-    'Y Slice must remove each project local south half on the perpendicular center plane');
+  assert.ok(Math.abs(perpendicularPlane.distanceToPoint(new THREE.Vector3(0, 1, 0))) < 0.000001);
+  assert.ok(perpendicularPlane.distanceToPoint(new THREE.Vector3(0, 1, 1)) < 0,
+    'Y Slice must remove the world south half across the complete staged composition');
   assert.equal(scene.sectionViewAxis, 'y');
   assert.ok(scene.camera.position.z > scene.controls.target.z,
     'Y Slice must look toward its cut from the positive local Y-plan direction');
@@ -4983,6 +9392,7 @@ test('Room section caps hatch dome and drum thickness without closing their inte
     domeTransition: 'karbandi',
     domeTransitionCoverEnabled: true,
     domeDrumHeight: 0.5,
+    domeDrumHeightByTransition: { karbandi: 0.5 },
     innerDomeEnabled: true,
   });
   let walls = normalizeWallSystem({
@@ -5347,14 +9757,17 @@ test('every Room wall accepts independent South-style door and window designs', 
       || child.userData?.isRoomWallOpeningArchCourse === true);
     const interior = trim.filter((child) => child.userData.wallFace === 'interior');
     const exterior = trim.filter((child) => child.userData.wallFace === 'exterior');
+    const reveal = trim.filter((child) => child.userData.wallFace === 'reveal');
     assert.ok(interior.length > 0, `${side} opening must have interior soldier bricks`);
     assert.equal(exterior.length, interior.length, `${side} exterior soldier bricks must match the interior set`);
+    assert.equal(reveal.length, interior.length, `${side} opening reveal must connect every interior and exterior soldier course`);
     assert.deepEqual(
       exterior.map((child) => child.userData.soldierCourseRole).sort(),
       interior.map((child) => child.userData.soldierCourseRole).sort(),
     );
     assert.ok(interior.every((child) => child.userData.openingTrimBondSide === side));
     assert.ok(exterior.every((child) => child.userData.openingTrimBondSide === `${side}_exterior`));
+    assert.ok(reveal.every((child) => child.userData.isOpeningSoldierRevealConnector === true));
     assert.ok(trim.every((child) => child.material.userData.raisedBorderCoordinateSpace === 'local'),
       `${side} opening soldiers must use the same wall-local mapping before the wall rotates`);
     const archCourse = trim.find((child) => child.userData.isRoomWallOpeningArchCourse === true);
@@ -5374,6 +9787,14 @@ test('every Room wall accepts independent South-style door and window designs', 
     exterior.forEach((child) => {
       child.geometry.computeBoundingBox();
       assert.ok(child.geometry.boundingBox.min.z > brickWalls.roomWallThicknesses[side], `${side} exterior trim must project beyond the exterior face`);
+    });
+    reveal.forEach((child) => {
+      child.geometry.computeBoundingBox();
+      assert.ok(Math.abs(child.geometry.boundingBox.min.z) < 0.000001, `${side} soldier reveal must begin on the interior wall face`);
+      assert.ok(
+        Math.abs(child.geometry.boundingBox.max.z - brickWalls.roomWallThicknesses[side]) < 0.000001,
+        `${side} soldier reveal must end on the exterior wall face`,
+      );
     });
     const expectedType = index % 2 === 0 ? 'door' : 'window';
     assert.ok(trim.every((child) => child.userData.openingType === expectedType));
@@ -5416,6 +9837,9 @@ test('normalized scale-0.95 Karbandi solution builds a valid roof', () => {
 test('portal gypsum excludes north, clears stone slabs and covers the Ahang soffit', () => {
   const building = normalizeBuilding({ width: 8, depth: 8, height: 6, wallThickness: 0.4 });
   const walls = normalizeWallSystem({
+    portalTransition: 'none',
+    portalCover: 'ahang',
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
     interiorGypsum: { enabled: true, color: '#d8d2c5' },
     southOpenings: {
       door: { ...DEFAULT_WALL_SYSTEM.southOpenings.door, enabled: true, head: 'arch' },
@@ -5922,6 +10346,147 @@ test('wall context editing resolves the exact Girih wall section and source app'
   assert.equal(wallContextLibraryAsset(sideBonds, 'south_arch').assetId, 'girih-arch');
 });
 
+test('Stone skirt keeps Follow building as its default and builds independent selectable footprints', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'octagon',
+    width: 8,
+    length: 6,
+    wallThickness: 0.4,
+  });
+  const followWalls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const followed = buildWallSystem(building, followWalls);
+  assert.equal(followed.getObjectByName('Independent stone skirt'), undefined);
+  let followedStoneMaterial = null;
+  followed.traverse((child) => {
+    if (followedStoneMaterial || !child.material) return;
+    followedStoneMaterial = (Array.isArray(child.material) ? child.material : [child.material])
+      .find((material) => material?.userData?.stoneBaseHeight === followWalls.stoneBase.height) || null;
+  });
+  assert.ok(followedStoneMaterial, 'Follow building keeps the existing stone finish on structural walls');
+
+  for (const [planShape, polygonSides, expectedPanels] of [
+    ['circle', 6, 64],
+    ['octagon', 6, 8],
+    ['polygon', 7, 7],
+  ]) {
+    const walls = normalizeWallSystem({
+      ...followWalls,
+      stoneBase: { ...followWalls.stoneBase, planShape, polygonSides, height: 1.25 },
+    }, building);
+    const room = buildWallSystem(building, walls);
+    const skirt = room.getObjectByName('Independent stone skirt');
+    assert.ok(skirt);
+    assert.equal(skirt.userData.stoneSkirtPlanShape, planShape);
+    assert.equal(skirt.userData.stoneSkirtSideCount, expectedPanels);
+    assert.ok(skirt.children.length > 0);
+    assert.equal(skirt.userData.stoneSkirtHeight, 1.25);
+    assert.equal(skirt.userData.stoneSkirtThickness, 0.4);
+    assert.equal(skirt.userData.stoneSkirtConstruction, 'full-depth-lower-building-masonry-tier');
+    assert.ok(skirt.children.every((panel) => panel.userData.isIndependentStoneSkirt));
+    assert.ok(skirt.children.every((panel) => panel.material.userData.isIndependentStoneSkirtMaterial));
+    assert.ok(skirt.children.every((panel) => panel.geometry.parameters.height <= 1.25));
+    const boundaryRadius = Math.min(8.8, 6.8) / 2;
+    assert.ok(Math.abs(skirt.userData.stoneSkirtBoundaryRadius - boundaryRadius) < 0.000001);
+    let clippedMainMaterial = null;
+    room.traverse((child) => {
+      if (clippedMainMaterial || !child.material || child.userData.isIndependentStoneSkirt) return;
+      clippedMainMaterial = (Array.isArray(child.material) ? child.material : [child.material])
+        .find((material) => material?.userData?.stoneSkirtMainBuildingCutHeight === 1.25) || null;
+    });
+    assert.ok(clippedMainMaterial, 'the main building masonry starts at the independent skirt top');
+  }
+
+  const normalizedCustom = normalizeWallSystem({
+    stoneBase: { planShape: 'polygon', polygonSides: 99 },
+  }, building);
+  assert.equal(normalizedCustom.stoneBase.planShape, 'polygon');
+  assert.equal(normalizedCustom.stoneBase.polygonSides, 32);
+  assert.equal(normalizeWallSystem({ stoneBase: { planShape: 'triangle' } }, building).stoneBase.planShape, 'follow');
+  assert.equal(normalizeWallSystem({ stoneBase: { planShape: 'square' } }, building).stoneBase.planShape, 'follow');
+});
+
+test('an octagon skirt circumscribes a Circle room and carries its door opening through the lower tier', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    roomPlanShape: 'circle',
+    width: 8,
+    length: 6,
+    wallThickness: 0.4,
+  });
+  const door = {
+    ...createRoomPlanOpening('door', 'circle-skirt-door'),
+    rotation: 0,
+    width: 1.4,
+    height: 2.2,
+    sillHeight: 0,
+  };
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    roomPlanOpenings: [door],
+    stoneBase: { ...DEFAULT_WALL_SYSTEM.stoneBase, planShape: 'octagon', height: 1 },
+  }, building);
+  const room = buildWallSystem(building, walls);
+  const skirt = room.getObjectByName('Independent stone skirt');
+  const roomOuterVertices = room.userData.roomPlanOuterVertices.map(([x, z]) => new THREE.Vector2(x, z));
+  const roomExteriorRadius = roomOuterVertices.reduce((sum, point, index) => {
+    const next = roomOuterVertices[(index + 1) % roomOuterVertices.length];
+    return sum + point.clone().add(next).multiplyScalar(0.5).length();
+  }, 0) / roomOuterVertices.length;
+  const skirtVertices = skirt.userData.stoneSkirtBoundaryVertices.map(([x, z]) => new THREE.Vector2(x, z));
+  const skirtApothem = skirtVertices[0].clone().add(skirtVertices[1]).multiplyScalar(0.5).length();
+
+  assert.ok(Math.abs(skirtApothem - roomExteriorRadius) < 0.000001);
+  assert.equal(skirt.userData.stoneSkirtBoundaryRule, 'octagon-sides-circumscribed-tangent-around-circle-room-exterior');
+  assert.deepEqual(skirt.userData.stoneSkirtDoorOpeningIds, ['circle-skirt-door']);
+  const doorPieces = skirt.children.filter((panel) => panel.userData.stoneSkirtDoorOpeningIds.includes('circle-skirt-door'));
+  assert.ok(doorPieces.length >= 2, 'the skirt wall must split into masonry pieces around the door');
+  assert.ok(doorPieces.every((panel) => panel.geometry.parameters.height <= 1));
+
+  for (const polygonSides of [3, 5, 7, 12]) {
+    const customWalls = normalizeWallSystem({
+      ...walls,
+      stoneBase: { ...walls.stoneBase, planShape: 'polygon', polygonSides },
+    }, building);
+    const customRoom = buildWallSystem(building, customWalls);
+    const customSkirt = customRoom.getObjectByName('Independent stone skirt');
+    const customVertices = customSkirt.userData.stoneSkirtBoundaryVertices
+      .map(([x, z]) => new THREE.Vector2(x, z));
+    const customApothem = customVertices[0].clone().add(customVertices[1]).multiplyScalar(0.5).length();
+    assert.ok(Math.abs(customApothem - roomExteriorRadius) < 0.000001);
+    assert.equal(customSkirt.userData.stoneSkirtSideCount, polygonSides);
+    assert.equal(customSkirt.userData.stoneSkirtBoundaryRule, 'polygon-sides-circumscribed-tangent-around-circle-room-exterior');
+  }
+});
+
+test('independent skirt plans are scoped to Room buildings only', () => {
+  for (const buildingType of ['portal', 'vestibule']) {
+    const building = normalizeBuilding({
+      buildingType,
+      type: buildingType === 'portal' ? 'iwan' : 'room',
+    });
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+      stoneBase: { ...DEFAULT_WALL_SYSTEM.stoneBase, planShape: 'octagon' },
+    }, building);
+    assert.equal(walls.stoneBase.planShape, 'follow');
+    assert.equal(buildWallSystem(building, walls).getObjectByName('Independent stone skirt'), undefined);
+  }
+  const squareRoom = normalizeBuilding({ buildingType: 'room', type: 'room', roomPlanShape: 'square' });
+  const squareWalls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    stoneBase: { ...DEFAULT_WALL_SYSTEM.stoneBase, planShape: 'octagon' },
+  }, squareRoom);
+  assert.equal(squareWalls.stoneBase.planShape, 'follow');
+  assert.equal(buildWallSystem(squareRoom, squareWalls).getObjectByName('Independent stone skirt'), undefined);
+});
+
 test('stone base uses full-height vertical slabs and clips decorative patterns at its top', () => {
   const walls = normalizeWallSystem({ stoneBase: { enabled: true, height: 1.25, slabWidth: 0.72, color: '#667788', mortar: 0.025, mortarColor: '#223344' } });
   const structural = configureStoneBaseMaterial(new THREE.MeshStandardMaterial({ color: '#ffffff' }), walls);
@@ -6068,6 +10633,9 @@ test('arched door cuts the wall above the horizontal lintel while preserving its
 test('Portal doors and windows cut through the vertical wall beneath the Ahang arch', () => {
   const building = normalizeBuilding({ type: 'iwan', width: 8, depth: 8, height: 6, wallThickness: 0.4 });
   const walls = normalizeWallSystem({
+    portalTransition: 'none',
+    portalCover: 'ahang',
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
     southOpenings: {
       door: { enabled: true, width: 1, height: 6.8, position: -1.8, head: 'lintel' },
       window: { enabled: true, width: 1, height: 0.7, sillHeight: 6.2, position: 1.8, head: 'arch' },
@@ -6094,6 +10662,81 @@ test('Portal doors and windows cut through the vertical wall beneath the Ahang a
     'the high window arch head must also cut the arch vertical wall',
   );
   assert.equal(intersectsArchWallAt(0, 6.5), true, 'masonry between the two openings must remain');
+});
+
+test('Portal None transition supports a lowered Hall-derived Raised rib half-bay cover without transition walls', () => {
+  const building = normalizeBuilding({
+    type: 'iwan',
+    buildingType: 'portal',
+    width: 8,
+    depth: 4,
+    height: 6,
+    wallThickness: 0.4,
+    openingWidth: 5,
+  });
+
+  for (const portalCover of ['raised-rib-vault']) {
+    const walls = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      portalTransition: 'none',
+      portalCover,
+      karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
+      bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+    }, building);
+    assert.equal(walls.portalCover, portalCover);
+    const portal = buildWallSystemWithCanvasMock(building, walls);
+    const coverRoot = portal.children.find((child) => (
+      child.userData?.isPortalHalfBayCover === true
+      && child.userData?.portalCoverType === portalCover
+    ));
+    assert.ok(coverRoot, `${portalCover} must add a Portal half-bay cover assembly`);
+    assert.equal(coverRoot.position.z, -building.depth / 2);
+    assert.ok(coverRoot.userData.portalRaisedVaultVerticalDrop > 0);
+    assert.equal(
+      coverRoot.userData.portalCoverBearingRule,
+      'shell-seats-directly-on-vertical-walls-without-raised-vault-transition-walls',
+    );
+    const covers = [];
+    const raisedTransitions = [];
+    coverRoot.traverse((object) => {
+      if (object.userData?.isHallRibVaultCover) covers.push(object);
+      if (object.userData?.isHallRaisedRibVaultTransition) raisedTransitions.push(object);
+    });
+    assert.equal(covers.length, 1);
+    const sourceHalfDepth = covers[0].geometry.userData.hallRibVaultClearHalfDepth;
+    assert.ok(Math.abs(
+      coverRoot.scale.z * sourceHalfDepth - building.depth,
+    ) < 0.000001, 'the retained half of the source bay must fill the Portal depth');
+    const footprint = covers[0].geometry.userData.hallRaisedRibVaultFootprint;
+    assert.equal(covers[0].geometry.userData.hallRibVaultInteriorFaceDefinesBayBoundary, true);
+    assert.ok(Math.abs(
+      coverRoot.position.x + coverRoot.scale.x * footprint.westInner + building.width / 2,
+    ) < 0.000001, 'the Raised vault intrados must meet the west wall interior face');
+    assert.ok(Math.abs(
+      coverRoot.position.x + coverRoot.scale.x * footprint.eastInner - building.width / 2,
+    ) < 0.000001, 'the Raised vault intrados must meet the east wall interior face');
+    assert.equal(covers[0].userData.portalNorthArchDeveloped, true);
+    assert.equal(covers[0].userData.portalCoverSlicePlaneZ, -building.depth / 2);
+    covers[0].geometry.computeBoundingBox();
+    assert.ok(covers[0].geometry.boundingBox.min.z >= -0.000002);
+    assert.ok(Math.abs(covers[0].geometry.boundingBox.min.y - building.height) < 0.000002,
+      'the lowered blue shell must bear directly on top of the vertical Portal walls');
+    assert.equal(covers[0].geometry.userData.portalHalfBayLocalSliceZ, 0);
+    assert.equal(
+      covers[0].geometry.userData.portalHalfBaySliceRule,
+      'literal-south-half-of-complete-Hall-derived-bay',
+    );
+    assert.equal(raisedTransitions.length, 0, 'Portal Raised vault must not keep Hall transition walls beneath it');
+  }
+
+  for (const portalCover of ['raised-rib-vault']) {
+    const incompatible = normalizeWallSystem({
+      ...DEFAULT_WALL_SYSTEM,
+      portalTransition: 'squinch',
+      portalCover,
+    }, building);
+    assert.equal(incompatible.portalCover, 'none');
+  }
 });
 
 test('door and window soldier lintels are supported raised masonry bands with mortar joints', () => {
@@ -6365,6 +11008,82 @@ test('four-centre arch construction accepts signed red offset and derives the ta
   assert.ok(Math.abs(construction.greenCenter.distanceTo(construction.tangentPoint) - construction.greenRadius) < 0.000001);
 });
 
+test('one-point arch uses one continuous green circle from springing to crown', () => {
+  const construction = pointedArchConstruction(0, 2, 6, 1.2, 5, {
+    archType: 'one-point',
+    redOffset: -0.4,
+    redRadius: 2.8,
+  });
+  assert.ok(construction);
+  assert.equal(construction.archType, 'one-point');
+  assert.equal(construction.redCenter, null);
+  assert.equal(construction.redRadius, 0);
+  assert.ok(construction.tangentPoint.distanceTo(construction.sidePoint) < 0.000001);
+  assert.ok(Math.abs(construction.greenCenter.distanceTo(construction.sidePoint) - construction.greenRadius) < 0.000001);
+  assert.ok(Math.abs(construction.greenCenter.distanceTo(construction.apexPoint) - construction.greenRadius) < 0.000001);
+});
+
+test('one-point mode builds wall, squinch, and dome profiles without a red construction circle', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    domeTransition: 'squinch',
+    innerDomeEnabledByTransition: { squinch: false },
+    domeArch: { archType: 'one-point' },
+    innerDomeArch: { archType: 'one-point' },
+    domeTransitionSettings: { squinch: { archType: 'one-point' } },
+  });
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    pointedArch: { ...DEFAULT_WALL_SYSTEM.pointedArch, archType: 'one-point' },
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const group = buildWallSystem(building, walls);
+  const dome = group.getObjectByName('Room circular dome cover');
+  assert.ok(dome);
+  assert.equal(dome.userData.roomDomeArchConstruction.archType, 'one-point');
+  assert.equal(dome.userData.roomDomeArchConstruction.redCenter, null);
+});
+
+test('a two-layer dome always fixes the main dome to the required two-point construction', () => {
+  const building = normalizeBuilding({
+    type: 'room',
+    buildingType: 'room',
+    domeCoverType: 'dome',
+    domeTransition: 'squinch',
+    innerDomeEnabledByTransition: { squinch: true },
+    domeCenterOpeningEnabled: true,
+    domeArch: {
+      archType: 'one-point',
+      redOffset: 3,
+      redRadius: 4,
+      greenOffset: 0.5,
+      greenHeightOffset: -0.5,
+    },
+  });
+  assert.equal(building.innerDomeEnabled, true);
+  assert.deepEqual(building.domeArch, {
+    archType: 'two-point',
+    redOffset: 0,
+    redRadius: null,
+    greenOffset: 2,
+    greenHeightOffset: -2,
+    legExtension: building.domeOuterLegExtensionByCoverType.dome,
+  });
+  assert.equal(building.domeCenterOpeningEnabled, false);
+
+  const walls = normalizeWallSystem({
+    ...DEFAULT_WALL_SYSTEM,
+    bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
+  }, building);
+  const room = buildWallSystem(building, walls);
+  const mainDome = room.getObjectByName('Room circular dome cover');
+  assert.ok(mainDome);
+  assert.equal(mainDome.userData.roomDomeArchConstruction.archType, 'two-point');
+  assert.ok(mainDome.userData.roomDomeArchConstruction.redCenter);
+  assert.equal(mainDome.userData.roomDomeCenterOpeningEnabled, false);
+});
+
 test('structural walls and the Ahang vault meet without overlapping volumes', () => {
   const group = buildWallSystem({
     type: 'iwan',
@@ -6375,6 +11094,9 @@ test('structural walls and the Ahang vault meet without overlapping volumes', ()
     openingWidth: 4,
   }, {
     ...DEFAULT_WALL_SYSTEM,
+    portalTransition: 'none',
+    portalCover: 'ahang',
+    karbandi: { ...DEFAULT_WALL_SYSTEM.karbandi, enabled: false },
     bricks: { ...DEFAULT_WALL_SYSTEM.bricks, enabled: false },
   });
   const category = (side) => {
@@ -6394,6 +11116,10 @@ test('structural walls and the Ahang vault meet without overlapping volumes', ()
   const ahangVault = group.children.find((object) => object.userData?.isPointedArch);
   assert.ok(southArchCap);
   assert.ok(ahangVault);
+  assert.deepEqual(ahangVault.userData.ahangInteriorArchSpringFaces, [-4, 4]);
+  assert.equal(ahangVault.userData.ahangInteriorArchSpan, 8);
+  assert.equal(ahangVault.userData.ahangInteriorArchBearingRule,
+    'flush-with-west-and-east-wall-interior-faces');
   assert.equal(southArchCap.userData.archInterfaceProfile, 'outer');
   const capBounds = new THREE.Box3().setFromObject(southArchCap);
   const vaultBounds = new THREE.Box3().setFromObject(ahangVault);
@@ -6503,7 +11229,7 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
   northSupportPanels.forEach((panel) => {
     assert.equal(panel.userData.karbandiRoofRaisedCenter, false);
     assert.equal(panel.userData.karbandiRoofCurved, true);
-    assert.ok(['four-edge-inward-courses', 'small-four-edge-cap', 'wall-started-bent-infill', 'wall-arch-ruled-strip', 'north-crown-sliced-inward-courses', 'north-visible-rib-profile-extruded-to-wall', 'boundary-constrained-polygon'].includes(panel.userData.webPatchSolver));
+    assert.ok(['four-edge-inward-courses', 'small-four-edge-cap', 'wall-started-bent-infill', 'wall-arch-ruled-strip', 'north-crown-sliced-inward-courses', 'portal-north-arch-to-rib-ruled-half-brick-shell', 'boundary-constrained-polygon'].includes(panel.userData.webPatchSolver));
     assert.equal(panel.userData.northWallClipped, true);
     assert.ok(panel.material.clippingPlanes.length >= 1);
     assert.ok(panel.material.clippingPlanes.some((plane) => plane.normal.z === 1));
@@ -6700,20 +11426,43 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
       'closest-visible-topology-section-between-physical-intersections',
     );
     assert.equal(panel.userData.northVisibleRibWallProfile.length, panel.userData.northVisibleRibProfile.length);
+    assert.equal(panel.userData.portalNorthArchBoundaryRule,
+      'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg');
+    assert.equal(panel.userData.portalSideCoverThicknessRule, 'half-brick');
     panel.userData.northVisibleRibWallProfile.forEach((wallPoint, index) => {
       const ribPoint = panel.userData.northVisibleRibProfile[index];
       assert.ok(Math.abs(wallPoint[0] - THREE.MathUtils.clamp(ribPoint[0], -2, 2)) < 0.000001);
-      assert.ok(Math.abs(wallPoint[1] - ribPoint[1]) < 0.000001, 'northward extrusion must preserve the visible rib profile height');
+      assert.ok(wallPoint[1] >= building.height - 0.000001, 'the wall edge must follow the north arch above its springing line');
       assert.ok(Math.abs(wallPoint[2] + 1) < 0.000001, 'northward extrusion must terminate on the north wall');
     });
     assert.equal(
       panel.userData.wallContinuationMethod,
       'closest-visible-rib-profile-extruded-north-and-clipped-by-north-wall',
     );
-    assert.equal(panel.userData.webPatchSolver, 'north-visible-rib-profile-extruded-to-wall');
+    assert.equal(panel.userData.webPatchSolver, 'portal-north-arch-to-rib-ruled-half-brick-shell');
+    assert.equal(panel.userData.portalSideCoverConstruction, 'shared-clean-arch-to-rib-half-brick-shell');
+    assert.deepEqual(panel.userData.portalSideCoverClosedReturns, ['north-wall-arch', 'rib', 'spring', 'crown']);
+    assert.equal(panel.userData.portalSideCoverWallSeat, 'north-opening-plane-no-lateral-offset');
+    assert.equal(panel.userData.portalSideCoverSpringJoint,
+      'jamb-aligned-and-overlapped-behind-visible-rib');
+    assert.equal(panel.userData.portalSideCoverCourseRows,
+      'shared-world-height-resampled-wall-and-rib-profiles');
+    const generatedWallRows = panel.geometry.userData.portalKarbandiSideCoverWallProfile;
+    const generatedRibRows = panel.geometry.userData.portalKarbandiSideCoverRibProfile;
+    assert.equal(generatedWallRows.length, generatedRibRows.length);
+    assert.ok(generatedWallRows.every((point, index) => (
+      Math.abs(point[1] - generatedRibRows[index][1]) < 0.000001
+    )));
     assert.equal(panel.userData.webRegionNormalMode, 'visible-rib-profile-to-north-wall-surface-normal');
     const positions = panel.geometry.getAttribute('position');
     const surfaceCount = panel.userData.webPatchSurfaceVertexCount;
+    for (let index = 0; index < surfaceCount; index += 2) {
+      assert.ok(Math.abs(positions.getX(index) - positions.getX(index + surfaceCount)) < 0.000001);
+      assert.ok(Math.abs(positions.getY(index) - positions.getY(index + surfaceCount)) < 0.000001);
+      assert.ok(Math.abs(
+        positions.getZ(index) - positions.getZ(index + surfaceCount) + walls.bricks.brickWidth / 2
+      ) < 0.00001, 'the cover thickness must bury into the north wall without a lateral jamb step');
+    }
     for (let index = 0; index < surfaceCount; index += 1) {
       assert.ok(positions.getX(index + surfaceCount) >= -2 - 0.00001);
       assert.ok(positions.getX(index + surfaceCount) <= 2 + 0.00001);
@@ -6727,7 +11476,7 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
         positions.getY(index) - positions.getY(index + surfaceCount),
         positions.getZ(index) - positions.getZ(index + surfaceCount),
       );
-      assert.ok(Math.abs(extrusion.length() - walls.karbandi.web.roofThickness) < 0.00001);
+      assert.ok(Math.abs(extrusion.length() - walls.bricks.brickWidth / 2) < 0.00001);
     }
     const profileMaximumZ = Math.max(...panel.userData.northVisibleRibProfile.map((point) => point[2]));
     const roofMaximumZ = Math.max(...Array.from(
@@ -6773,7 +11522,7 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
       assert.equal(panel.userData.karbandiRoofRaisedCenter, false);
       assert.equal(panel.userData.karbandiRoofCurved, true);
       assert.equal(panel.userData.webStartsAtWall, true);
-      assert.equal(panel.userData.thicknessDirection, 'surface-normal');
+      assert.equal(panel.userData.thicknessDirection, 'north-edge-buried-in-wall-rib-edge-surface-normal');
       return;
     }
     if (panel.userData.webSupportSides.some((side) => ['south', 'east', 'west'].includes(side))) {
@@ -6870,7 +11619,12 @@ test('web covers use structured rib-bound surfaces without artificial centre poi
     if (object.userData?.isKarbandiCover) thicknessPanels.push(object);
   });
   assert.ok(thicknessPanels.length > 0);
-  thicknessPanels.forEach((panel) => assert.equal(panel.userData.roofThickness, 0.05));
+  thicknessPanels.forEach((panel) => assert.equal(
+    panel.userData.roofThickness,
+    panel.userData.portalSideCoverThicknessRule === 'half-brick'
+      ? walls.bricks.brickWidth / 2
+      : 0.05,
+  ));
 });
 
 test('mirrored steep four-rib roofs keep parallel alternating inward courses', () => {
@@ -7048,9 +11802,13 @@ test('south corner roofs rebuild from distinct south and side wall ribs after Ka
       assert.equal(panel.userData.northVisibleRibSourceIds.length, 1);
       assert.ok(panel.userData.northVisibleRibProfile.length > 2);
       assert.equal(panel.userData.northVisibleRibWallProfile.length, panel.userData.northVisibleRibProfile.length);
+      assert.equal(panel.userData.portalNorthArchBoundaryRule,
+        'exact-north-wall-arch-profile-extruded-to-visible-wall-supported-rib-leg');
+      assert.equal(panel.userData.portalSideCoverThicknessRule, 'half-brick');
       panel.userData.northVisibleRibWallProfile.forEach((wallPoint, index) => {
         const ribPoint = panel.userData.northVisibleRibProfile[index];
-        assert.ok(Math.abs(wallPoint[1] - ribPoint[1]) < 0.000001);
+        assert.ok(wallPoint[1] >= building.height - 0.000001);
+        assert.ok(Math.abs(wallPoint[0] - THREE.MathUtils.clamp(ribPoint[0], -2, 2)) < 0.000001);
         assert.ok(Math.abs(wallPoint[2] + 1) < 0.000001);
       });
       const positions = panel.geometry.getAttribute('position');

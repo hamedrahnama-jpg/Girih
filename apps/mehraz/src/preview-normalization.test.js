@@ -1,14 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { CONSTRUCTION_STEPS, constructionStepsForBuilding, coverSystemAllowsPlacement, moduleTopExtrusionGeometry, normalizePreview, objectIsSelectable, previewWorldBounds } from './mehraz-scene.js';
+import { CONSTRUCTION_STEPS, constructionStepsForBuilding, coverSystemAllowsPlacement, MehrazScene, moduleTopExtrusionGeometry, normalizeConstructionStepOrder, normalizePreview, objectIsSelectable, previewWorldBounds } from './mehraz-scene.js';
+
+test('custom construction order keeps valid phases and fixed training endpoints', () => {
+  const order = normalizeConstructionStepOrder([
+    'complete', 'room-dome', 'lower-walls', 'room-transition-cover', 'room-dome', 'empty', 'unknown',
+  ]);
+  assert.equal(order[0], 'empty');
+  assert.equal(order.at(-1), 'complete');
+  assert.ok(order.indexOf('room-dome') < order.indexOf('lower-walls'));
+  assert.ok(order.indexOf('lower-walls') < order.indexOf('room-transition-cover'));
+  assert.equal(order.filter((id) => id === 'room-dome').length, 1);
+  assert.equal(order.includes('unknown'), false);
+  assert.equal(order.length, CONSTRUCTION_STEPS.length);
+});
+
+test('scene construction ranks follow the customized animation sequence', () => {
+  const scene = Object.create(MehrazScene.prototype);
+  scene.setConstructionStepOrder(['empty', 'room-dome', 'lower-walls', 'room-transition-cover', 'complete']);
+  assert.ok(scene.constructionRankFor('room-dome') < scene.constructionRankFor('lower-walls'));
+  assert.ok(scene.constructionRankFor('lower-walls') < scene.constructionRankFor('room-transition-cover'));
+});
 
 test('Ahang subsection builds every lower wall, two guides, south under-arch infill, then the arch cover', () => {
   assert.deepEqual(
     constructionStepsForBuilding('iwan').filter((step) => !step.id.startsWith('karbandi-')).slice(0, 6).map((step) => step.id),
     ['empty', 'lower-walls', 'south-arch-guide', 'north-arch-guide', 'south-wall', 'arch-fill'],
   );
-  assert.equal(CONSTRUCTION_STEPS[1].detail, 'Raise the south, east, west, and north-side walls together to the arch spring line.');
+  assert.equal(CONSTRUCTION_STEPS.find((step) => step.id === 'lower-walls').detail, 'Raise the south, east, west, and north-side walls together to the arch spring line.');
   assert.equal(CONSTRUCTION_STEPS.find((step) => step.id === 'south-wall').title, 'South wall under arch');
   assert.equal(CONSTRUCTION_STEPS.find((step) => step.id === 'arch-fill').title, 'Cover the guide arches');
 });
